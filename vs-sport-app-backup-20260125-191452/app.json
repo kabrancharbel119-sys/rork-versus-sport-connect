@@ -1,0 +1,97 @@
+{
+  "expo": {
+    "name": "VERSUS-SPORT CONNECT",
+    "slug": "vs-sport-amateurs-connect",
+    "version": "1.0.0",
+    "owner": "rork",
+    "privacy": "public",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "rork-app",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1a1a2e"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.rork.vs-sport-amateurs-connect",
+      "buildNumber": "1",
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
+          }
+        ]
+      },
+      "infoPlist": {
+        "NSCameraUsageDescription": "VS a besoin d'accéder à votre caméra pour prendre une photo de profil.",
+        "NSPhotoLibraryUsageDescription": "VS a besoin d'accéder à vos photos pour choisir une photo de profil.",
+        "NSLocationWhenInUseUsageDescription": "VS utilise votre position pour trouver des matchs et des joueurs près de chez vous.",
+        "NSPhotoLibraryAddUsageDescription": "VS a besoin d'enregistrer des photos dans votre galerie."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#1a1a2e"
+      },
+      "package": "app.rork.vs_sport_amateurs_connect",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://rork.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "VS a besoin d'accéder à vos photos pour choisir une photo de profil.",
+          "cameraPermission": "VS a besoin d'accéder à votre caméra pour prendre une photo de profil."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "VS utilise votre position pour trouver des matchs et des joueurs près de chez vous."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#FF6B35"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "privacyPolicyUrl": "rork-app://privacy",
+      "termsOfServiceUrl": "rork-app://terms"
+    }
+  }
+}
