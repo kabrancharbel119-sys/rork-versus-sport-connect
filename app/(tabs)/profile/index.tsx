@@ -76,6 +76,41 @@ export default function ProfileScreen() {
                 <Text style={styles.locationText}>{user.city}, {user.country}</Text>
               </View>
             )}
+            
+            <View style={styles.quickStatsRow}>
+              <View style={styles.quickStatItem}>
+                <View style={styles.quickStatIconBg}>
+                  <Zap size={14} color={Colors.primary.orange} />
+                </View>
+                <Text style={styles.quickStatValue}>{user?.stats?.matchesPlayed || 0}</Text>
+                <Text style={styles.quickStatLabel}>Matchs</Text>
+              </View>
+              <View style={styles.quickStatDivider} />
+              <View style={styles.quickStatItem}>
+                <View style={styles.quickStatIconBg}>
+                  <TrendingUp size={14} color={Colors.status.success} />
+                </View>
+                <Text style={styles.quickStatValue}>{winRate}%</Text>
+                <Text style={styles.quickStatLabel}>Victoires</Text>
+              </View>
+              <View style={styles.quickStatDivider} />
+              <View style={styles.quickStatItem}>
+                <View style={styles.quickStatIconBg}>
+                  <Award size={14} color="#F59E0B" />
+                </View>
+                <Text style={styles.quickStatValue}>{user?.stats?.mvpAwards || 0}</Text>
+                <Text style={styles.quickStatLabel}>MVP</Text>
+              </View>
+              <View style={styles.quickStatDivider} />
+              <View style={styles.quickStatItem}>
+                <View style={styles.quickStatIconBg}>
+                  <Star size={14} color="#F59E0B" />
+                </View>
+                <Text style={styles.quickStatValue}>{user?.stats?.fairPlayScore?.toFixed(1) || '5.0'}</Text>
+                <Text style={styles.quickStatLabel}>Fair-Play</Text>
+              </View>
+            </View>
+            
             <View style={styles.profileMeta}>
               <View style={styles.profileMetaItem}><Text style={styles.profileMetaValue}>{user?.followers || 0}</Text><Text style={styles.profileMetaLabel}>Abonnés</Text></View>
               <View style={styles.profileMetaDivider} />
@@ -113,11 +148,7 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           )}
 
-          <View style={styles.statsGrid}>
-            <StatCard label="Matchs" value={user?.stats?.matchesPlayed || 0} icon={<Zap size={20} color={Colors.primary.blue} />} variant="blue" />
-            <StatCard label="Victoires" value={`${winRate}%`} icon={<TrendingUp size={20} color={Colors.status.success} />} variant="default" />
-            <StatCard label="MVP" value={user?.stats?.mvpAwards || 0} icon={<Award size={20} color={Colors.primary.orange} />} variant="orange" />
-          </View>
+          
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -215,14 +246,20 @@ const styles = StyleSheet.create({
   profileUsername: { color: 'rgba(255,255,255,0.7)', fontSize: 14, marginTop: 4 },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
   locationText: { color: 'rgba(255,255,255,0.7)', fontSize: 13 },
-  profileMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 20 },
+  quickStatsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 8, marginTop: 16, marginBottom: 8 },
+  quickStatItem: { flex: 1, alignItems: 'center', gap: 4 },
+  quickStatIconBg: { width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
+  quickStatValue: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' as const },
+  quickStatLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: '500' as const },
+  quickStatDivider: { width: 1, height: 40, backgroundColor: 'rgba(255,255,255,0.15)' },
+  profileMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
   profileMetaItem: { alignItems: 'center', paddingHorizontal: 20 },
   profileMetaValue: { color: '#FFFFFF', fontSize: 20, fontWeight: '700' as const },
   profileMetaLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 },
   profileMetaDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.2)' },
   premiumBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(245, 158, 11, 0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginTop: 16 },
   premiumText: { color: '#F59E0B', fontSize: 12, fontWeight: '600' as const },
-  statsGrid: { flexDirection: 'row', gap: 12, marginBottom: 20 },
+  
   section: { marginBottom: 24 },
   sectionTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const, marginBottom: 12 },
   trophiesPreview: { backgroundColor: Colors.background.card, borderRadius: 16, padding: 16, marginBottom: 20 },

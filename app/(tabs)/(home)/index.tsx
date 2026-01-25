@@ -18,10 +18,13 @@ const { width } = Dimensions.get('window');
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { getRecruitingTeams } = useTeams();
-  const { getUpcomingMatches } = useMatches();
+  const { getRecruitingTeams, getUserTeams, teams } = useTeams();
+  const { getUpcomingMatches, matches } = useMatches();
 
+  const userTeams = user ? getUserTeams(user.id) : [];
   const upcomingMatches = getUpcomingMatches().slice(0, 3);
+  const userCreatedMatches = user ? matches.filter(m => m.createdBy === user.id && m.status !== 'completed').slice(0, 3) : [];
+  const displayMatches = upcomingMatches.length > 0 ? upcomingMatches : userCreatedMatches;
   const recruitingTeams = getRecruitingTeams().slice(0, 3);
   const activeTournaments = mockTournaments.filter(t => t.status === 'registration');
 
@@ -157,7 +160,7 @@ export default function HomeScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>🏆 Tournois en cours</Text>
-                <TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push('/tournaments')}>
                   <Text style={styles.seeAll}>Voir tout</Text>
                 </TouchableOpacity>
               </View>
@@ -168,7 +171,7 @@ export default function HomeScreen() {
                 contentContainerStyle={styles.horizontalScroll}
               >
                 {activeTournaments.map((tournament) => (
-                  <TouchableOpacity key={tournament.id} activeOpacity={0.8}>
+                  <TouchableOpacity key={tournament.id} activeOpacity={0.8} onPress={() => router.push(`/tournament/${tournament.id}`)}>
                     <LinearGradient
                       colors={[Colors.gradient.orangeStart, Colors.gradient.orangeEnd]}
                       start={{ x: 0, y: 0 }}
@@ -211,8 +214,8 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
             
-            {upcomingMatches.length > 0 ? (
-              upcomingMatches.map((match) => (
+            {displayMatches.length > 0 ? (
+              displayMatches.map((match) => (
                 <Card 
                   key={match.id} 
                   style={styles.matchCard}
@@ -263,6 +266,45 @@ export default function HomeScreen() {
               </Card>
             )}
           </View>
+
+          {userTeams.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>🏅 Mes équipes</Text>
+                <TouchableOpacity onPress={() => router.push('/(tabs)/teams')}>
+                  <Text style={styles.seeAll}>Voir tout</Text>
+                </TouchableOpacity>
+              </View>
+              
+              {userTeams.slice(0, 3).map((team) => (
+                <Card 
+                  key={team.id} 
+                  style={styles.teamCard}
+                  onPress={() => router.push(`/team/${team.id}`)}
+                >
+                  <View style={styles.teamRow}>
+                    <Avatar uri={team.logo} name={team.name} size="large" />
+                    <View style={styles.teamInfo}>
+                      <Text style={styles.teamName}>{team.name}</Text>
+                      <Text style={styles.teamMeta}>
+                        {sportLabels[team.sport]} • {team.format} • {levelLabels[team.level]}
+                      </Text>
+                      <View style={styles.teamLocation}>
+                        <MapPin size={12} color={Colors.text.muted} />
+                        <Text style={styles.teamLocationText}>{team.city}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.teamStats}>
+                      <Text style={styles.teamMemberCount}>
+                        {team.members.length}/{team.maxMembers}
+                      </Text>
+                      <Text style={styles.teamMemberLabel}>membres</Text>
+                    </View>
+                  </View>
+                </Card>
+              ))}
+            </View>
+          )}
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>

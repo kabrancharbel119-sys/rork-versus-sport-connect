@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Modal, TextInput } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Modal, TextInput, ActionSheetIOS } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -35,6 +36,39 @@ const TEAM_LOGOS = [
   'https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?w=200&h=200&fit=crop',
   'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=200&h=200&fit=crop',
 ];
+
+const pickImageFromLibrary = async (): Promise<string | null> => {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 0.8,
+  });
+  
+  if (!result.canceled && result.assets[0]) {
+    return result.assets[0].uri;
+  }
+  return null;
+};
+
+const takePhoto = async (): Promise<string | null> => {
+  const { status } = await ImagePicker.requestCameraPermissionsAsync();
+  if (status !== 'granted') {
+    Alert.alert('Permission requise', 'Autorisez l\'accès à la caméra pour prendre une photo.');
+    return null;
+  }
+  
+  const result = await ImagePicker.launchCameraAsync({
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 0.8,
+  });
+  
+  if (!result.canceled && result.assets[0]) {
+    return result.assets[0].uri;
+  }
+  return null;
+};
 
 const sportIcons: Record<string, string> = {
   football: '⚽', basketball: '🏀', volleyball: '🏐', tennis: '🎾', handball: '🤾', rugby: '🏉',
@@ -464,6 +498,39 @@ export default function CreateTeamScreen() {
               
               {!showCustomUrlInput ? (
                 <>
+                  <View style={styles.imagePickerButtons}>
+                    <TouchableOpacity 
+                      style={styles.imagePickerBtn}
+                      onPress={async () => {
+                        const uri = await pickImageFromLibrary();
+                        if (uri) {
+                          updateField('logo', uri);
+                          setShowLogoModal(false);
+                        }
+                      }}
+                    >
+                      <ImageIcon size={24} color={Colors.primary.blue} />
+                      <Text style={styles.imagePickerBtnText}>Galerie photo</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={styles.imagePickerBtn}
+                      onPress={async () => {
+                        const uri = await takePhoto();
+                        if (uri) {
+                          updateField('logo', uri);
+                          setShowLogoModal(false);
+                        }
+                      }}
+                    >
+                      <View style={styles.cameraIconCircle}>
+                        <Text style={styles.cameraIcon}>📷</Text>
+                      </View>
+                      <Text style={styles.imagePickerBtnText}>Prendre photo</Text>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <Text style={styles.orDividerText}>ou choisir un logo prédéfini</Text>
+                  
                   <View style={styles.logosGrid}>
                     <TouchableOpacity
                       style={[styles.logoOption, !formData.logo && styles.logoOptionActive]}
@@ -646,7 +713,13 @@ const styles = StyleSheet.create({
   sportItemIcon: { fontSize: 24, width: 36, textAlign: 'center' as const },
   sportItemText: { flex: 1, color: Colors.text.primary, fontSize: 15 },
   sportItemTextActive: { color: Colors.primary.blue, fontWeight: '500' as const },
-  logosGrid: { flexDirection: 'row', flexWrap: 'wrap' as const, padding: 20, gap: 12, justifyContent: 'center' },
+  imagePickerButtons: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 16 },
+  imagePickerBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 20, backgroundColor: Colors.background.card, borderRadius: 16, borderWidth: 1, borderColor: Colors.border.light, gap: 8 },
+  imagePickerBtnText: { color: Colors.text.primary, fontSize: 13, fontWeight: '500' as const },
+  cameraIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,107,0,0.15)', alignItems: 'center', justifyContent: 'center' },
+  cameraIcon: { fontSize: 20 },
+  orDividerText: { color: Colors.text.muted, fontSize: 12, textAlign: 'center' as const, marginVertical: 16 },
+  logosGrid: { flexDirection: 'row', flexWrap: 'wrap' as const, paddingHorizontal: 20, paddingBottom: 12, gap: 12, justifyContent: 'center' },
   logoOption: { width: 70, height: 70, borderRadius: 16, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
   logoOptionActive: { borderColor: Colors.primary.blue },
   customUrlButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginHorizontal: 20, marginBottom: 20, borderRadius: 12, backgroundColor: Colors.background.card, borderWidth: 1, borderColor: Colors.border.light },
