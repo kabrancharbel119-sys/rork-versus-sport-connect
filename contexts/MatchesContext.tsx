@@ -32,6 +32,15 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
   const [matches, setMatches] = useState<Match[]>([]);
   const [venues, setVenues] = useState<Venue[]>(mockVenues);
 
+  const parseMatchDates = (matches: Match[]): Match[] => {
+    return matches.map(m => ({
+      ...m,
+      dateTime: new Date(m.dateTime),
+      createdAt: m.createdAt ? new Date(m.createdAt) : new Date(),
+      location: m.location ? { ...m.location, lastUpdated: new Date(m.location.lastUpdated) } : undefined,
+    }));
+  };
+
   const matchesQuery = useQuery({
     queryKey: ['matches'],
     queryFn: async () => {
@@ -40,16 +49,19 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
         const serverMatches = await matchesApi.getAll();
         if (serverMatches.length > 0) {
           await AsyncStorage.setItem(MATCHES_STORAGE_KEY, JSON.stringify(serverMatches));
-          return serverMatches;
+          return parseMatchDates(serverMatches);
         }
       } catch (e) {
         console.log('[Matches] Server fetch failed, using local storage');
       }
       
       const stored = await AsyncStorage.getItem(MATCHES_STORAGE_KEY);
-      if (stored) return JSON.parse(stored) as Match[];
+      if (stored) {
+        const parsed = JSON.parse(stored) as Match[];
+        return parseMatchDates(parsed);
+      }
       await AsyncStorage.setItem(MATCHES_STORAGE_KEY, JSON.stringify(mockMatches));
-      return mockMatches;
+      return parseMatchDates(mockMatches);
     },
   });
 

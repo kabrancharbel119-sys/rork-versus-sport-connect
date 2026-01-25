@@ -55,6 +55,8 @@ export default function CreateTeamScreen() {
   const [showRolesModal, setShowRolesModal] = useState(false);
   const [sportSearch, setSportSearch] = useState('');
   const [newRoleName, setNewRoleName] = useState('');
+  const [customLogoUrl, setCustomLogoUrl] = useState('');
+  const [showCustomUrlInput, setShowCustomUrlInput] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -455,27 +457,72 @@ export default function CreateTeamScreen() {
             <View style={styles.modalContentSmall}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Choisir un logo</Text>
-                <TouchableOpacity style={styles.modalClose} onPress={() => setShowLogoModal(false)}>
+                <TouchableOpacity style={styles.modalClose} onPress={() => { setShowLogoModal(false); setShowCustomUrlInput(false); setCustomLogoUrl(''); }}>
                   <X size={24} color={Colors.text.primary} />
                 </TouchableOpacity>
               </View>
-              <View style={styles.logosGrid}>
-                <TouchableOpacity
-                  style={[styles.logoOption, !formData.logo && styles.logoOptionActive]}
-                  onPress={() => { updateField('logo', ''); setShowLogoModal(false); }}
-                >
-                  <Users size={28} color={Colors.text.muted} />
-                </TouchableOpacity>
-                {TEAM_LOGOS.map((logo, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    style={[styles.logoOption, formData.logo === logo && styles.logoOptionActive]}
-                    onPress={() => { updateField('logo', logo); setShowLogoModal(false); }}
-                  >
-                    <Avatar uri={logo} name="Logo" size="medium" />
+              
+              {!showCustomUrlInput ? (
+                <>
+                  <View style={styles.logosGrid}>
+                    <TouchableOpacity
+                      style={[styles.logoOption, !formData.logo && styles.logoOptionActive]}
+                      onPress={() => { updateField('logo', ''); setShowLogoModal(false); }}
+                    >
+                      <Users size={28} color={Colors.text.muted} />
+                    </TouchableOpacity>
+                    {TEAM_LOGOS.map((logo, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        style={[styles.logoOption, formData.logo === logo && styles.logoOptionActive]}
+                        onPress={() => { updateField('logo', logo); setShowLogoModal(false); }}
+                      >
+                        <Avatar uri={logo} name="Logo" size="medium" />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <TouchableOpacity style={styles.customUrlButton} onPress={() => setShowCustomUrlInput(true)}>
+                    <ImageIcon size={18} color={Colors.primary.blue} />
+                    <Text style={styles.customUrlButtonText}>Utiliser une URL personnalisée</Text>
                   </TouchableOpacity>
-                ))}
-              </View>
+                </>
+              ) : (
+                <View style={styles.customUrlContainer}>
+                  <Input
+                    label="URL de l'image"
+                    placeholder="https://exemple.com/logo.png"
+                    value={customLogoUrl}
+                    onChangeText={setCustomLogoUrl}
+                    autoCapitalize="none"
+                    keyboardType="url"
+                  />
+                  {customLogoUrl.trim() && (
+                    <View style={styles.logoPreviewContainer}>
+                      <Text style={styles.logoPreviewLabel}>Aperçu:</Text>
+                      <Avatar uri={customLogoUrl} name="Logo" size="large" />
+                    </View>
+                  )}
+                  <View style={styles.customUrlActions}>
+                    <TouchableOpacity style={styles.customUrlBackBtn} onPress={() => { setShowCustomUrlInput(false); setCustomLogoUrl(''); }}>
+                      <Text style={styles.customUrlBackText}>Retour</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[styles.customUrlConfirmBtn, !customLogoUrl.trim() && styles.customUrlConfirmBtnDisabled]} 
+                      onPress={() => { 
+                        if (customLogoUrl.trim()) {
+                          updateField('logo', customLogoUrl.trim()); 
+                          setShowLogoModal(false); 
+                          setShowCustomUrlInput(false);
+                          setCustomLogoUrl('');
+                        }
+                      }}
+                      disabled={!customLogoUrl.trim()}
+                    >
+                      <Text style={styles.customUrlConfirmText}>Confirmer</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </View>
           </View>
         </Modal>
@@ -602,5 +649,16 @@ const styles = StyleSheet.create({
   logosGrid: { flexDirection: 'row', flexWrap: 'wrap' as const, padding: 20, gap: 12, justifyContent: 'center' },
   logoOption: { width: 70, height: 70, borderRadius: 16, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
   logoOptionActive: { borderColor: Colors.primary.blue },
+  customUrlButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginHorizontal: 20, marginBottom: 20, borderRadius: 12, backgroundColor: Colors.background.card, borderWidth: 1, borderColor: Colors.border.light },
+  customUrlButtonText: { color: Colors.primary.blue, fontSize: 14, fontWeight: '500' as const },
+  customUrlContainer: { padding: 20 },
+  logoPreviewContainer: { alignItems: 'center', marginTop: 16, gap: 8 },
+  logoPreviewLabel: { color: Colors.text.muted, fontSize: 12 },
+  customUrlActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
+  customUrlBackBtn: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: 12, backgroundColor: Colors.background.card },
+  customUrlBackText: { color: Colors.text.secondary, fontSize: 14, fontWeight: '500' as const },
+  customUrlConfirmBtn: { flex: 2, alignItems: 'center', paddingVertical: 14, borderRadius: 12, backgroundColor: Colors.primary.blue },
+  customUrlConfirmBtnDisabled: { backgroundColor: Colors.background.cardLight },
+  customUrlConfirmText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' as const },
   addRoleConfirmBtn: { marginTop: 16 },
 });

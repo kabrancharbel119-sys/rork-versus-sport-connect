@@ -29,6 +29,20 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
   const queryClient = useQueryClient();
   const [teams, setTeams] = useState<Team[]>([]);
 
+  const parseTeamDates = (teams: Team[]): Team[] => {
+    return teams.map(t => ({
+      ...t,
+      createdAt: t.createdAt ? new Date(t.createdAt) : new Date(),
+      members: t.members.map(m => ({ ...m, joinedAt: new Date(m.joinedAt) })),
+      joinRequests: t.joinRequests.map(r => ({
+        ...r,
+        createdAt: new Date(r.createdAt),
+        respondedAt: r.respondedAt ? new Date(r.respondedAt) : undefined,
+      })),
+      location: t.location ? { ...t.location, lastUpdated: new Date(t.location.lastUpdated) } : undefined,
+    }));
+  };
+
   const teamsQuery = useQuery({
     queryKey: ['teams'],
     queryFn: async () => {
@@ -37,16 +51,19 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
         const serverTeams = await teamsApi.getAll();
         if (serverTeams.length > 0) {
           await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(serverTeams));
-          return serverTeams;
+          return parseTeamDates(serverTeams);
         }
       } catch (e) {
         console.log('[Teams] Server fetch failed, using local storage');
       }
       
       const stored = await AsyncStorage.getItem(TEAMS_STORAGE_KEY);
-      if (stored) return JSON.parse(stored) as Team[];
+      if (stored) {
+        const parsed = JSON.parse(stored) as Team[];
+        return parseTeamDates(parsed);
+      }
       await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(mockTeams));
-      return mockTeams;
+      return parseTeamDates(mockTeams);
     },
   });
 

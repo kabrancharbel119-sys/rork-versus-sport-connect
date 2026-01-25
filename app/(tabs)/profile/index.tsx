@@ -3,12 +3,12 @@ import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'rea
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Settings, Edit2, Trophy, Star, Users, ChevronRight, Shield, Award, TrendingUp, Zap, MapPin, History, CheckCircle } from 'lucide-react-native';
+import { Settings, Edit2, Trophy, Star, Users, ChevronRight, Shield, Award, TrendingUp, Zap, MapPin, History, CheckCircle, Plus } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMatches } from '@/contexts/MatchesContext';
 import { useTeams } from '@/contexts/TeamsContext';
-import { useTrophies } from '@/contexts/TrophiesContext';
+import { useTrophies, ALL_TROPHIES, RARITY_COLORS } from '@/contexts/TrophiesContext';
 import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
 import { StatCard } from '@/components/StatCard';
@@ -19,11 +19,12 @@ export default function ProfileScreen() {
   const { user, isAdmin } = useAuth();
   const { getUserMatches } = useMatches();
   const { getUserTeams, teams } = useTeams();
-  const { getUnlockedCount, getTotalXP, checkAndUnlockTrophies } = useTrophies();
+  const { getUnlockedCount, getTotalXP, checkAndUnlockTrophies, getUserTrophies } = useTrophies();
 
   const userMatches = user ? getUserMatches(user.id) : [];
   const userTeams = user ? getUserTeams(user.id) : [];
-  const unlockedTrophies = user ? getUnlockedCount(user.id) : 0;
+  const unlockedTrophiesCount = user ? getUnlockedCount(user.id) : 0;
+  const userTrophyList = user ? getUserTrophies(user.id).filter(t => t.progress >= 100).slice(0, 5) : [];
   const totalXP = user ? getTotalXP(user.id) : 0;
   const isCaptain = teams.some(t => t.captainId === user?.id);
 
@@ -90,6 +91,28 @@ export default function ProfileScreen() {
             )}
           </LinearGradient>
 
+          {userTrophyList.length > 0 && (
+            <TouchableOpacity style={styles.trophiesPreview} onPress={() => router.push('/trophies')} activeOpacity={0.8}>
+              <View style={styles.trophiesPreviewHeader}>
+                <Trophy size={18} color={Colors.primary.orange} />
+                <Text style={styles.trophiesPreviewTitle}>Trophées ({unlockedTrophiesCount})</Text>
+                <ChevronRight size={16} color={Colors.text.muted} />
+              </View>
+              <View style={styles.trophiesBadges}>
+                {userTrophyList.map((ut) => (
+                  <View key={ut.trophyId} style={[styles.trophyBadge, { borderColor: RARITY_COLORS[ut.trophy?.rarity || 'common'] }]}>
+                    <Text style={styles.trophyBadgeIcon}>{ut.trophy?.icon}</Text>
+                  </View>
+                ))}
+                {unlockedTrophiesCount > 5 && (
+                  <View style={styles.moreTrophiesBadge}>
+                    <Text style={styles.moreTrophiesText}>+{unlockedTrophiesCount - 5}</Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+          )}
+
           <View style={styles.statsGrid}>
             <StatCard label="Matchs" value={user?.stats?.matchesPlayed || 0} icon={<Zap size={20} color={Colors.primary.blue} />} variant="blue" />
             <StatCard label="Victoires" value={`${winRate}%`} icon={<TrendingUp size={20} color={Colors.status.success} />} variant="default" />
@@ -97,24 +120,32 @@ export default function ProfileScreen() {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Sports pratiqués</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Sports pratiqués</Text>
+              <TouchableOpacity onPress={() => router.push('/edit-profile')} style={styles.addSportBtn}>
+                <Plus size={16} color={Colors.primary.blue} />
+              </TouchableOpacity>
+            </View>
             {user?.sports && user.sports.length > 0 ? (
-              user.sports.map((sport, index) => (
-                <Card key={index} style={styles.sportCard}>
-                  <View style={styles.sportRow}>
-                    <View style={styles.sportInfo}>
-                      <Text style={styles.sportName}>{sportLabels[sport.sport] || sport.sport}</Text>
-                      <Text style={styles.sportMeta}>{levelLabels[sport.level]} • {sport.yearsPlaying} ans</Text>
+              <View style={styles.sportsBadgesContainer}>
+                {user.sports.map((sport, index) => (
+                  <View key={index} style={styles.sportBadge}>
+                    <Text style={styles.sportBadgeEmoji}>
+                      {sport.sport === 'football' ? '⚽' : sport.sport === 'basketball' ? '🏀' : sport.sport === 'volleyball' ? '🏐' : sport.sport === 'tennis' ? '🎾' : '🏃'}
+                    </Text>
+                    <View style={styles.sportBadgeInfo}>
+                      <Text style={styles.sportBadgeName}>{sportLabels[sport.sport] || sport.sport}</Text>
+                      <Text style={styles.sportBadgeMeta}>{levelLabels[sport.level]}</Text>
                     </View>
-                    {sport.position && <View style={styles.positionBadge}><Text style={styles.positionText}>{sport.position}</Text></View>}
+                    {sport.position && <Text style={styles.sportBadgePosition}>{sport.position}</Text>}
                   </View>
-                </Card>
-              ))
+                ))}
+              </View>
             ) : (
-              <Card style={styles.emptyCard}>
-                <Text style={styles.emptyText}>Aucun sport ajouté</Text>
-                <TouchableOpacity onPress={() => router.push('/edit-profile')}><Text style={styles.addLink}>Ajouter un sport</Text></TouchableOpacity>
-              </Card>
+              <TouchableOpacity style={styles.emptySportsBadge} onPress={() => router.push('/edit-profile')}>
+                <Plus size={18} color={Colors.text.muted} />
+                <Text style={styles.emptySportsText}>Ajouter un sport</Text>
+              </TouchableOpacity>
             )}
           </View>
 
@@ -133,7 +164,7 @@ export default function ProfileScreen() {
               <Trophy size={20} color={Colors.primary.orange} />
               <View style={styles.menuTextContainer}>
                 <Text style={styles.menuText}>Trophées et récompenses</Text>
-                <Text style={styles.menuSubtext}>{unlockedTrophies} débloqués • {totalXP} XP</Text>
+                <Text style={styles.menuSubtext}>{unlockedTrophiesCount} débloqués • {totalXP} XP</Text>
               </View>
               <ChevronRight size={20} color={Colors.text.muted} />
             </TouchableOpacity>
@@ -194,16 +225,25 @@ const styles = StyleSheet.create({
   statsGrid: { flexDirection: 'row', gap: 12, marginBottom: 20 },
   section: { marginBottom: 24 },
   sectionTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const, marginBottom: 12 },
-  sportCard: { marginBottom: 10 },
-  sportRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sportInfo: { gap: 4 },
-  sportName: { color: Colors.text.primary, fontSize: 16, fontWeight: '600' as const },
-  sportMeta: { color: Colors.text.secondary, fontSize: 13 },
-  positionBadge: { backgroundColor: Colors.primary.blue, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  positionText: { color: '#FFFFFF', fontSize: 12, fontWeight: '500' as const },
-  emptyCard: { alignItems: 'center', paddingVertical: 20 },
-  emptyText: { color: Colors.text.muted, fontSize: 14 },
-  addLink: { color: Colors.primary.blue, fontSize: 14, fontWeight: '500' as const, marginTop: 8 },
+  trophiesPreview: { backgroundColor: Colors.background.card, borderRadius: 16, padding: 16, marginBottom: 20 },
+  trophiesPreviewHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  trophiesPreviewTitle: { flex: 1, color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const },
+  trophiesBadges: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  trophyBadge: { width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.background.cardLight, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
+  trophyBadgeIcon: { fontSize: 22 },
+  moreTrophiesBadge: { width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.background.cardLight, alignItems: 'center', justifyContent: 'center' },
+  moreTrophiesText: { color: Colors.text.muted, fontSize: 12, fontWeight: '600' as const },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  addSportBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
+  sportsBadgesContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  sportBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.background.card, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, borderColor: Colors.border.light },
+  sportBadgeEmoji: { fontSize: 20 },
+  sportBadgeInfo: { gap: 2 },
+  sportBadgeName: { color: Colors.text.primary, fontSize: 13, fontWeight: '600' as const },
+  sportBadgeMeta: { color: Colors.text.muted, fontSize: 11 },
+  sportBadgePosition: { color: Colors.primary.blue, fontSize: 11, fontWeight: '500' as const, backgroundColor: 'rgba(21,101,192,0.15)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginLeft: 4 },
+  emptySportsBadge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.background.card, paddingVertical: 16, borderRadius: 12, borderWidth: 1, borderColor: Colors.border.light, borderStyle: 'dashed' as const },
+  emptySportsText: { color: Colors.text.muted, fontSize: 14 },
   detailCard: { paddingVertical: 8 },
   detailRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
   lastRow: { borderBottomWidth: 0 },
