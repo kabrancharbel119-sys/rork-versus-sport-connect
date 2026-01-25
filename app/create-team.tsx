@@ -494,7 +494,7 @@ export default function CreateTeamScreen() {
                     value={customLogoUrl}
                     onChangeText={setCustomLogoUrl}
                     autoCapitalize="none"
-                    keyboardType="url"
+                    keyboardType="default"
                   />
                   {customLogoUrl.trim() && (
                     <View style={styles.logoPreviewContainer}>
