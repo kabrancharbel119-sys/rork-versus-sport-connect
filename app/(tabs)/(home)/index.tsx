@@ -9,9 +9,10 @@ import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
 import { useMatches } from '@/contexts/MatchesContext';
+import { useTournaments } from '@/contexts/TournamentsContext';
 import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
-import { mockTournaments, sportLabels, levelLabels } from '@/mocks/data';
+import { sportLabels, levelLabels } from '@/mocks/data';
 
 const { width } = Dimensions.get('window');
 
@@ -20,13 +21,15 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const { getRecruitingTeams, getUserTeams, teams } = useTeams();
   const { getUpcomingMatches, matches } = useMatches();
+  const { tournaments, getUserTournaments, getActiveTournaments } = useTournaments();
 
   const userTeams = user ? getUserTeams(user.id) : [];
   const upcomingMatches = getUpcomingMatches().slice(0, 3);
   const userCreatedMatches = user ? matches.filter(m => m.createdBy === user.id && m.status !== 'completed').slice(0, 3) : [];
   const displayMatches = upcomingMatches.length > 0 ? upcomingMatches : userCreatedMatches;
   const recruitingTeams = getRecruitingTeams().slice(0, 3);
-  const activeTournaments = mockTournaments.filter(t => t.status === 'registration');
+  const activeTournaments = getActiveTournaments().filter(t => t.status === 'registration');
+  const userTournaments = user ? getUserTournaments(user.id) : [];
 
   const formatDate = (date: Date) => {
     const d = new Date(date);
@@ -131,7 +134,7 @@ export default function HomeScreen() {
             
             <TouchableOpacity 
               style={styles.quickAction}
-              onPress={() => router.push('/(tabs)/matches')}
+              onPress={() => router.push('/create-tournament')}
             >
               <LinearGradient
                 colors={['rgba(16, 185, 129, 0.2)', 'rgba(16, 185, 129, 0.05)']}
@@ -139,7 +142,7 @@ export default function HomeScreen() {
               >
                 <Trophy size={24} color={Colors.status.success} />
               </LinearGradient>
-              <Text style={styles.quickActionText}>Tournois</Text>
+              <Text style={styles.quickActionText}>Tournoi</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
@@ -156,10 +159,10 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {activeTournaments.length > 0 && (
+          {userTournaments.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>🏆 Tournois en cours</Text>
+                <Text style={styles.sectionTitle}>🏆 Mes tournois</Text>
                 <TouchableOpacity onPress={() => router.push('/tournaments')}>
                   <Text style={styles.seeAll}>Voir tout</Text>
                 </TouchableOpacity>
@@ -170,7 +173,57 @@ export default function HomeScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.horizontalScroll}
               >
-                {activeTournaments.map((tournament) => (
+                {userTournaments.slice(0, 5).map((tournament) => (
+                  <TouchableOpacity key={tournament.id} activeOpacity={0.8} onPress={() => router.push(`/tournament/${tournament.id}`)}>
+                    <LinearGradient
+                      colors={[Colors.primary.blue, Colors.primary.blueDark]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.tournamentCard}
+                    >
+                      <View style={styles.tournamentBadge}>
+                        <Trophy size={14} color="#FFFFFF" />
+                        <Text style={styles.tournamentBadgeText}>
+                          {tournament.prizePool.toLocaleString()} FCFA
+                        </Text>
+                      </View>
+                      <Text style={styles.tournamentName}>{tournament.name}</Text>
+                      <Text style={styles.tournamentInfo}>
+                        {sportLabels[tournament.sport]} • {tournament.format}
+                      </Text>
+                      <View style={styles.tournamentMeta}>
+                        <Calendar size={12} color="rgba(255,255,255,0.8)" />
+                        <Text style={styles.tournamentDate}>
+                          {formatDate(tournament.startDate)}
+                        </Text>
+                      </View>
+                      <View style={styles.tournamentTeams}>
+                        <Text style={styles.tournamentTeamsText}>
+                          {tournament.registeredTeams.length}/{tournament.maxTeams} équipes
+                        </Text>
+                      </View>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {activeTournaments.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>🔥 Tournois ouverts</Text>
+                <TouchableOpacity onPress={() => router.push('/tournaments')}>
+                  <Text style={styles.seeAll}>Voir tout</Text>
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalScroll}
+              >
+                {activeTournaments.slice(0, 5).map((tournament) => (
                   <TouchableOpacity key={tournament.id} activeOpacity={0.8} onPress={() => router.push(`/tournament/${tournament.id}`)}>
                     <LinearGradient
                       colors={[Colors.gradient.orangeStart, Colors.gradient.orangeEnd]}

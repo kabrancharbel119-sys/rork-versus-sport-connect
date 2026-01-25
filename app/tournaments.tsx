@@ -6,10 +6,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Trophy, Calendar, MapPin, Users } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { Card } from '@/components/Card';
-import { mockTournaments, sportLabels, levelLabels } from '@/mocks/data';
+import { Button } from '@/components/Button';
+import { useTournaments } from '@/contexts/TournamentsContext';
+import { sportLabels, levelLabels } from '@/mocks/data';
 
 export default function TournamentsScreen() {
   const router = useRouter();
+  const { tournaments, isLoading } = useTournaments();
 
   const formatDate = (date: Date) => {
     const d = new Date(date);
@@ -50,8 +53,8 @@ export default function TournamentsScreen() {
           </View>
 
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-            {mockTournaments.length > 0 ? (
-              mockTournaments.map((tournament) => (
+            {tournaments.length > 0 ? (
+              tournaments.map((tournament) => (
                 <TouchableOpacity 
                   key={tournament.id} 
                   activeOpacity={0.8}
@@ -125,7 +128,14 @@ export default function TournamentsScreen() {
               <Card style={styles.emptyCard}>
                 <Trophy size={48} color={Colors.text.muted} />
                 <Text style={styles.emptyTitle}>Aucun tournoi disponible</Text>
-                <Text style={styles.emptyText}>Les tournois à venir apparaîtront ici</Text>
+                <Text style={styles.emptyText}>Créez votre premier tournoi</Text>
+                <Button 
+                  title="Créer un tournoi" 
+                  onPress={() => router.push('/create-tournament')} 
+                  variant="orange" 
+                  size="medium" 
+                  style={styles.createButton}
+                />
               </Card>
             )}
           </ScrollView>
@@ -270,5 +280,8 @@ const styles = StyleSheet.create({
   emptyText: { 
     color: Colors.text.muted, 
     fontSize: 14 
+  },
+  createButton: {
+    marginTop: 16,
   },
 });

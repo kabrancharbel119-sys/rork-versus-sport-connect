@@ -9,6 +9,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { TeamsProvider } from "@/contexts/TeamsContext";
 import { MatchesProvider } from "@/contexts/MatchesContext";
+import { TournamentsProvider } from "@/contexts/TournamentsContext";
 import { ChatProvider } from "@/contexts/ChatContext";
 import { LocationProvider } from "@/contexts/LocationContext";
 import { UsersProvider } from "@/contexts/UsersContext";
@@ -104,6 +105,9 @@ function RootLayoutNav() {
       <Stack.Screen name="search" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       <Stack.Screen name="referral" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       <Stack.Screen name="statistics" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="create-tournament" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="tournaments" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="tournament/[id]" />
     </Stack>
   );
 }
@@ -130,9 +134,11 @@ export default function RootLayout() {
                             <LocationProvider>
                               <TeamsProvider>
                                 <MatchesProvider>
-                                  <ChatProvider>
-                                    <RootLayoutNav />
-                                  </ChatProvider>
+                                  <TournamentsProvider>
+                                    <ChatProvider>
+                                      <RootLayoutNav />
+                                    </ChatProvider>
+                                  </TournamentsProvider>
                                 </MatchesProvider>
                               </TeamsProvider>
                             </LocationProvider>
