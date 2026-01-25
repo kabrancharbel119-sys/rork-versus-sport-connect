@@ -202,6 +202,34 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
     },
   });
 
+  const updateMatchMutation = useMutation({
+    mutationFn: async ({ matchId, updates }: { matchId: string; updates: Partial<Pick<Match, 'sport' | 'format' | 'type' | 'dateTime' | 'duration' | 'level' | 'ambiance' | 'maxPlayers' | 'entryFee' | 'prize' | 'venue'>> }) => {
+      console.log('[Matches] Updating match:', matchId, updates);
+      const matchIndex = matches.findIndex(m => m.id === matchId);
+      if (matchIndex === -1) throw new Error('Match non trouvé');
+      
+      const updatedMatches = [...matches];
+      updatedMatches[matchIndex] = {
+        ...updatedMatches[matchIndex],
+        ...updates,
+      };
+      await saveMatches(updatedMatches);
+      return updatedMatches[matchIndex];
+    },
+  });
+
+  const deleteMatchMutation = useMutation({
+    mutationFn: async ({ matchId, userId }: { matchId: string; userId: string }) => {
+      console.log('[Matches] Deleting match:', matchId);
+      const match = matches.find(m => m.id === matchId);
+      if (!match) throw new Error('Match non trouvé');
+      if (match.createdBy !== userId) throw new Error('Seul le créateur peut supprimer ce match');
+      
+      const updatedMatches = matches.filter(m => m.id !== matchId);
+      await saveMatches(updatedMatches);
+    },
+  });
+
   const getMatchById = useCallback((id: string) => matches.find(m => m.id === id), [matches]);
   
   const getUpcomingMatches = useCallback(() => {
@@ -243,11 +271,14 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
     joinMatch: joinMatchMutation.mutateAsync,
     leaveMatch: leaveMatchMutation.mutateAsync,
     updateMatchScore: updateMatchScoreMutation.mutateAsync,
+    updateMatch: updateMatchMutation.mutateAsync,
+    deleteMatch: deleteMatchMutation.mutateAsync,
     getMatchById,
     getUpcomingMatches,
     getUserMatches,
     getMatchesNeedingPlayers,
     getMatchesByCity,
     isCreating: createMatchMutation.isPending,
+    isUpdating: updateMatchMutation.isPending,
   };
 });

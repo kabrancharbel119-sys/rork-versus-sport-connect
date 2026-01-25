@@ -3,7 +3,7 @@ import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'rea
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Calendar, Clock, MapPin, Users, Trophy, DollarSign, Share2 } from 'lucide-react-native';
+import { ArrowLeft, Calendar, Clock, MapPin, Users, Trophy, DollarSign, Share2, Edit2, Trash2 } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMatches } from '@/contexts/MatchesContext';
@@ -17,7 +17,7 @@ export default function MatchDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { getMatchById, joinMatch, leaveMatch } = useMatches();
+  const { getMatchById, joinMatch, leaveMatch, updateMatch, deleteMatch, isUpdating } = useMatches();
   const { getUserById } = useUsers();
   const [isJoining, setIsJoining] = useState(false);
 
@@ -84,6 +84,33 @@ export default function MatchDetailScreen() {
     );
   };
 
+  const handleEdit = () => {
+    router.push(`/edit-match/${match.id}`);
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Supprimer le match',
+      'Êtes-vous sûr de vouloir supprimer ce match ? Cette action est irréversible.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteMatch({ matchId: match.id, userId: user!.id });
+              Alert.alert('Succès', 'Match supprimé');
+              router.back();
+            } catch (error: any) {
+              Alert.alert('Erreur', error.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'open': return Colors.status.success;
@@ -114,9 +141,21 @@ export default function MatchDetailScreen() {
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.shareButton}>
-              <Share2 size={22} color={Colors.text.primary} />
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              {isCreator && (
+                <>
+                  <TouchableOpacity style={styles.headerButton} onPress={handleEdit}>
+                    <Edit2 size={20} color={Colors.primary.blue} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.headerButton} onPress={handleDelete}>
+                    <Trash2 size={20} color={Colors.status.error} />
+                  </TouchableOpacity>
+                </>
+              )}
+              <TouchableOpacity style={styles.headerButton}>
+                <Share2 size={20} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <ScrollView
@@ -322,7 +361,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  shareButton: {
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  headerButton: {
     width: 44,
     height: 44,
     borderRadius: 22,

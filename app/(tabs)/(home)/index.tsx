@@ -45,14 +45,16 @@ export default function HomeScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Avatar uri={user?.avatar} name={user?.fullName} size="medium" />
+            <TouchableOpacity onPress={() => router.push('/(tabs)/profile')}>
+              <Avatar uri={user?.avatar} name={user?.fullName} size="medium" />
+            </TouchableOpacity>
             <View style={styles.headerText}>
-              <Text style={styles.greeting}>Salut,</Text>
-              <Text style={styles.userName}>{user?.fullName?.split(' ')[0] || 'Joueur'} 👋</Text>
+              <Text style={styles.greeting}>👋 Salut,</Text>
+              <Text style={styles.userName}>{user?.fullName?.split(' ')[0] || 'Joueur'}</Text>
             </View>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.iconButton}>
+            <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/(tabs)/matches')}>
               <Search size={22} color={Colors.text.primary} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/notifications')}>
@@ -137,7 +139,10 @@ export default function HomeScreen() {
               <Text style={styles.quickActionText}>Tournois</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.quickAction}>
+            <TouchableOpacity 
+              style={styles.quickAction}
+              onPress={() => router.push('/(tabs)/profile')}
+            >
               <LinearGradient
                 colors={['rgba(139, 92, 246, 0.2)', 'rgba(139, 92, 246, 0.05)']}
                 style={styles.quickActionGradient}
