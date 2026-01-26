@@ -156,11 +156,18 @@ export default function HomeScreen() {
             </Section>
           )}
 
-          {userTeams.length > 0 && (
-            <Section title="🏅 Mes équipes" onSeeAll={() => router.push('/(tabs)/teams')}>
-              {userTeams.slice(0, 3).map(team => <TeamCard key={team.id} team={team} />)}
-            </Section>
-          )}
+          <Section title="🏅 Mes équipes" onSeeAll={() => router.push('/(tabs)/teams')}>
+            {userTeams.length > 0 ? (
+              userTeams.slice(0, 3).map(team => <TeamCard key={team.id} team={team} />)
+            ) : (
+              <Card style={styles.emptyCard}>
+                <Text style={styles.emptyText}>Aucune équipe</Text>
+                <TouchableOpacity onPress={() => router.push('/create-team')}>
+                  <Text style={styles.emptyLink}>Créer une équipe</Text>
+                </TouchableOpacity>
+              </Card>
+            )}
+          </Section>
 
           {activeTournaments.length > 0 && (
             <Section title="🔥 Tournois ouverts" onSeeAll={() => router.push('/tournaments')}>
