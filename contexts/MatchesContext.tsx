@@ -3,7 +3,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
 import { Match, Sport, SkillLevel, PlayStyle, Venue, UserLocation, MatchPlayerStats } from '@/types';
-import { mockMatches, mockVenues } from '@/mocks/data';
 import { matchesApi } from '@/lib/api/matches';
 import { venuesApi } from '@/lib/api/venues';
 
@@ -30,7 +29,7 @@ interface CreateMatchData {
 export const [MatchesProvider, useMatches] = createContextHook(() => {
   const queryClient = useQueryClient();
   const [matches, setMatches] = useState<Match[]>([]);
-  const [venues, setVenues] = useState<Venue[]>(mockVenues);
+  const [venues, setVenues] = useState<Venue[]>([]);
 
   const parseMatchDates = (matches: Match[]): Match[] => {
     return matches.map(m => ({
@@ -44,25 +43,22 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
   const matchesQuery = useQuery({
     queryKey: ['matches'],
     queryFn: async () => {
-      console.log('[Matches] Loading matches...');
+      if (__DEV__) console.log('[Matches] Loading matches...');
       try {
         const serverMatches = await matchesApi.getAll();
-        if (serverMatches.length > 0) {
-          await AsyncStorage.setItem(MATCHES_STORAGE_KEY, JSON.stringify(serverMatches));
-          return parseMatchDates(serverMatches);
-        }
+        await AsyncStorage.setItem(MATCHES_STORAGE_KEY, JSON.stringify(serverMatches));
+        return parseMatchDates(serverMatches);
       } catch (e) {
-        console.log('[Matches] Server fetch failed, using local storage');
+        if (__DEV__) console.log('[Matches] Server fetch failed, using local storage');
+        const stored = await AsyncStorage.getItem(MATCHES_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored) as Match[];
+          return parseMatchDates(parsed);
+        }
+        throw e;
       }
-      
-      const stored = await AsyncStorage.getItem(MATCHES_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as Match[];
-        return parseMatchDates(parsed);
-      }
-      await AsyncStorage.setItem(MATCHES_STORAGE_KEY, JSON.stringify(mockMatches));
-      return parseMatchDates(mockMatches);
     },
+    staleTime: 60 * 1000,
   });
 
   const venuesQuery = useQuery({
@@ -73,9 +69,9 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
         const serverVenues = await venuesApi.getAll();
         if (serverVenues.length > 0) return serverVenues;
       } catch (e) {
-        console.log('[Matches] Venues fetch failed, using mock data');
+        console.log('[Matches] Venues fetch failed');
       }
-      return mockVenues;
+      return [];
     },
   });
 
@@ -114,7 +110,7 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
           lat: data.location?.latitude,
           lng: data.location?.longitude,
         });
-        await saveMatches([...matches, result]);
+        queryClient.invalidateQueries({ queryKey: ['matches'] });
         return result;
       } catch (err: any) {
         console.log('[Matches] Supabase error, using local:', err.message);
@@ -231,11 +227,11 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
   });
 
   const deleteMatchMutation = useMutation({
-    mutationFn: async ({ matchId, userId }: { matchId: string; userId: string }) => {
-      console.log('[Matches] Deleting match:', matchId);
+    mutationFn: async ({ matchId, userId, asAdmin }: { matchId: string; userId: string; asAdmin?: boolean }) => {
+      if (__DEV__) console.log('[Matches] Deleting match:', matchId, asAdmin ? '(admin)' : '');
       const match = matches.find(m => m.id === matchId);
       if (!match) throw new Error('Match non trouvé');
-      if (match.createdBy !== userId) throw new Error('Seul le créateur peut supprimer ce match');
+      if (!asAdmin && match.createdBy !== userId) throw new Error('Seul le créateur peut supprimer ce match');
       
       const updatedMatches = matches.filter(m => m.id !== matchId);
       await saveMatches(updatedMatches);
@@ -252,6 +248,12 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
   
   const getUserMatches = useCallback((userId: string) => {
     return matches.filter(m => m.registeredPlayers.includes(userId) || m.createdBy === userId);
+  }, [matches]);
+
+  const getCompletedUserMatches = useCallback((userId: string) => {
+    return matches
+      .filter(m => (m.registeredPlayers.includes(userId) || m.createdBy === userId) && m.status === 'completed')
+      .sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
   }, [matches]);
 
   const getMatchesNeedingPlayers = useCallback((userLocation?: UserLocation, radiusKm: number = 50) => {
@@ -271,14 +273,20 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
   const getMatchesByCity = useCallback((city: string) => {
     return matches.filter(m => 
       (m.status === 'open' || m.status === 'confirmed') &&
-      (m.venue.city.toLowerCase() === city.toLowerCase() || m.location?.city.toLowerCase() === city.toLowerCase())
+      (m.venue?.city?.toLowerCase() === city.toLowerCase() || m.location?.city?.toLowerCase() === city.toLowerCase())
     );
   }, [matches]);
+
+  const refetchMatches = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['matches'] });
+  }, [queryClient]);
 
   return {
     matches,
     venues,
     isLoading: matchesQuery.isLoading,
+    isError: matchesQuery.isError,
+    refetchMatches,
     createMatch: createMatchMutation.mutateAsync,
     joinMatch: joinMatchMutation.mutateAsync,
     leaveMatch: leaveMatchMutation.mutateAsync,
@@ -288,6 +296,7 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
     getMatchById,
     getUpcomingMatches,
     getUserMatches,
+    getCompletedUserMatches,
     getMatchesNeedingPlayers,
     getMatchesByCity,
     isCreating: createMatchMutation.isPending,

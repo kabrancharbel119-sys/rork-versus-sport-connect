@@ -3,7 +3,7 @@ import { StyleSheet, View, Text, ScrollView, TouchableOpacity } from 'react-nati
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Trophy, Calendar, MapPin, Users } from 'lucide-react-native';
+import { ArrowLeft, Trophy, Calendar, MapPin, Users, Plus } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
@@ -49,7 +49,9 @@ export default function TournamentsScreen() {
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Tournois</Text>
-            <View style={styles.placeholder} />
+            <TouchableOpacity style={styles.createButton} onPress={() => router.push('/create-tournament')} accessibilityLabel="Créer un tournoi" accessibilityRole="button">
+              <Plus size={22} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
 
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -169,6 +171,7 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const 
   },
   placeholder: { width: 44 },
+  createButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.primary.orange, alignItems: 'center', justifyContent: 'center' },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 20 },
   tournamentCard: { 

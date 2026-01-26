@@ -36,6 +36,8 @@ export interface User {
   isPremium: boolean;
   isBanned: boolean;
   role: UserRole;
+  /** Seuls les organisateurs certifiés (ou admin) peuvent créer des matchs classés */
+  canCreateRankedMatches?: boolean;
   location?: UserLocation;
   createdAt: Date;
   availability: Availability[];

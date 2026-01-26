@@ -1,28 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, Modal, TextInput, Switch, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, Modal, TextInput, Switch, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Star, MapPin, Settings, UserPlus, MessageCircle, Shield, Plus, Check, X, ChevronDown, Edit3, Image, Crown, Trash2, Lock, Unlock, AlertTriangle, ChevronRight } from 'lucide-react-native';
+import { ArrowLeft, Star, MapPin, Settings, UserPlus, MessageCircle, Shield, Plus, Check, X, ChevronDown, Edit3, Image, Crown, Trash2, Lock, Unlock, AlertTriangle, ChevronRight, Info } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
 import { useUsers } from '@/contexts/UsersContext';
+import { useNotifications } from '@/contexts/NotificationsContext';
+import { teamsApi } from '@/lib/api/teams';
 import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { StatCard } from '@/components/StatCard';
-import { sportLabels, levelLabels, ambianceLabels, TEAM_ROLES, DEFAULT_POSITIONS
-
- } from '@/mocks/data';
+import { sportLabels, levelLabels, ambianceLabels, TEAM_ROLES, DEFAULT_POSITIONS } from '@/mocks/data';
 import { SkillLevel, PlayStyle } from '@/types';
+import type { Team } from '@/types';
 
 export default function TeamDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { getTeamById, sendJoinRequest, leaveTeam, handleRequest, updateMemberRole, addCustomRole, promoteMember, removeMember, getPendingRequests, updateTeam, deleteTeam, transferCaptaincy, isUpdating } = useTeams();
+  const { getTeamById, sendJoinRequest, leaveTeam, handleRequest, updateMemberRole, addCustomRole, promoteMember, removeMember, getPendingRequests, updateTeam, deleteTeam, transferCaptaincy, isUpdating, refetchTeams, getUserTeams } = useTeams();
   const { getUserById } = useUsers();
+  const { addNotification, notifyTeamRequest } = useNotifications();
+  const fromContext = getTeamById(id || '');
+  const [fetchedTeam, setFetchedTeam] = useState<Team | null>(null);
+  const [loadingTeam, setLoadingTeam] = useState(false);
   const [isRequesting, setIsRequesting] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showRequestsModal, setShowRequestsModal] = useState(false);
@@ -41,8 +47,26 @@ export default function TeamDetailScreen() {
   const [editLevel, setEditLevel] = useState<SkillLevel>('intermediate');
   const [editAmbiance, setEditAmbiance] = useState<PlayStyle>('mixed');
 
-  const team = getTeamById(id || '');
-  
+  useFocusEffect(
+    useCallback(() => {
+      refetchTeams();
+    }, [refetchTeams])
+  );
+
+  useEffect(() => {
+    if (id && !fromContext) {
+      setLoadingTeam(true);
+      teamsApi.getById(id)
+        .then(t => setFetchedTeam(t))
+        .catch(() => setFetchedTeam(null))
+        .finally(() => setLoadingTeam(false));
+    } else {
+      setFetchedTeam(null);
+    }
+  }, [id, fromContext]);
+
+  const team = fromContext ?? fetchedTeam;
+
   const isMember = team?.members.some(m => m.userId === user?.id) ?? false;
   const isCaptain = team?.captainId === user?.id;
   const isCoCaptain = team?.coCaptainIds.includes(user?.id || '') ?? false;
@@ -76,6 +100,20 @@ export default function TeamDetailScreen() {
     }
   }, [team, canManage, pendingRequests.length, showPendingAlert]);
 
+  if (loadingTeam && !team) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.errorContainer}>
+            <ActivityIndicator size="large" color={Colors.primary.orange} />
+            <Text style={styles.errorText}>Chargement...</Text>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
   if (!team) {
     return (
       <View style={styles.container}>
@@ -89,10 +127,34 @@ export default function TeamDetailScreen() {
 
   const handleJoinRequest = async () => {
     if (!user) return;
+    if (getUserTeams(user.id).length >= 1) {
+      Alert.alert(
+        'Une seule équipe',
+        'Vous ne pouvez être membre que d\'une seule équipe à la fois. Quittez votre équipe actuelle pour rejoindre une autre.'
+      );
+      return;
+    }
     setIsRequesting(true);
-    try { await sendJoinRequest({ teamId: team.id, userId: user.id }); Alert.alert('Succès', 'Demande envoyée !'); }
-    catch (error: any) { Alert.alert('Erreur', error.message); }
-    setIsRequesting(false);
+    try {
+      await sendJoinRequest({ teamId: team.id, userId: user.id });
+      const msg = `${user.fullName || user.username} souhaite rejoindre ${team.name}`;
+      const payload = { type: 'team' as const, title: 'Nouvelle demande', message: msg, data: { route: `/team/${team.id}` } };
+      await addNotification({ userId: team.captainId, ...payload });
+      for (const coId of team.coCaptainIds || []) {
+        if (coId && coId !== team.captainId) {
+          await addNotification({ userId: coId, ...payload });
+        }
+      }
+      await refetchTeams();
+      Alert.alert(
+        'Demande envoyée',
+        'Votre demande a été envoyée au capitaine pour approbation. Vous serez notifié lorsqu\'elle sera acceptée ou refusée.'
+      );
+    } catch (error: any) {
+      Alert.alert('Erreur', error.message ?? 'Impossible d\'envoyer la demande');
+    } finally {
+      setIsRequesting(false);
+    }
   };
 
   const handleLeave = () => {
@@ -103,8 +165,18 @@ export default function TeamDetailScreen() {
   };
 
   const handleRequestAction = async (requestId: string, action: 'accept' | 'reject') => {
-    try { await handleRequest({ teamId: team.id, requestId, action, handlerId: user!.id }); Alert.alert('Succès', action === 'accept' ? 'Membre ajouté' : 'Demande refusée'); }
-    catch (e: any) { Alert.alert('Erreur', e.message); }
+    const req = pendingRequests.find((r) => r.id === requestId);
+    try {
+      await handleRequest({ teamId: team.id, requestId, action, handlerId: user!.id });
+      if (req?.userId) {
+        await notifyTeamRequest(team.name, action === 'accept' ? 'accepted' : 'rejected', team.id, req.userId);
+      }
+      setShowRequestsModal(false);
+      await refetchTeams();
+      Alert.alert('Succès', action === 'accept' ? 'Membre ajouté' : 'Demande refusée');
+    } catch (e: any) {
+      Alert.alert('Erreur', e.message);
+    }
   };
 
   const handleUpdateRole = async (userId: string, customRole: string, position?: string) => {
@@ -121,14 +193,44 @@ export default function TeamDetailScreen() {
   const handlePromote = (userId: string, role: 'co-captain' | 'member') => {
     Alert.alert('Confirmer', `${role === 'co-captain' ? 'Promouvoir co-capitaine' : 'Rétrograder membre'} ?`, [
       { text: 'Annuler', style: 'cancel' },
-      { text: 'Confirmer', onPress: async () => { try { await promoteMember({ teamId: team.id, userId, role, promoterId: user!.id }); } catch (e: any) { Alert.alert('Erreur', e.message); } } },
+      {
+        text: 'Confirmer',
+        onPress: async () => {
+          try {
+            await promoteMember({ teamId: team.id, userId, role, promoterId: user!.id });
+            const msg = role === 'co-captain'
+              ? { title: '⭐ Promotion', message: `Vous avez été promu co-capitaine de ${team.name}.` }
+              : { title: 'Rôle mis à jour', message: `Vous n'êtes plus co-capitaine de ${team.name}.` };
+            await addNotification({ userId, type: 'team', ...msg, data: { route: `/team/${team.id}` } });
+          } catch (e: any) {
+            Alert.alert('Erreur', e.message);
+          }
+        },
+      },
     ]);
   };
 
   const handleRemoveMember = (userId: string) => {
     Alert.alert('Retirer', 'Retirer ce membre ?', [
       { text: 'Annuler', style: 'cancel' },
-      { text: 'Retirer', style: 'destructive', onPress: async () => { try { await removeMember({ teamId: team.id, userId }); } catch (e: any) { Alert.alert('Erreur', e.message); } } },
+      {
+        text: 'Retirer',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await removeMember({ teamId: team.id, userId });
+            await addNotification({
+              userId,
+              type: 'team',
+              title: '👋 Retrait de l\'équipe',
+              message: `Vous avez été retiré de l'équipe ${team.name}.`,
+              data: { route: '/(tabs)/teams' },
+            });
+          } catch (e: any) {
+            Alert.alert('Erreur', e.message);
+          }
+        },
+      },
     ]);
   };
 
@@ -159,16 +261,30 @@ export default function TeamDetailScreen() {
       `Êtes-vous sûr de vouloir dissoudre ${team.name} ? Cette action est irréversible.`,
       [
         { text: 'Annuler', style: 'cancel' },
-        { text: 'Dissoudre', style: 'destructive', onPress: async () => {
-          try {
-            await deleteTeam({ teamId: team.id, userId: user!.id });
-            setShowSettingsModal(false);
-            router.back();
-            Alert.alert('Succès', 'Équipe dissoute');
-          } catch (e: any) {
-            Alert.alert('Erreur', e.message);
-          }
-        }},
+        {
+          text: 'Dissoudre',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const memberIds = team.members.map((m) => m.userId).filter((id) => id !== user!.id);
+              await deleteTeam({ teamId: team.id, userId: user!.id });
+              for (const uid of memberIds) {
+                await addNotification({
+                  userId: uid,
+                  type: 'team',
+                  title: 'Équipe dissoute',
+                  message: `L'équipe ${team.name} a été dissoute.`,
+                  data: { route: '/(tabs)/teams' },
+                });
+              }
+              setShowSettingsModal(false);
+              router.back();
+              Alert.alert('Succès', 'Équipe dissoute');
+            } catch (e: any) {
+              Alert.alert('Erreur', e.message);
+            }
+          },
+        },
       ]
     );
   };
@@ -183,7 +299,15 @@ export default function TeamDetailScreen() {
         { text: 'Transférer', onPress: async () => {
           try {
             await transferCaptaincy({ teamId: team.id, newCaptainId, currentCaptainId: user!.id });
+            await addNotification({
+              userId: newCaptainId,
+              type: 'team',
+              title: '👑 Nouveau capitaine',
+              message: `Vous êtes maintenant le capitaine de l'équipe ${team.name}.`,
+              data: { route: `/team/${team.id}` },
+            });
             setShowTransferModal(false);
+            await refetchTeams();
             Alert.alert('Succès', 'Capitanat transféré');
           } catch (e: any) {
             Alert.alert('Erreur', e.message);
@@ -195,6 +319,8 @@ export default function TeamDetailScreen() {
 
   const otherMembers = team.members.filter(m => m.userId !== team.captainId);
 
+  const previewForNonMember = !isMember;
+
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
@@ -204,12 +330,12 @@ export default function TeamDetailScreen() {
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
             <View style={styles.headerActions}>
-              {canManage && pendingRequests.length > 0 && (
+              {!previewForNonMember && canManage && pendingRequests.length > 0 && (
                 <TouchableOpacity style={styles.requestsBadge} onPress={() => setShowRequestsModal(true)}>
                   <UserPlus size={18} color="#FFFFFF" /><Text style={styles.requestsCount}>{pendingRequests.length}</Text>
                 </TouchableOpacity>
               )}
-              {isCaptain && <TouchableOpacity style={styles.settingsButton} onPress={() => setShowSettingsModal(true)}><Settings size={22} color={Colors.text.primary} /></TouchableOpacity>}
+              {!previewForNonMember && isCaptain && <TouchableOpacity style={styles.settingsButton} onPress={() => setShowSettingsModal(true)}><Settings size={22} color={Colors.text.primary} /></TouchableOpacity>}
             </View>
           </View>
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -231,6 +357,45 @@ export default function TeamDetailScreen() {
               )}
             </View>
 
+            {previewForNonMember ? (
+              <>
+                {team.description && <Card style={styles.descriptionCard}><Text style={styles.description} numberOfLines={4}>{team.description}</Text></Card>}
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Membres ({team.members.length}/{team.maxMembers})</Text>
+                  <Text style={styles.previewMembersHint}>Seuls le nom et le rôle du capitaine sont visibles. Rejoignez l&apos;équipe pour tout voir.</Text>
+                  {team.members.map((member) => (
+                    <Card key={member.userId} style={styles.memberCard}>
+                      <View style={styles.memberRow}>
+                        <Avatar uri={getUserById(member.userId)?.avatar} name={getUserById(member.userId)?.fullName || getUserById(member.userId)?.username} size="medium" />
+                        <View style={styles.memberInfo}>
+                          <Text style={styles.memberName}>{getUserById(member.userId)?.fullName || getUserById(member.userId)?.username || 'Membre'}</Text>
+                          <Text style={styles.memberPosition}>{member.role === 'captain' ? 'Capitaine' : member.role === 'co-captain' ? 'Co-capitaine' : 'Membre'}</Text>
+                        </View>
+                        {member.role === 'captain' && <View style={styles.organizerBadge}><Crown size={14} color={Colors.primary.orange} /></View>}
+                      </View>
+                    </Card>
+                  ))}
+                </View>
+                <Card style={styles.accessCard} variant="gradient">
+                  <Info size={22} color={Colors.primary.blue} />
+                  <Text style={styles.accessTitle}>Accès réservé aux membres</Text>
+                  <Text style={styles.accessText}>
+                    Pour accéder aux stats, au chat et à la gestion de l&apos;équipe, envoyez une demande au capitaine. Une fois acceptée, vous aurez tous les droits.
+                  </Text>
+                </Card>
+                <View style={styles.actions}>
+                  {hasRequested ? (
+                    <Button title="Demande envoyée au capitaine" onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
+                  ) : team.isRecruiting && team.members.length < team.maxMembers ? (
+                    <Button title="Demander à rejoindre" onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
+                  ) : (
+                    <Button title="Recrutement fermé" onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
+                  )}
+                </View>
+                <View style={styles.bottomSpacer} />
+              </>
+            ) : (
+              <>
             {team.description && <Card style={styles.descriptionCard}><Text style={styles.description}>{team.description}</Text></Card>}
 
             <View style={styles.statsRow}>
@@ -268,20 +433,12 @@ export default function TeamDetailScreen() {
             </View>
 
             <View style={styles.actions}>
-              {isMember ? (
-                <>
-                  <Button title="Chat d'équipe" onPress={() => router.push('/(tabs)/chat')} variant="primary" icon={<MessageCircle size={18} color="#FFFFFF" />} style={styles.actionButton} />
-                  {!isCaptain && <Button title="Quitter l'équipe" onPress={handleLeave} variant="outline" style={styles.actionButton} />}
-                </>
-              ) : hasRequested ? (
-                <Button title="Demande en attente..." onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
-              ) : team.isRecruiting ? (
-                <Button title="Demander à rejoindre" onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
-              ) : (
-                <Button title="Équipe complète" onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
-              )}
+              <Button title="Chat d'équipe" onPress={() => router.push('/(tabs)/chat')} variant="primary" icon={<MessageCircle size={18} color="#FFFFFF" />} style={styles.actionButton} />
+              {!isCaptain && <Button title="Quitter l'équipe" onPress={handleLeave} variant="outline" style={styles.actionButton} />}
             </View>
             <View style={styles.bottomSpacer} />
+              </>
+            )}
           </ScrollView>
         </SafeAreaView>
 
@@ -569,6 +726,9 @@ const styles = StyleSheet.create({
   memberBadgeText: { color: Colors.primary.orange, fontSize: 13, fontWeight: '600' as const },
   descriptionCard: { marginBottom: 20 },
   description: { color: Colors.text.secondary, fontSize: 14, lineHeight: 22 },
+  accessCard: { marginBottom: 24, flexDirection: 'column', alignItems: 'center', padding: 20, gap: 12 },
+  accessTitle: { color: Colors.text.primary, fontSize: 16, fontWeight: '600' as const },
+  accessText: { color: Colors.text.secondary, fontSize: 14, lineHeight: 22, textAlign: 'center' as const },
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   reputationCard: { marginBottom: 24 },
   reputationRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -581,6 +741,8 @@ const styles = StyleSheet.create({
   section: { marginBottom: 24 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   sectionTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const },
+  previewMembersHint: { color: Colors.text.muted, fontSize: 12, marginBottom: 12 },
+  organizerBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.primary.orange + '25', alignItems: 'center', justifyContent: 'center' },
   addRoleBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.primary.blue, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
   addRoleBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '500' as const },
   memberCard: { marginBottom: 8 },

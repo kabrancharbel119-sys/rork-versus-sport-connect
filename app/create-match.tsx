@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X, Swords, MapPin, Calendar, Clock } from 'lucide-react-native';
+import { X, Swords, MapPin, Calendar, Clock, Trophy } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMatches } from '@/contexts/MatchesContext';
@@ -11,7 +11,7 @@ import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Sport, SkillLevel, PlayStyle } from '@/types';
-import { sportLabels, levelLabels, ambianceLabels, mockVenues } from '@/mocks/data';
+import { sportLabels, levelLabels, ambianceLabels } from '@/mocks/data';
 
 const sports: Sport[] = ['football', 'basketball', 'volleyball', 'tennis', 'handball', 'rugby'];
 const levels: SkillLevel[] = ['beginner', 'intermediate', 'advanced', 'expert'];
@@ -65,31 +65,43 @@ export default function CreateMatchScreen() {
     type: 'friendly' as 'friendly' | 'ranked',
     level: 'intermediate' as SkillLevel,
     ambiance: 'mixed' as PlayStyle,
-    venueId: mockVenues[0]?.id || '',
+    venueId: '',
     date: tomorrow.toISOString().split('T')[0],
     time: '15:00',
     duration: '90',
     maxPlayers: '10',
-    entryFee: '',
-    prize: '',
   });
 
-  const selectedVenue = mockVenues.find(v => v.id === formData.venueId);
+  const selectedVenue = venues.find(v => v.id === formData.venueId);
+
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const updateField = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }));
+  };
+
+  const validate = (): boolean => {
+    const e: Record<string, string> = {};
+    setErrors(e);
+    return Object.keys(e).length === 0;
   };
 
   const handleCreate = async () => {
-    if (!user || !selectedVenue) return;
-
+    if (!user) return;
+    if (!selectedVenue) {
+      Alert.alert('Lieu requis', 'Veuillez sélectionner un terrain.');
+      return;
+    }
+    if (!validate()) return;
+    const effectiveType = formData.type === 'ranked' ? 'friendly' : formData.type;
     try {
       const dateTime = new Date(`${formData.date}T${formData.time}`);
       
       await createMatch({
         sport: formData.sport,
         format: formData.format,
-        type: formData.type,
+        type: effectiveType,
         venue: selectedVenue,
         dateTime,
         duration: parseInt(formData.duration, 10),
@@ -97,12 +109,12 @@ export default function CreateMatchScreen() {
         ambiance: formData.ambiance,
         maxPlayers: parseInt(formData.maxPlayers, 10),
         createdBy: user.id,
-        entryFee: formData.entryFee ? parseInt(formData.entryFee, 10) : undefined,
-        prize: formData.prize ? parseInt(formData.prize, 10) : undefined,
+        entryFee: undefined,
+        prize: undefined,
       });
       router.back();
-    } catch (error) {
-      console.log('[CreateMatch] Error:', error);
+    } catch (error: any) {
+      Alert.alert('Erreur', error?.message ?? 'Impossible de créer le match');
     }
   };
 
@@ -144,7 +156,7 @@ export default function CreateMatchScreen() {
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Type de match</Text>
-                <View style={styles.optionRow}>
+                <View style={styles.typeRow}>
                   {matchTypes.map((type) => (
                     <TouchableOpacity
                       key={type}
@@ -154,13 +166,35 @@ export default function CreateMatchScreen() {
                       ]}
                       onPress={() => updateField('type', type)}
                     >
-                      <Text style={[styles.optionText, formData.type === type && styles.optionTextActive]}>
+                      <Text style={[styles.typeChipText, formData.type === type && styles.typeChipTextActive]}>
                         {type === 'friendly' ? '⚽ Amical' : '🏆 Classé'}
                       </Text>
+                      {type === 'ranked' && (
+                        <Text style={[styles.typeChipSub, formData.type === type && styles.typeChipSubActive]}>
+                          Bientôt
+                        </Text>
+                      )}
                     </TouchableOpacity>
                   ))}
                 </View>
               </View>
+
+              {formData.type === 'ranked' && (
+                <Card style={styles.rankedSoonCard}>
+                  <View style={styles.rankedSoonHeader}>
+                    <View style={styles.rankedSoonIcon}>
+                      <Trophy size={24} color={Colors.primary.orange} />
+                    </View>
+                    <Text style={styles.rankedSoonTitle}>Bientôt disponible</Text>
+                  </View>
+                  <Text style={styles.rankedSoonText}>
+                    Les matchs classés sont en préparation. En attendant, créez un match amical pour jouer avec la communauté.
+                  </Text>
+                  <TouchableOpacity style={styles.rankedSoonBtn} onPress={() => updateField('type', 'friendly')}>
+                    <Text style={styles.rankedSoonBtnText}>Créer un match amical</Text>
+                  </TouchableOpacity>
+                </Card>
+              )}
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Sport</Text>
@@ -220,7 +254,7 @@ export default function CreateMatchScreen() {
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Terrain</Text>
-                {mockVenues.map((venue) => (
+                {venues.map((venue) => (
                   <TouchableOpacity
                     key={venue.id}
                     onPress={() => updateField('venueId', venue.id)}
@@ -282,29 +316,6 @@ export default function CreateMatchScreen() {
                   />
                 </View>
               </View>
-
-              {formData.type === 'ranked' && (
-                <View style={styles.row}>
-                  <View style={styles.halfField}>
-                    <Input
-                      label="Mise (FCFA)"
-                      placeholder="5000"
-                      value={formData.entryFee}
-                      onChangeText={(v) => updateField('entryFee', v)}
-                      keyboardType="numeric"
-                    />
-                  </View>
-                  <View style={styles.halfField}>
-                    <Input
-                      label="Prize (FCFA)"
-                      placeholder="50000"
-                      value={formData.prize}
-                      onChangeText={(v) => updateField('prize', v)}
-                      keyboardType="numeric"
-                    />
-                  </View>
-                </View>
-              )}
 
               <Button
                 title="Créer le match"
@@ -399,15 +410,36 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary.blue,
     borderColor: Colors.primary.blue,
   },
+  typeRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
   typeChip: {
     flex: 1,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: Colors.background.card,
     borderWidth: 1,
     borderColor: Colors.border.light,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  typeChipText: {
+    color: Colors.text.secondary,
+    fontSize: 15,
+    fontWeight: '600' as const,
+  },
+  typeChipTextActive: {
+    color: '#FFFFFF',
+  },
+  typeChipSub: {
+    color: Colors.text.muted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  typeChipSubActive: {
+    color: 'rgba(255,255,255,0.85)',
   },
   friendlyChipActive: {
     backgroundColor: Colors.primary.blue,
@@ -416,6 +448,66 @@ const styles = StyleSheet.create({
   rankedChipActive: {
     backgroundColor: Colors.primary.orange,
     borderColor: Colors.primary.orange,
+  },
+  rankedSoonCard: {
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: Colors.primary.orange + '40',
+    backgroundColor: Colors.primary.orange + '08',
+  },
+  rankedSoonHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  rankedSoonIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: Colors.primary.orange + '25', alignItems: 'center', justifyContent: 'center' },
+  rankedSoonTitle: { color: Colors.primary.orange, fontSize: 18, fontWeight: '700' as const },
+  rankedSoonText: { color: Colors.text.secondary, fontSize: 14, lineHeight: 22, marginBottom: 16 },
+  rankedSoonBtn: { backgroundColor: Colors.primary.orange, paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12, alignSelf: 'flex-start' },
+  rankedSoonBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' as const },
+  rankedCard: {
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: Colors.primary.orange + '50',
+    overflow: 'hidden',
+  },
+  rankedCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  rankedBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: Colors.primary.orange + '25',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rankedCardTitleWrap: {
+    flex: 1,
+  },
+  rankedCardTitle: {
+    color: Colors.text.primary,
+    fontSize: 16,
+    fontWeight: '700' as const,
+  },
+  rankedCardSubtitle: {
+    color: Colors.primary.orange,
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: '600' as const,
+  },
+  rankedDescription: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  rankedBenefits: {
+    gap: 6,
+  },
+  rankedBenefit: {
+    color: Colors.primary.orange,
+    fontSize: 13,
+    fontWeight: '600' as const,
   },
   optionText: {
     color: Colors.text.secondary,

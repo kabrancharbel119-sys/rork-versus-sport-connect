@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, Modal, Alert } from 'react-native';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, Modal, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Users, Trophy, MapPin, Star, Filter, X } from 'lucide-react-native';
+import { Plus, Users, Trophy, MapPin, Star, Filter, X, Search, ChevronRight, Compass } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
@@ -14,53 +15,74 @@ import { Button } from '@/components/Button';
 import { sportLabels, levelLabels, ambianceLabels, ALL_SPORTS } from '@/mocks/data';
 import { Sport, SkillLevel, PlayStyle } from '@/types';
 
-type TabType = 'my-teams' | 'discover';
-
 export default function TeamsScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { getUserTeams, getRecruitingTeams, getPendingRequests } = useTeams();
-  const [activeTab, setActiveTab] = useState<TabType>('my-teams');
+  const { getUserTeams, getAllTeams, getPendingRequests, refetchTeams, isLoading, isError } = useTeams();
   const [refreshing, setRefreshing] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [sportFilter, setSportFilter] = useState<Sport | 'all'>('all');
   const [levelFilter, setLevelFilter] = useState<SkillLevel | 'all'>('all');
   const [ambianceFilter, setAmbianceFilter] = useState<PlayStyle | 'all'>('all');
+  const [recruitingFilter, setRecruitingFilter] = useState<'all' | 'open' | 'closed'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<TextInput>(null);
 
-  const myTeams = user ? getUserTeams(user.id) : [];
-  const allRecruitingTeams = getRecruitingTeams();
-  
-  const recruitingTeams = useMemo(() => {
-    return allRecruitingTeams.filter(team => {
+  const myTeam = user ? getUserTeams(user.id)[0] : null;
+  const allTeamsForDiscover = getAllTeams();
+
+  useFocusEffect(useCallback(() => {
+    refetchTeams();
+  }, [refetchTeams]));
+
+  const teamsInCity = useMemo(() => {
+    const city = user?.city?.trim()?.toLowerCase();
+    let list = allTeamsForDiscover.filter(team => {
+      if (city && team.city?.toLowerCase() !== city) return false;
       if (sportFilter !== 'all' && team.sport !== sportFilter) return false;
       if (levelFilter !== 'all' && team.level !== levelFilter) return false;
       if (ambianceFilter !== 'all' && team.ambiance !== ambianceFilter) return false;
+      if (recruitingFilter === 'open' && (!team.isRecruiting || team.members.length >= team.maxMembers)) return false;
+      if (recruitingFilter === 'closed' && team.isRecruiting && team.members.length < team.maxMembers) return false;
+      if (myTeam && team.id === myTeam.id) return false;
       return true;
     });
-  }, [allRecruitingTeams, sportFilter, levelFilter, ambianceFilter]);
-
-  const pendingRequestsCount = myTeams.reduce((acc, team) => {
-    if (team.captainId === user?.id || team.coCaptainIds.includes(user?.id || '')) {
-      return acc + getPendingRequests(team.id).length;
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter(t =>
+        t.name.toLowerCase().includes(q) ||
+        (t.city && t.city.toLowerCase().includes(q)) ||
+        (t.description && t.description.toLowerCase().includes(q))
+      );
     }
-    return acc;
-  }, 0);
+    return list;
+  }, [allTeamsForDiscover, user?.city, sportFilter, levelFilter, ambianceFilter, recruitingFilter, searchQuery, myTeam]);
 
-  const hasActiveFilters = sportFilter !== 'all' || levelFilter !== 'all' || ambianceFilter !== 'all';
+  const pendingRequestsCount = myTeam && (myTeam.captainId === user?.id || myTeam.coCaptainIds.includes(user?.id || ''))
+    ? getPendingRequests(myTeam.id).length
+    : 0;
+
+  const hasActiveFilters = sportFilter !== 'all' || levelFilter !== 'all' || ambianceFilter !== 'all' || recruitingFilter !== 'all';
 
   const clearFilters = () => {
     setSportFilter('all');
     setLevelFilter('all');
     setAmbianceFilter('all');
+    setRecruitingFilter('all');
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setRefreshing(false);
+    try {
+      await refetchTeams();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
-  const renderTeamCard = (team: ReturnType<typeof getRecruitingTeams>[0], isMember: boolean = false) => {
+  const focusSearch = () => searchInputRef.current?.focus();
+
+  const renderTeamCard = (team: ReturnType<typeof getAllTeams>[0], isMember: boolean = false) => {
     const memberRole = team.members.find(m => m.userId === user?.id)?.role;
     
     return (
@@ -76,63 +98,51 @@ export default function TeamsScreen() {
             <View style={styles.teamNameRow}>
               <Text style={styles.teamName}>{team.name}</Text>
               {isMember && memberRole && (
-                <View style={[
-                  styles.roleBadge,
-                  memberRole === 'captain' && styles.captainBadge,
-                ]}>
-                  <Text style={styles.roleText}>
-                    {memberRole === 'captain' ? 'Capitaine' : memberRole === 'co-captain' ? 'Co-Cap' : 'Membre'}
-                  </Text>
+                <View style={[styles.roleBadge, memberRole === 'captain' && styles.captainBadge]}>
+                  <Text style={styles.roleText}>{memberRole === 'captain' ? 'Capitaine' : memberRole === 'co-captain' ? 'Co-Cap' : 'Membre'}</Text>
                 </View>
               )}
             </View>
-            <Text style={styles.teamSport}>
-              {sportLabels[team.sport]} • {team.format}
-            </Text>
+            <Text style={styles.teamSport}>{sportLabels[team.sport]} • {team.format}</Text>
             <View style={styles.teamLocation}>
               <MapPin size={12} color={Colors.text.muted} />
               <Text style={styles.teamLocationText}>{team.city}</Text>
             </View>
           </View>
         </View>
-
         <View style={styles.teamStats}>
-          <View style={styles.teamStat}>
-            <Users size={14} color={Colors.primary.blue} />
-            <Text style={styles.teamStatText}>
-              {team.members.length}/{team.maxMembers}
-            </Text>
-          </View>
-          <View style={styles.teamStat}>
-            <Trophy size={14} color={Colors.primary.orange} />
-            <Text style={styles.teamStatText}>
-              {team.stats.wins}W - {team.stats.losses}L
-            </Text>
-          </View>
-          <View style={styles.teamStat}>
-            <Star size={14} color="#F59E0B" />
-            <Text style={styles.teamStatText}>
-              {team.reputation.toFixed(1)}
-            </Text>
-          </View>
+          <View style={styles.teamStat}><Users size={14} color={Colors.primary.blue} /><Text style={styles.teamStatText}>{team.members.length}/{team.maxMembers}</Text></View>
+          <View style={styles.teamStat}><Trophy size={14} color={Colors.primary.orange} /><Text style={styles.teamStatText}>{team.stats.wins}W - {team.stats.losses}L</Text></View>
+          <View style={styles.teamStat}><Star size={14} color="#F59E0B" /><Text style={styles.teamStatText}>{team.reputation.toFixed(1)}</Text></View>
         </View>
-
         <View style={styles.teamTags}>
-          <View style={styles.tag}>
-            <Text style={styles.tagText}>{levelLabels[team.level]}</Text>
-          </View>
-          <View style={styles.tag}>
-            <Text style={styles.tagText}>{ambianceLabels[team.ambiance]}</Text>
-          </View>
-          {team.isRecruiting && (
-            <View style={[styles.tag, styles.recruitingTag]}>
-              <Text style={[styles.tagText, styles.recruitingText]}>Recrute</Text>
-            </View>
+          <View style={styles.tag}><Text style={styles.tagText}>{levelLabels[team.level]}</Text></View>
+          <View style={styles.tag}><Text style={styles.tagText}>{ambianceLabels[team.ambiance]}</Text></View>
+          {team.isRecruiting && team.members.length < team.maxMembers ? (
+            <View style={[styles.tag, styles.recruitingTag]}><Text style={[styles.tagText, styles.recruitingText]}>Recrute</Text></View>
+          ) : (
+            <View style={[styles.tag, styles.closedTag]}><Text style={[styles.tagText, styles.closedTagText]}>Complet</Text></View>
           )}
         </View>
       </Card>
     );
   };
+
+  const renderExploreRow = (team: ReturnType<typeof getAllTeams>[0]) => (
+    <TouchableOpacity key={team.id} style={styles.exploreRow} onPress={() => router.push(`/team/${team.id}`)} activeOpacity={0.7}>
+      <Avatar uri={team.logo} name={team.name} size="small" />
+      <View style={styles.exploreRowCenter}>
+        <Text style={styles.exploreRowName} numberOfLines={1}>{team.name}</Text>
+        <Text style={styles.exploreRowMeta}>{sportLabels[team.sport]} • {team.city}</Text>
+      </View>
+      <View style={styles.exploreRowRight}>
+        {team.isRecruiting && team.members.length < team.maxMembers ? (
+          <View style={styles.recrutePill}><Text style={styles.recrutePillText}>Recrute</Text></View>
+        ) : null}
+        <ChevronRight size={18} color={Colors.text.muted} />
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
     <View style={styles.container}>
@@ -145,8 +155,8 @@ export default function TeamsScreen() {
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Équipes</Text>
           <View style={styles.headerActions}>
-            {pendingRequestsCount > 0 && (
-              <TouchableOpacity style={styles.requestsBadgeBtn} onPress={() => Alert.alert('Demandes en attente', `Vous avez ${pendingRequestsCount} demande(s) pour rejoindre vos équipes. Allez sur la page de l'équipe pour les gérer.`)}>
+            {pendingRequestsCount > 0 && myTeam && (
+              <TouchableOpacity style={styles.requestsBadgeBtn} onPress={() => router.push(`/team/${myTeam.id}`)}>
                 <Users size={16} color="#FFF" />
                 <Text style={styles.requestsBadgeText}>{pendingRequestsCount}</Text>
               </TouchableOpacity>
@@ -154,73 +164,97 @@ export default function TeamsScreen() {
             <TouchableOpacity style={[styles.iconButton, hasActiveFilters && styles.iconButtonActive]} onPress={() => setShowFilterModal(true)}>
               <Filter size={20} color={hasActiveFilters ? '#FFF' : Colors.text.primary} />
             </TouchableOpacity>
+            <TouchableOpacity style={[styles.iconButton, searchQuery.length > 0 && styles.iconButtonActive]} onPress={focusSearch}>
+              <Search size={20} color={searchQuery.length > 0 ? '#FFF' : Colors.text.primary} />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.addButton} onPress={() => router.push('/create-team')}>
               <Plus size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
 
-        <View style={styles.tabs}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'my-teams' && styles.tabActive]}
-            onPress={() => setActiveTab('my-teams')}
-          >
-            <Text style={[styles.tabText, activeTab === 'my-teams' && styles.tabTextActive]}>
-              Mes équipes
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'discover' && styles.tabActive]}
-            onPress={() => setActiveTab('discover')}
-          >
-            <Text style={[styles.tabText, activeTab === 'discover' && styles.tabTextActive]}>
-              Découvrir
-            </Text>
-          </TouchableOpacity>
-        </View>
-
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, (isError || isLoading) && !allTeamsForDiscover.length && styles.scrollContentGrow]}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={Colors.primary.orange}
-            />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />
           }
         >
-          {activeTab === 'my-teams' ? (
-            myTeams.length > 0 ? (
-              myTeams.map(team => renderTeamCard(team, true))
-            ) : (
-              <View style={styles.emptyState}>
-                <Users size={64} color={Colors.text.muted} />
-                <Text style={styles.emptyTitle}>Aucune équipe</Text>
-                <Text style={styles.emptyText}>
-                  Créez votre équipe ou rejoignez-en une existante
-                </Text>
-                <Button
-                  title="Créer une équipe"
-                  onPress={() => router.push('/create-team')}
-                  variant="orange"
-                  style={styles.emptyButton}
-                />
-              </View>
-            )
+          {isError && !allTeamsForDiscover.length ? (
+            <NetworkError onRetry={onRetry} isRetrying={retrying} />
+          ) : isLoading && !allTeamsForDiscover.length ? (
+            <View style={styles.loadingWrap}><ActivityIndicator size="large" color={Colors.primary.orange} /><Text style={styles.loadingText}>Chargement des équipes...</Text></View>
           ) : (
-            recruitingTeams.length > 0 ? (
-              recruitingTeams.map(team => renderTeamCard(team, false))
+          <>
+          <View style={styles.heroWrap}>
+            {myTeam ? (
+              <TouchableOpacity style={styles.heroCard} onPress={() => router.push(`/team/${myTeam.id}`)} activeOpacity={0.9}>
+                <LinearGradient colors={[Colors.primary.blue, '#1a4d7a']} style={StyleSheet.absoluteFill} />
+                <View style={styles.heroInner}>
+                  <Avatar uri={myTeam.logo} name={myTeam.name} size="xlarge" />
+                  <View style={styles.heroBody}>
+                    <Text style={styles.heroLabel}>Ta team</Text>
+                    <Text style={styles.heroName} numberOfLines={1}>{myTeam.name}</Text>
+                    <Text style={styles.heroMeta}>{sportLabels[myTeam.sport]} • {myTeam.members.length}/{myTeam.maxMembers} joueurs</Text>
+                    <View style={styles.heroStats}>
+                      <Text style={styles.heroStat}>{myTeam.stats.wins}V</Text>
+                      <Text style={styles.heroStatDot}>•</Text>
+                      <Text style={styles.heroStat}>{myTeam.stats.losses}D</Text>
+                    </View>
+                    <View style={styles.heroCta}>
+                      <Text style={styles.heroCtaText}>Voir ma team</Text>
+                      <ChevronRight size={18} color="rgba(255,255,255,0.9)" />
+                    </View>
+                  </View>
+                </View>
+              </TouchableOpacity>
             ) : (
-              <View style={styles.emptyState}>
-                <Users size={64} color={Colors.text.muted} />
-                <Text style={styles.emptyTitle}>Aucune équipe disponible</Text>
-                <Text style={styles.emptyText}>
-                  Revenez plus tard ou créez la vôtre
-                </Text>
+              <View style={styles.heroCardEmpty}>
+                <View style={styles.heroEmptyIcon}><Users size={40} color={Colors.primary.blue} /></View>
+                <Text style={styles.heroEmptyTitle}>Pas encore d&apos;équipe</Text>
+                <Text style={styles.heroEmptyText}>Crée la tienne ou rejoins une équipe près de toi</Text>
+                <View style={styles.heroEmptyBtns}>
+                  <TouchableOpacity style={styles.heroEmptyBtnPrimary} onPress={() => router.push('/create-team')}>
+                    <Plus size={18} color="#FFF" /><Text style={styles.heroEmptyBtnPrimaryText}>Créer</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.heroEmptyBtnOutlined} onPress={() => { setSearchQuery(''); focusSearch(); }}>
+                    <Compass size={18} color={Colors.primary.blue} /><Text style={styles.heroEmptyBtnOutlinedText}>Découvrir</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            )
+            )}
+          </View>
+
+          <View style={styles.exploreSection}>
+            <View style={styles.exploreHeader}>
+              <Compass size={20} color={Colors.primary.orange} />
+              <View style={styles.exploreHeaderText}>
+                <Text style={styles.exploreTitle}>À découvrir</Text>
+                <Text style={styles.exploreSubtitle}>{user?.city ? `Autres équipes à ${user.city}` : 'Autres équipes'}</Text>
+              </View>
+            </View>
+            <View style={styles.searchRow}>
+              <View style={styles.searchInputWrap}>
+                <Search size={18} color={Colors.text.muted} />
+                <TextInput ref={searchInputRef} style={styles.searchInput} placeholder="Nom, ville..." placeholderTextColor={Colors.text.muted} value={searchQuery} onChangeText={setSearchQuery} />
+                {searchQuery.length > 0 && <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={12}><X size={18} color={Colors.text.muted} /></TouchableOpacity>}
+              </View>
+            </View>
+            {teamsInCity.length > 0 ? (
+              <View style={styles.exploreList}>{teamsInCity.map(renderExploreRow)}</View>
+            ) : (
+              <View style={styles.exploreEmpty}>
+                <Text style={styles.exploreEmptyText}>
+                  {searchQuery.trim() || hasActiveFilters ? 'Aucun résultat' : user?.city ? `Aucune autre équipe à ${user.city}` : 'Aucune équipe'}
+                </Text>
+                {(searchQuery.trim() || hasActiveFilters) && (
+                  <TouchableOpacity onPress={() => { setSearchQuery(''); clearFilters(); }}><Text style={styles.exploreEmptyLink}>Réinitialiser</Text></TouchableOpacity>
+                )}
+              </View>
+            )}
+          </View>
+          </>
           )}
         </ScrollView>
 
@@ -234,6 +268,18 @@ export default function TeamsScreen() {
                 </TouchableOpacity>
               </View>
               <ScrollView style={styles.modalScroll}>
+                <Text style={styles.filterLabel}>Recrutement</Text>
+                <View style={styles.filterOptions}>
+                  <TouchableOpacity style={[styles.filterChip, recruitingFilter === 'all' && styles.filterChipActive]} onPress={() => setRecruitingFilter('all')}>
+                    <Text style={[styles.filterChipText, recruitingFilter === 'all' && styles.filterChipTextActive]}>Toutes</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.filterChip, recruitingFilter === 'open' && styles.filterChipActive]} onPress={() => setRecruitingFilter('open')}>
+                    <Text style={[styles.filterChipText, recruitingFilter === 'open' && styles.filterChipTextActive]}>Recrutent</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.filterChip, recruitingFilter === 'closed' && styles.filterChipActive]} onPress={() => setRecruitingFilter('closed')}>
+                    <Text style={[styles.filterChipText, recruitingFilter === 'closed' && styles.filterChipTextActive]}>Complet / Fermé</Text>
+                  </TouchableOpacity>
+                </View>
                 <Text style={styles.filterLabel}>Sport</Text>
                 <View style={styles.filterOptions}>
                   <TouchableOpacity style={[styles.filterChip, sportFilter === 'all' && styles.filterChipActive]} onPress={() => setSportFilter('all')}>
@@ -342,12 +388,44 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: '#FFFFFF',
   },
+  searchRow: {
+    paddingHorizontal: 20,
+    marginBottom: 12,
+    paddingTop: 4,
+  },
+  searchInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Colors.background.card,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: Colors.primary.orange + '40',
+    minHeight: 48,
+  },
+  searchInput: {
+    flex: 1,
+    color: Colors.text.primary,
+    fontSize: 16,
+    paddingVertical: 10,
+  },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 20,
     paddingBottom: 20,
+  },
+  scrollContentGrow: { flexGrow: 1 },
+  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60, minHeight: 200 },
+  loadingText: { color: Colors.text.muted, fontSize: 14, marginTop: 12 },
+  sectionTitle: {
+    color: Colors.text.primary,
+    fontSize: 18,
+    fontWeight: '600' as const,
+    marginBottom: 12,
   },
   teamCard: {
     marginBottom: 16,
@@ -433,6 +511,12 @@ const styles = StyleSheet.create({
   recruitingText: {
     color: Colors.status.success,
   },
+  closedTag: {
+    backgroundColor: 'rgba(107, 114, 128, 0.2)',
+  },
+  closedTagText: {
+    color: Colors.text.muted,
+  },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 60,
@@ -470,4 +554,209 @@ const styles = StyleSheet.create({
   filterChipTextActive: { color: '#FFF' },
   filterActions: { flexDirection: 'row', gap: 12, marginTop: 24, marginBottom: 40 },
   filterBtn: { flex: 1 },
+
+  // Hero « Ma team »
+  heroWrap: {
+    marginBottom: 24,
+  },
+  heroCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    minHeight: 120,
+  },
+  heroInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    gap: 16,
+  },
+  heroBody: {
+    flex: 1,
+    gap: 4,
+  },
+  heroLabel: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    fontWeight: '600' as const,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  heroName: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700' as const,
+  },
+  heroMeta: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 14,
+  },
+  heroStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  heroStat: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  heroStatDot: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+  },
+  heroCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  heroCtaText: {
+    color: 'rgba(255,255,255,0.95)',
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+  heroCardEmpty: {
+    borderRadius: 20,
+    backgroundColor: Colors.background.card,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    padding: 24,
+    alignItems: 'center',
+  },
+  heroEmptyIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Colors.primary.blue + '25',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  heroEmptyTitle: {
+    color: Colors.text.primary,
+    fontSize: 18,
+    fontWeight: '700' as const,
+    marginBottom: 6,
+  },
+  heroEmptyText: {
+    color: Colors.text.muted,
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  heroEmptyBtns: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  heroEmptyBtnPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary.orange,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  heroEmptyBtnPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+  heroEmptyBtnOutlined: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: Colors.primary.blue,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  heroEmptyBtnOutlinedText: {
+    color: Colors.primary.blue,
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+
+  // À découvrir
+  exploreSection: {
+    marginBottom: 16,
+  },
+  exploreHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  exploreHeaderText: {
+    flex: 1,
+  },
+  exploreTitle: {
+    color: Colors.text.primary,
+    fontSize: 18,
+    fontWeight: '700' as const,
+  },
+  exploreSubtitle: {
+    color: Colors.text.muted,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  exploreList: {
+    gap: 2,
+  },
+  exploreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background.card,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 8,
+    gap: 12,
+  },
+  exploreRowCenter: {
+    flex: 1,
+    minWidth: 0,
+  },
+  exploreRowName: {
+    color: Colors.text.primary,
+    fontSize: 16,
+    fontWeight: '600' as const,
+  },
+  exploreRowMeta: {
+    color: Colors.text.muted,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  exploreRowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  recrutePill: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  recrutePillText: {
+    color: Colors.status.success,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  exploreEmpty: {
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  exploreEmptyText: {
+    color: Colors.text.muted,
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  exploreEmptyLink: {
+    color: Colors.primary.orange,
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
 });

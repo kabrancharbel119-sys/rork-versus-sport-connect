@@ -1,22 +1,71 @@
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Bell, Users, Trophy, Swords, MessageCircle, CheckCheck, Trash2 } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useNotifications } from '@/contexts/NotificationsContext';
-
+import { useTeams } from '@/contexts/TeamsContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useUsers } from '@/contexts/UsersContext';
+import type { Notification } from '@/types';
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const { notifications, markAsRead, markAllAsRead, deleteNotification, getUnreadCount } = useNotifications();
+  const { user } = useAuth();
+  const { notifications, markAsRead, markAllAsRead, deleteNotification, getUnreadCount, refetchNotifications } = useNotifications();
+  const { teams, getPendingRequests } = useTeams();
+  const { getUserById } = useUsers();
   const [refreshing, setRefreshing] = React.useState(false);
+
+  const notificationsWithTeamRequests = useMemo(() => {
+    const list: (Notification & { _synthetic?: boolean })[] = [...notifications];
+    if (!user) return list;
+    const teamRoutesWithRealNotif = new Set<string>();
+    for (const n of notifications) {
+      if (n.type === 'team' && n.data?.route?.startsWith('/team/')) teamRoutesWithRealNotif.add(n.data.route);
+    }
+    for (const team of teams) {
+      const isCaptainOrCo = team.captainId === user.id || (team.coCaptainIds ?? []).includes(user.id);
+      if (!isCaptainOrCo) continue;
+      const route = `/team/${team.id}`;
+      if (teamRoutesWithRealNotif.has(route)) continue;
+      const pending = getPendingRequests(team.id);
+      for (const req of pending) {
+        const requesterName = getUserById(req.userId)?.fullName || getUserById(req.userId)?.username || 'Un joueur';
+        list.push({
+          id: `team-req-${team.id}-${req.id}`,
+          userId: user.id,
+          type: 'team',
+          title: 'Nouvelle demande',
+          message: `${requesterName} souhaite rejoindre ${team.name}`,
+          data: { route },
+          isRead: false,
+          createdAt: req.createdAt instanceof Date ? req.createdAt : new Date(req.createdAt),
+          _synthetic: true,
+        });
+      }
+    }
+    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [notifications, user, teams, getPendingRequests, getUserById]);
+
+  const unreadCount = getUnreadCount() + notificationsWithTeamRequests.filter((n) => n._synthetic).length;
+
+  useFocusEffect(
+    useCallback(() => {
+      refetchNotifications();
+    }, [refetchNotifications])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise(r => setTimeout(r, 1000));
-    setRefreshing(false);
+    try {
+      await refetchNotifications();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const getIcon = (type: string) => {
@@ -53,16 +102,14 @@ export default function NotificationsScreen() {
     return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
   };
 
-  const handleNotificationPress = async (notification: typeof notifications[0]) => {
-    if (!notification.isRead) {
-      await markAsRead(notification.id);
+  const handleNotificationPress = async (notification: (typeof notificationsWithTeamRequests)[0]) => {
+    if (!('_synthetic' in notification) || !notification._synthetic) {
+      if (!notification.isRead) await markAsRead(notification.id);
     }
     if (notification.data?.route) {
       router.push(notification.data.route as any);
     }
   };
-
-  const unreadCount = getUnreadCount();
 
   return (
     <>
@@ -74,7 +121,10 @@ export default function NotificationsScreen() {
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Notifications</Text>
+            <View style={styles.headerTitleWrap}>
+              <Text style={styles.headerTitle}>Notifications</Text>
+              <Text style={styles.headerSubtitle}>Toutes vos alertes (équipes, matchs, annonces)</Text>
+            </View>
             {unreadCount > 0 && (
               <TouchableOpacity style={styles.markAllBtn} onPress={() => markAllAsRead()}>
                 <CheckCheck size={20} color={Colors.primary.blue} />
@@ -98,8 +148,8 @@ export default function NotificationsScreen() {
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.blue} />}
           >
-            {notifications.length > 0 ? (
-              notifications.map((notification) => (
+            {notificationsWithTeamRequests.length > 0 ? (
+              notificationsWithTeamRequests.map((notification) => (
                 <TouchableOpacity
                   key={notification.id}
                   style={[styles.notificationItem, !notification.isRead && styles.notificationUnread]}
@@ -117,9 +167,11 @@ export default function NotificationsScreen() {
                     <Text style={styles.notificationMessage} numberOfLines={2}>{notification.message}</Text>
                     <Text style={styles.notificationTime}>{formatTime(notification.createdAt)}</Text>
                   </View>
-                  <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteNotification(notification.id)}>
-                    <Trash2 size={16} color={Colors.text.muted} />
-                  </TouchableOpacity>
+                  {!('_synthetic' in notification && notification._synthetic) && (
+                    <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteNotification(notification.id)}>
+                      <Trash2 size={16} color={Colors.text.muted} />
+                    </TouchableOpacity>
+                  )}
                 </TouchableOpacity>
               ))
             ) : (
@@ -128,7 +180,7 @@ export default function NotificationsScreen() {
                   <Bell size={48} color={Colors.text.muted} />
                 </View>
                 <Text style={styles.emptyTitle}>Aucune notification</Text>
-                <Text style={styles.emptyText}>Vous n{"'"}avez pas encore de notifications</Text>
+                <Text style={styles.emptyText}>Toutes vos alertes (demandes d’équipe, matchs, annonces) s’affichent ici.</Text>
               </View>
             )}
             <View style={styles.bottomSpacer} />
@@ -145,6 +197,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16 },
   backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const },
+  headerSubtitle: { color: Colors.text.muted, fontSize: 11, marginTop: 2 },
   markAllBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
   placeholder: { width: 40 },
   unreadBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(21,101,192,0.1)', marginHorizontal: 20, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, marginBottom: 16 },

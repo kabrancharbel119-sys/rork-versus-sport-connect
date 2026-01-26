@@ -58,7 +58,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const authQuery = useQuery({
     queryKey: ['auth'],
     queryFn: async () => {
-      console.log('[Auth] Checking auth state...');
+      if (__DEV__) console.log('[Auth] Checking auth state...');
       
       const [authData, userData] = await Promise.all([
         AsyncStorage.getItem(AUTH_STORAGE_KEY),
@@ -68,7 +68,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       if (authData && userData) {
         const isAuth = JSON.parse(authData);
         if (isAuth) {
-          console.log('[Auth] Found stored auth data');
+          if (__DEV__) console.log('[Auth] Found stored auth data');
           return { isAuthenticated: true, user: JSON.parse(userData) as User };
         }
       }
@@ -97,16 +97,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       const token = await registerForPushNotifications();
       if (token && token !== 'local-only') {
         await notificationsApi.registerPushToken(userId, token, Platform.OS as 'ios' | 'android' | 'web');
-        console.log('[Auth] Push token registered');
+        if (__DEV__) console.log('[Auth] Push token registered');
       }
     } catch (e) {
-      console.log('[Auth] Push token registration failed:', e);
+      if (__DEV__) console.log('[Auth] Push token registration failed:', e);
     }
   }, []);
 
   const loginMutation = useMutation({
     mutationFn: async (data: LoginData) => {
-      console.log('[Auth] Attempting login for:', data.phone);
+      if (__DEV__) console.log('[Auth] Attempting login for:', data.phone);
       
       if (!data.password) {
         throw new Error('Mot de passe requis');
@@ -127,7 +127,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const registerMutation = useMutation({
     mutationFn: async (data: RegisterData) => {
-      console.log('[Auth] Attempting registration for:', data.phone);
+      if (__DEV__) console.log('[Auth] Attempting registration for:', data.phone);
 
       if (!data.password) {
         throw new Error('Mot de passe requis');
@@ -159,7 +159,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: UpdateProfileData) => {
-      console.log('[Auth] Updating profile...');
+      if (__DEV__) console.log('[Auth] Updating profile...');
       if (!authState.user) throw new Error('Non authentifié');
 
       try {
@@ -188,7 +188,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       try {
         await usersApi.update(authState.user.id, { stats: updatedStats });
       } catch (e) {
-        console.log('[Auth] Stats update to server failed, saving locally');
+        if (__DEV__) console.log('[Auth] Stats update to server failed, saving locally');
       }
       
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
@@ -234,12 +234,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      console.log('[Auth] Starting logout process...');
+      if (__DEV__) console.log('[Auth] Starting logout process...');
       await AsyncStorage.multiRemove([
         AUTH_STORAGE_KEY,
         USER_STORAGE_KEY,
       ]);
-      console.log('[Auth] Logout complete');
+      if (__DEV__) console.log('[Auth] Logout complete');
     },
     onSuccess: () => {
       setAuthState({ isAuthenticated: false, isLoading: false, user: null });
@@ -254,7 +254,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const deleteAccountMutation = useMutation({
     mutationFn: async (confirmText: string) => {
-      console.log('[Auth] Starting account deletion...');
+      if (__DEV__) console.log('[Auth] Starting account deletion...');
       if (confirmText !== 'SUPPRIMER') {
         throw new Error('Confirmation invalide');
       }
@@ -263,7 +263,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         try {
           await usersApi.delete(authState.user.id);
         } catch (e) {
-          console.log('[Auth] Backend deletion failed:', e);
+          if (__DEV__) console.log('[Auth] Backend deletion failed:', e);
         }
       }
 
@@ -272,7 +272,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         USER_STORAGE_KEY,
         'vs_settings',
       ]);
-      console.log('[Auth] Account deletion complete');
+      if (__DEV__) console.log('[Auth] Account deletion complete');
     },
     onSuccess: () => {
       setAuthState({ isAuthenticated: false, isLoading: false, user: null });
@@ -325,13 +325,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     try {
       await usersApi.update(authState.user.id, { role: 'admin' });
     } catch (e) {
-      console.log('[Auth] Admin promotion to server failed');
+      if (__DEV__) console.log('[Auth] Admin promotion to server failed');
     }
     
     await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
     setAuthState(prev => ({ ...prev, user: updatedUser }));
     queryClient.invalidateQueries({ queryKey: ['auth'] });
-    console.log('[Auth] User promoted to admin');
+        if (__DEV__) console.log('[Auth] User promoted to admin');
   }, [authState.user, queryClient]);
 
   return {

@@ -3,7 +3,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
 import { Team, JoinRequest, TeamRole, Sport, SkillLevel, PlayStyle, UserLocation } from '@/types';
-import { mockTeams } from '@/mocks/data';
 import { teamsApi } from '@/lib/api/teams';
 
 const TEAMS_STORAGE_KEY = 'vs_teams';
@@ -46,32 +45,24 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
   const teamsQuery = useQuery({
     queryKey: ['teams'],
     queryFn: async () => {
-      console.log('[Teams] Loading teams...');
+      if (__DEV__) console.log('[Teams] Loading teams...');
       const stored = await AsyncStorage.getItem(TEAMS_STORAGE_KEY);
       const localTeams = stored ? parseTeamDates(JSON.parse(stored)) : [];
-      
       try {
         const serverTeams = await teamsApi.getAll();
-        if (serverTeams.length > 0) {
-          const serverParsed = parseTeamDates(serverTeams);
-          const localOnly = localTeams.filter(lt => !serverParsed.some(st => st.id === lt.id));
-          const merged = [...serverParsed, ...localOnly];
-          await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(merged));
-          console.log('[Teams] Merged teams - server:', serverParsed.length, 'local only:', localOnly.length);
-          return merged;
-        }
+        const serverParsed = parseTeamDates(serverTeams);
+        const localOnly = localTeams.filter(lt => !serverParsed.some(st => st.id === lt.id));
+        const merged = [...serverParsed, ...localOnly];
+        await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(merged));
+        if (__DEV__) console.log('[Teams] Merged teams - server:', serverParsed.length, 'local only:', localOnly.length);
+        return merged;
       } catch {
-        console.log('[Teams] Server fetch failed, using local storage');
+        if (__DEV__) console.log('[Teams] Server fetch failed, using local storage');
+        if (localTeams.length > 0) return localTeams;
+        throw new Error('Network error');
       }
-      
-      if (localTeams.length > 0) {
-        console.log('[Teams] Using local teams:', localTeams.length);
-        return localTeams;
-      }
-      
-      await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(mockTeams));
-      return parseTeamDates(mockTeams);
     },
+    staleTime: 60 * 1000,
   });
 
   useEffect(() => {
@@ -148,18 +139,10 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
 
   const joinRequestMutation = useMutation({
     mutationFn: async ({ teamId, userId, message }: { teamId: string; userId: string; message?: string }) => {
-      console.log('[Teams] Sending join request to team:', teamId);
+      console.log('[Teams] Sending join request to captain, team:', teamId);
       try {
         const request = await teamsApi.sendJoinRequest(teamId, userId, message);
-        const teamIndex = teams.findIndex(t => t.id === teamId);
-        if (teamIndex !== -1) {
-          const updatedTeams = [...teams];
-          updatedTeams[teamIndex] = {
-            ...updatedTeams[teamIndex],
-            joinRequests: [...updatedTeams[teamIndex].joinRequests, request],
-          };
-          await saveTeams(updatedTeams);
-        }
+        await queryClient.invalidateQueries({ queryKey: ['teams'] });
         return request;
       } catch (err: any) {
         console.log('[Teams] Supabase error:', err.message);
@@ -337,11 +320,11 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
   });
 
   const deleteTeamMutation = useMutation({
-    mutationFn: async ({ teamId, userId }: { teamId: string; userId: string }) => {
-      console.log('[Teams] Deleting team:', teamId);
+    mutationFn: async ({ teamId, userId, asAdmin }: { teamId: string; userId: string; asAdmin?: boolean }) => {
+      if (__DEV__) console.log('[Teams] Deleting team:', teamId, asAdmin ? '(admin)' : '');
       const team = teams.find(t => t.id === teamId);
       if (!team) throw new Error('Équipe non trouvée');
-      if (team.captainId !== userId) throw new Error('Seul le capitaine peut dissoudre l\'équipe');
+      if (!asAdmin && team.captainId !== userId) throw new Error('Seul le capitaine peut dissoudre l\'équipe');
       
       const updatedTeams = teams.filter(t => t.id !== teamId);
       await saveTeams(updatedTeams);
@@ -375,11 +358,19 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
   const getTeamById = useCallback((id: string) => teams.find(t => t.id === id), [teams]);
   const getUserTeams = useCallback((userId: string) => teams.filter(t => t.members.some(m => m.userId === userId)), [teams]);
   const getRecruitingTeams = useCallback(() => teams.filter(t => t.isRecruiting && t.members.length < t.maxMembers), [teams]);
+  /** Toutes les équipes créées (recrutent ou non), pour la découverte */
+  const getAllTeams = useCallback(() => teams, [teams]);
   const getPendingRequests = useCallback((teamId: string) => teams.find(t => t.id === teamId)?.joinRequests.filter(r => r.status === 'pending') || [], [teams]);
+
+  const refetchTeams = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['teams'] });
+  }, [queryClient]);
 
   return {
     teams,
     isLoading: teamsQuery.isLoading,
+    isError: teamsQuery.isError,
+    refetchTeams,
     createTeam: createTeamMutation.mutateAsync,
     sendJoinRequest: joinRequestMutation.mutateAsync,
     handleRequest: handleRequestMutation.mutateAsync,
@@ -394,6 +385,7 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
     getTeamById,
     getUserTeams,
     getRecruitingTeams,
+    getAllTeams,
     getPendingRequests,
     isCreating: createTeamMutation.isPending,
     isUpdating: updateTeamMutation.isPending,

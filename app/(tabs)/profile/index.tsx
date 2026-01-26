@@ -116,7 +116,7 @@ export default function ProfileScreen() {
               <View style={styles.profileMetaDivider} />
               <View style={styles.profileMetaItem}><Text style={styles.profileMetaValue}>{user?.following || 0}</Text><Text style={styles.profileMetaLabel}>Abonnements</Text></View>
               <View style={styles.profileMetaDivider} />
-              <View style={styles.profileMetaItem}><Text style={styles.profileMetaValue}>{user?.teams?.length || 0}</Text><Text style={styles.profileMetaLabel}>Équipes</Text></View>
+              <View style={styles.profileMetaItem}><Text style={styles.profileMetaValue}>{user?.teams?.length || 0}</Text><Text style={styles.profileMetaLabel}>Équipe</Text></View>
             </View>
             {(user?.isPremium || isAdmin) && (
               <View style={styles.premiumBadge}>

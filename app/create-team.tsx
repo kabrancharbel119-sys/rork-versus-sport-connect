@@ -81,7 +81,9 @@ const sportIcons: Record<string, string> = {
 export default function CreateTeamScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { createTeam, isCreating } = useTeams();
+  const { createTeam, isCreating, getUserTeams } = useTeams();
+
+  const alreadyInTeam = user ? getUserTeams(user.id).length >= 1 : false;
 
   const [step, setStep] = useState(1);
   const [showSportModal, setShowSportModal] = useState(false);
@@ -136,6 +138,10 @@ export default function CreateTeamScreen() {
 
   const handleCreate = async () => {
     if (!validate() || !user) return;
+    if (alreadyInTeam) {
+      Alert.alert('Une seule équipe', 'Vous ne pouvez être membre que d\'une seule équipe à la fois. Quittez votre équipe actuelle pour en créer une nouvelle.');
+      return;
+    }
     try {
       await createTeam({
         name: formData.name,
@@ -387,6 +393,32 @@ export default function CreateTeamScreen() {
     </>
   );
 
+  if (alreadyInTeam) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.container}>
+          <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+          <SafeAreaView style={styles.safeArea}>
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+                <X size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Créer une équipe</Text>
+              <View style={styles.placeholder} />
+            </View>
+            <View style={styles.blockedContainer}>
+              <Shield size={56} color={Colors.primary.orange} />
+              <Text style={styles.blockedTitle}>Une seule équipe à la fois</Text>
+              <Text style={styles.blockedText}>Vous ne pouvez être membre que d&#39;une seule équipe. Quittez votre équipe actuelle pour en créer une nouvelle.</Text>
+              <Button title="Retour" onPress={() => router.back()} variant="outline" style={{ marginTop: 24 }} />
+            </View>
+          </SafeAreaView>
+        </View>
+      </>
+    );
+  }
+
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
@@ -637,6 +669,9 @@ const styles = StyleSheet.create({
   headerTitle: { color: Colors.text.primary, fontSize: 17, fontWeight: '600' as const },
   stepIndicator: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
   placeholder: { width: 40 },
+  blockedContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
+  blockedTitle: { color: Colors.text.primary, fontSize: 20, fontWeight: '700' as const, marginTop: 20, textAlign: 'center' as const },
+  blockedText: { color: Colors.text.secondary, fontSize: 15, marginTop: 12, textAlign: 'center' as const, lineHeight: 22 },
   progressBar: { height: 3, backgroundColor: Colors.background.card, marginHorizontal: 20 },
   progressFill: { height: '100%', backgroundColor: Colors.primary.orange, borderRadius: 2 },
   keyboardView: { flex: 1 },

@@ -43,6 +43,9 @@
       },
       "package": "app.rork.vs_sport_amateurs_connect",
       "versionCode": 1,
+      "intentFilters": [
+        { "action": "VIEW", "autoVerify": true, "data": [{ "scheme": "rork-app", "host": "*", "pathPrefix": "/" }], "category": ["BROWSABLE", "DEFAULT"] }
+      ],
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",

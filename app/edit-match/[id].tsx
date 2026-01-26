@@ -11,7 +11,7 @@ import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Sport, SkillLevel, PlayStyle } from '@/types';
-import { sportLabels, levelLabels, ambianceLabels, mockVenues } from '@/mocks/data';
+import { sportLabels, levelLabels, ambianceLabels } from '@/mocks/data';
 
 const sports: Sport[] = ['football', 'basketball', 'volleyball', 'tennis', 'handball', 'rugby'];
 const levels: SkillLevel[] = ['beginner', 'intermediate', 'advanced', 'expert'];
@@ -64,7 +64,7 @@ export default function EditMatchScreen() {
     type: 'friendly' as 'friendly' | 'ranked',
     level: 'intermediate' as SkillLevel,
     ambiance: 'mixed' as PlayStyle,
-    venueId: mockVenues[0]?.id || '',
+    venueId: '',
     date: '',
     time: '15:00',
     duration: '90',
@@ -121,7 +121,7 @@ export default function EditMatchScreen() {
     );
   }
 
-  const selectedVenue = mockVenues.find(v => v.id === formData.venueId) || match.venue;
+  const selectedVenue = venues.find(v => v.id === formData.venueId) || match.venue;
 
   const updateField = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -267,7 +267,7 @@ export default function EditMatchScreen() {
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Terrain</Text>
-                {mockVenues.map((venue) => (
+                {venues.map((venue) => (
                   <TouchableOpacity
                     key={venue.id}
                     onPress={() => updateField('venueId', venue.id)}

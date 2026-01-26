@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { TeamsProvider } from "@/contexts/TeamsContext";
 import { MatchesProvider } from "@/contexts/MatchesContext";
@@ -52,10 +53,10 @@ function AuthGateInner({ children }: { children: React.ReactNode }) {
     const inSplash = segments[0] === 'splash';
     const inVerifyEmail = segments[0] === 'verify-email';
 
-    console.log('[AuthGate] Segments:', segments, 'isAuth:', isAuthenticated);
+    if (__DEV__) console.log('[AuthGate] Segments:', segments, 'isAuth:', isAuthenticated);
 
     if (!isAuthenticated && !inAuthGroup && !inSplash && !inVerifyEmail) {
-      console.log('[AuthGate] Redirecting to welcome...');
+      if (__DEV__) console.log('[AuthGate] Redirecting to welcome...');
       router.replace('/auth/welcome');
     }
   }, [isLoading, isAuthenticated, segments, router]);
@@ -82,33 +83,36 @@ const authStyles = StyleSheet.create({
 
 function RootLayoutNav() {
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: Colors.background.dark }, animation: 'fade' }}>
-      <Stack.Screen name="splash" />
-      <Stack.Screen name="auth" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="create-team" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="create-match" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="edit-profile" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="settings" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="admin" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="team/[id]" />
-      <Stack.Screen name="match/[id]" />
-      <Stack.Screen name="chat/[roomId]" />
-      <Stack.Screen name="forgot-password" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="notifications" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="user/[id]" />
-      <Stack.Screen name="terms" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="privacy" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="contact" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="trophies" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="verification" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="search" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="referral" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="statistics" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="create-tournament" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="tournaments" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="tournament/[id]" />
-    </Stack>
+    <View style={{ flex: 1 }}>
+      <OfflineBanner />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: Colors.background.dark }, animation: 'fade' }} style={{ flex: 1 }}>
+        <Stack.Screen name="splash" />
+        <Stack.Screen name="auth" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="create-team" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="create-match" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="edit-profile" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="settings" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="admin" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="team/[id]" />
+        <Stack.Screen name="match/[id]" />
+        <Stack.Screen name="chat/[roomId]" />
+        <Stack.Screen name="forgot-password" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="notifications" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="user/[id]" />
+        <Stack.Screen name="terms" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="privacy" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="contact" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="trophies" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="verification" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="search" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="referral" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="statistics" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="create-tournament" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="tournaments" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="tournament/[id]" />
+      </Stack>
+    </View>
   );
 }
 

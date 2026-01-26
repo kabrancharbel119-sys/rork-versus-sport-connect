@@ -3,12 +3,13 @@ import { Tabs } from 'expo-router';
 import { Home, Users, Swords, MessageCircle, User } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useChat } from '@/contexts/ChatContext';
+import { useI18n } from '@/contexts/I18nContext';
 import { View, Text, StyleSheet } from 'react-native';
 
 function TabBarBadge({ count }: { count: number }) {
   if (count === 0) return null;
   return (
-    <View style={styles.badge}>
+    <View style={styles.badge} accessibilityLabel={`${count} messages non lus`}>
       <Text style={styles.badgeText}>{count > 9 ? '9+' : count}</Text>
     </View>
   );
@@ -16,6 +17,7 @@ function TabBarBadge({ count }: { count: number }) {
 
 export default function TabLayout() {
   const { getTotalUnread } = useChat();
+  const { t } = useI18n();
   const unreadCount = getTotalUnread();
 
   return (
@@ -41,7 +43,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="(home)"
         options={{
-          title: 'Accueil',
+          title: t('tabs.home'),
           tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
         }}
       />
@@ -55,7 +57,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="teams"
         options={{
-          title: 'Équipes',
+          title: t('tabs.teams'),
           tabBarIcon: ({ color, size }) => <Users size={size} color={color} />,
         }}
       />
@@ -74,7 +76,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profil',
+          title: t('tabs.profile'),
           tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
         }}
       />

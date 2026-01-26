@@ -8,10 +8,11 @@ import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
 import { useMatches } from '@/contexts/MatchesContext';
+import { useTeams } from '@/contexts/TeamsContext';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { Sport, SkillLevel, Venue } from '@/types';
-import { ALL_SPORTS, sportLabels, levelLabels, mockVenues } from '@/mocks/data';
+import { ALL_SPORTS, sportLabels, levelLabels } from '@/mocks/data';
 
 const levels: SkillLevel[] = ['beginner', 'intermediate', 'advanced', 'expert'];
 const tournamentTypes = [
@@ -39,11 +40,20 @@ const sportIcons: Record<string, string> = {
   gymnastics: '🤸', esports: '🎮', futsal: '⚽', beachvolleyball: '🏐', padel: '🎾', squash: '🎾',
 };
 
+const MIN_MEMBERS_TO_CREATE_TOURNAMENT = 5;
+
 export default function CreateTournamentScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { createTournament, isCreating } = useTournaments();
   const { venues } = useMatches();
+  const { getUserTeams } = useTeams();
+
+  const canCreateTournament = (() => {
+    if (!user) return false;
+    const myTeams = getUserTeams(user.id);
+    return myTeams.some((t) => t.captainId === user.id && (t.members?.length ?? 0) >= MIN_MEMBERS_TO_CREATE_TOURNAMENT);
+  })();
 
   const [step, setStep] = useState(1);
   const [showSportModal, setShowSportModal] = useState(false);
@@ -61,7 +71,7 @@ export default function CreateTournamentScreen() {
     maxTeams: '8',
     entryFee: '25000',
     prizePool: '200000',
-    venue: venues[0] || mockVenues[0],
+    venue: venues[0] ?? ({ id: '', name: '—', address: '', city: '', country: 'Côte d\'Ivoire', pricePerHour: 0, surface: 'grass', amenities: [] } as Venue),
     startDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     endDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
     sponsorName: '',
@@ -77,7 +87,7 @@ export default function CreateTournamentScreen() {
   }, [sportSearch]);
 
   const filteredVenues = useMemo(() => {
-    const allVenues = venues.length > 0 ? venues : mockVenues;
+    const allVenues = venues;
     if (!venueSearch.trim()) return allVenues;
     return allVenues.filter(v => 
       v.name.toLowerCase().includes(venueSearch.toLowerCase()) ||
@@ -115,7 +125,10 @@ export default function CreateTournamentScreen() {
 
   const handleCreate = async () => {
     if (!validate() || !user) return;
-    
+    if (!formData.venue?.id || venues.length === 0) {
+      Alert.alert('Lieu requis', 'Veuillez sélectionner un lieu pour le tournoi. Les lieux sont chargés depuis les matchs ou par l\'administrateur.');
+      return;
+    }
     const prizePool = parseInt(formData.prizePool, 10);
     const prizes = [
       { position: 1, amount: Math.floor(prizePool * 0.6), label: '1er' },
@@ -391,6 +404,38 @@ export default function CreateTournamentScreen() {
       </View>
     </>
   );
+
+  if (!canCreateTournament) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.container}>
+          <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+          <SafeAreaView style={styles.safeArea}>
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+                <X size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Créer un tournoi</Text>
+              <View style={styles.placeholder} />
+            </View>
+            <View style={[styles.scrollContent, { flex: 1, justifyContent: 'center', paddingVertical: 40 }]}>
+              <View style={{ alignItems: 'center', marginBottom: 24 }}>
+                <Trophy size={56} color={Colors.text.muted} />
+              </View>
+              <Text style={[styles.fieldLabel, { textAlign: 'center', marginBottom: 12 }]}>
+                Réservé aux capitaines d&apos;équipe
+              </Text>
+              <Text style={[styles.fieldLabel, { fontSize: 14, color: Colors.text.secondary, textAlign: 'center', lineHeight: 22 }]}>
+                Vous devez être capitaine d&apos;une équipe d&apos;au moins {MIN_MEMBERS_TO_CREATE_TOURNAMENT} membres pour créer un tournoi. Créez ou rejoignez une équipe, devenez capitaine, puis revenez ici.
+              </Text>
+              <Button title="Retour" onPress={() => router.back()} variant="primary" size="large" style={{ marginTop: 28 }} />
+            </View>
+          </SafeAreaView>
+        </View>
+      </>
+    );
+  }
 
   return (
     <>

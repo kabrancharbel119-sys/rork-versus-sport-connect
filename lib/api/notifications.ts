@@ -161,7 +161,7 @@ export const notificationsApi = {
         type: notification.type,
         title: notification.title,
         message: notification.message,
-        data: notification.data,
+        data: notification.data ?? null,
       } as any)
       .select()
       .single() as any);
@@ -194,7 +194,7 @@ export const notificationsApi = {
       type: notification.type,
       title: notification.title,
       message: notification.message,
-      data: notification.data,
+      data: notification.data ?? null,
     }));
 
     const { error } = await (supabase.from('notifications').insert(notifications as any) as any);

@@ -50,9 +50,16 @@ export default function EditProfileScreen() {
     catch (err: any) { if (err.message !== 'Annulé') Alert.alert('Erreur', err.message || 'Impossible de changer la photo'); }
   };
 
+  const alreadyHasSport = (s: Sport) => user?.sports?.some(us => us.sport === s) ?? false;
+
   const handleAddSport = async () => {
     if (!selectedSport) return;
-    const newSport: UserSport = { sport: selectedSport, level: selectedLevel, position: selectedPosition || undefined, yearsPlaying: parseInt(yearsPlaying) || 1 };
+    if (alreadyHasSport(selectedSport)) {
+      Alert.alert('Déjà ajouté', `${sportLabels[selectedSport]} est déjà dans vos sports. Modifiez-le depuis la liste ou supprimez-le pour le réajouter.`);
+      return;
+    }
+    const years = Math.min(99, Math.max(1, parseInt(yearsPlaying, 10) || 1));
+    const newSport: UserSport = { sport: selectedSport, level: selectedLevel, position: selectedPosition || undefined, yearsPlaying: years };
     try {
       await addSport(newSport);
       setShowSportModal(false);
@@ -134,13 +141,31 @@ export default function EditProfileScreen() {
                 <TouchableOpacity onPress={() => setShowSportModal(false)}><X size={24} color={Colors.text.primary} /></TouchableOpacity>
               </View>
               <ScrollView style={styles.modalScroll}>
-                <Text style={styles.modalLabel}>Sport</Text>
-                <FlatList data={ALL_SPORTS} keyExtractor={(item) => item} numColumns={2} scrollEnabled={false} renderItem={({ item }) => (
-                  <TouchableOpacity style={[styles.sportOption, selectedSport === item && styles.sportOptionActive]} onPress={() => setSelectedSport(item)}>
-                    <Text style={[styles.sportOptionText, selectedSport === item && styles.sportOptionTextActive]}>{sportLabels[item]}</Text>
-                    {selectedSport === item && <Check size={16} color="#FFFFFF" />}
-                  </TouchableOpacity>
-                )} />
+                <Text style={styles.modalLabel}>Sport (obligatoire)</Text>
+                <FlatList data={ALL_SPORTS} keyExtractor={(item) => item} numColumns={2} scrollEnabled={false} renderItem={({ item }) => {
+                  const isAdded = alreadyHasSport(item);
+                  return (
+                    <TouchableOpacity
+                      style={[
+                        styles.sportOption,
+                        selectedSport === item && styles.sportOptionActive,
+                        isAdded && styles.sportOptionDisabled,
+                      ]}
+                      onPress={() => !isAdded && setSelectedSport(item)}
+                      disabled={isAdded}
+                    >
+                      <Text style={[
+                        styles.sportOptionText,
+                        selectedSport === item && styles.sportOptionTextActive,
+                        isAdded && styles.sportOptionTextDisabled,
+                      ]}>
+                        {sportLabels[item]}
+                        {isAdded ? ' ✓' : ''}
+                      </Text>
+                      {selectedSport === item && !isAdded && <Check size={16} color="#FFFFFF" />}
+                    </TouchableOpacity>
+                  );
+                }} />
 
                 {selectedSport && (
                   <>
@@ -166,8 +191,8 @@ export default function EditProfileScreen() {
                       </>
                     )}
 
-                    <Text style={styles.modalLabel}>Années de pratique</Text>
-                    <Input value={yearsPlaying} onChangeText={setYearsPlaying} keyboardType="numeric" placeholder="1" />
+                    <Text style={styles.modalLabel}>Années de pratique (optionnel, 1–99)</Text>
+                    <Input value={yearsPlaying} onChangeText={(v) => setYearsPlaying(v.replace(/\D/g, '').slice(0, 2) || '1')} keyboardType="numeric" placeholder="1" />
                   </>
                 )}
               </ScrollView>
@@ -212,8 +237,10 @@ const styles = StyleSheet.create({
   modalLabel: { color: Colors.text.secondary, fontSize: 14, fontWeight: '500' as const, marginTop: 16, marginBottom: 8 },
   sportOption: { flex: 1, margin: 4, padding: 12, borderRadius: 10, backgroundColor: Colors.background.card, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sportOptionActive: { backgroundColor: Colors.primary.blue },
+  sportOptionDisabled: { opacity: 0.6, backgroundColor: Colors.background.cardLight },
   sportOptionText: { color: Colors.text.secondary, fontSize: 13 },
   sportOptionTextActive: { color: '#FFFFFF', fontWeight: '500' as const },
+  sportOptionTextDisabled: { color: Colors.text.muted },
   levelOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   levelOption: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: Colors.background.card },
   levelOptionActive: { backgroundColor: Colors.primary.blue },

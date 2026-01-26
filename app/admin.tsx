@@ -1,9 +1,12 @@
-import React, { useState, useMemo } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, RefreshControl, Switch } from 'react-native';
+import React, { useState, useMemo, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, RefreshControl, Switch, Share, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Users, Swords, Shield, Ban, Search, ChevronRight, TrendingUp, Settings, BarChart3, Calendar, MapPin, Star, CheckCircle, XCircle, Eye, RefreshCw, Globe, Database, DollarSign, Ticket, UserCheck, Activity, Clock, AlertTriangle, Zap, Server, HardDrive, Send, Lock, Trash2, FileText, Download, MessageSquare, Award, Target, PieChart } from 'lucide-react-native';
+import { useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, Users, Swords, Shield, Ban, Search, ChevronRight, TrendingUp, Settings, BarChart3, Calendar, MapPin, Star, CheckCircle, XCircle, Eye, RefreshCw, Globe, Database, DollarSign, Ticket, UserCheck, Activity, Clock, AlertTriangle, Zap, Server, HardDrive, Send, Lock, Trash2, FileText, Download, MessageSquare, Award, Target, PieChart, Bell } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
@@ -11,12 +14,17 @@ import { useMatches } from '@/contexts/MatchesContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { useNotifications } from '@/contexts/NotificationsContext';
 import { useSupport, SupportTicket, VerificationRequest } from '@/contexts/SupportContext';
+import { useTournaments } from '@/contexts/TournamentsContext';
 import { Card } from '@/components/Card';
 import { StatCard } from '@/components/StatCard';
 import { Avatar } from '@/components/Avatar';
 import { sportLabels } from '@/mocks/data';
+import { notificationsApi } from '@/lib/api/notifications';
+import { offlineManager } from '@/lib/offline';
 
-type AdminTab = 'overview' | 'users' | 'teams' | 'matches' | 'tickets' | 'verifications' | 'analytics' | 'activity' | 'settings';
+const CACHE_KEYS_TO_PURGE = ['vs_tournaments', 'vs_teams', 'vs_matches', 'vs_all_users', 'vs_follows', 'vs_notifications', 'vs_offline_queue', 'vs_last_sync'];
+
+type AdminTab = 'overview' | 'users' | 'teams' | 'matches' | 'tournaments' | 'tickets' | 'verifications' | 'analytics' | 'activity' | 'settings';
 
 interface ActivityLog {
   id: string;
@@ -30,20 +38,47 @@ interface ActivityLog {
 
 export default function AdminScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, isAdmin } = useAuth();
-  const { teams } = useTeams();
-  const { matches } = useMatches();
+  const { teams, refetchTeams, deleteTeam } = useTeams();
+  const { matches, refetchMatches, deleteMatch } = useMatches();
   const { users, banUser, unbanUser, verifyUser } = useUsers();
   const { addNotification } = useNotifications();
   const { tickets, verificationRequests, updateTicketStatus, handleVerification, getPendingTickets, getPendingVerifications } = useSupport();
+  const { tournaments, refetchTournaments } = useTournaments();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'banned' | 'verified'>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState('');
+  const [sendingNotif, setSendingNotif] = useState(false);
 
-  const onRefresh = async () => { setRefreshing(true); await new Promise(r => setTimeout(r, 1000)); setRefreshing(false); };
+  const doRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        refetchTeams(),
+        refetchMatches(),
+        refetchTournaments(),
+        queryClient.invalidateQueries({ queryKey: ['allUsers'] }),
+        queryClient.invalidateQueries({ queryKey: ['support'] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+      ]);
+    } catch (e) {
+      if (__DEV__) console.warn('[Admin] Refresh failed:', (e as Error)?.message ?? e);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchTeams, refetchMatches, refetchTournaments, queryClient]);
+
+  useFocusEffect(
+    useCallback(() => {
+      doRefresh();
+    }, [doRefresh])
+  );
+
+  const onRefresh = doRefresh;
 
   const pendingTickets = getPendingTickets();
   const pendingVerifications = getPendingVerifications();
@@ -58,34 +93,28 @@ export default function AdminScreen() {
     { id: '7', type: 'ban', title: 'Utilisateur banni', description: 'Compte suspendu pour spam', timestamp: new Date(Date.now() - 1000 * 60 * 120), severity: 'error' },
   ], []);
 
-  const stats = useMemo(() => ({
-    totalUsers: users.length,
-    totalTeams: teams.length,
-    totalMatches: matches.length,
-    activeUsers: users.filter(u => !u.isBanned).length,
-    bannedUsers: users.filter(u => u.isBanned).length,
-    verifiedUsers: users.filter(u => u.isVerified).length,
-    premiumUsers: users.filter(u => u.isPremium).length,
-    pendingTickets: pendingTickets.length,
-    pendingVerifications: pendingVerifications.length,
-    totalTournaments: 8,
-    openMatches: matches.filter(m => m.status === 'open').length,
-    completedMatches: matches.filter(m => m.status === 'completed').length,
-    totalRevenue: 2500000,
-    monthlyRevenue: 450000,
-    weeklyRevenue: 125000,
-    monthlyGrowth: 15.5,
-    weeklyGrowth: 8.2,
-    avgSessionTime: 24,
-    dailyActiveUsers: Math.floor(users.length * 0.35),
-    weeklyActiveUsers: Math.floor(users.length * 0.65),
-    conversionRate: 12.5,
-    retentionRate: 78,
-    serverUptime: 99.9,
-    apiLatency: 45,
-    storageUsed: 2.4,
-    storageTotal: 10,
-  }), [users, teams, matches, pendingTickets, pendingVerifications]);
+  const stats = useMemo(() => {
+    const activeUsers = users.filter(u => !u.isBanned).length;
+    return {
+      totalUsers: users.length,
+      totalTeams: teams.length,
+      totalMatches: matches.length,
+      totalTournaments: tournaments.length,
+      activeUsers,
+      bannedUsers: users.filter(u => u.isBanned).length,
+      verifiedUsers: users.filter(u => u.isVerified).length,
+      premiumUsers: users.filter(u => u.isPremium).length,
+      pendingTickets: pendingTickets.length,
+      pendingVerifications: pendingVerifications.length,
+      openMatches: matches.filter(m => m.status === 'open').length,
+      completedMatches: matches.filter(m => m.status === 'completed').length,
+      matchesInProgress: matches.filter(m => m.status === 'in_progress').length,
+      confirmedMatches: matches.filter(m => m.status === 'confirmed').length,
+      registrationTournaments: tournaments.filter(t => t.status === 'registration').length,
+      dailyActiveUsers: activeUsers,
+      weeklyActiveUsers: activeUsers,
+    };
+  }, [users, teams, matches, tournaments, pendingTickets, pendingVerifications]);
 
   const sportStats = useMemo(() => {
     const sportCounts: Record<string, number> = {};
@@ -104,9 +133,9 @@ export default function AdminScreen() {
 
   const cityStats = useMemo(() => {
     const cityCounts: Record<string, number> = {};
-    users.forEach(u => { 
+    users.forEach(u => {
       if (u.city) {
-        cityCounts[u.city] = (cityCounts[u.city] || 0) + 1; 
+        cityCounts[u.city] = (cityCounts[u.city] || 0) + 1;
       }
     });
     const total = users.length || 1;
@@ -117,11 +146,27 @@ export default function AdminScreen() {
     })).sort((a, b) => b.count - a.count).slice(0, 5);
   }, [users]);
 
+  const summaryToday = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const end = start + 24 * 60 * 60 * 1000;
+    const inRange = (d: Date | string) => {
+      const t = typeof d === 'string' ? new Date(d).getTime() : (d as Date).getTime();
+      return t >= start && t < end;
+    };
+    return {
+      inscriptions: users.filter(u => inRange(u.createdAt)).length,
+      matchs: matches.filter(m => inRange(m.createdAt)).length,
+      equipes: teams.filter(t => inRange(t.createdAt)).length,
+    };
+  }, [users, matches, teams]);
+
   const filteredUsers = useMemo(() => {
     let result = users;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(u => u.fullName.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || u.username.toLowerCase().includes(q));
+      const contact = (u: typeof users[0]) => (u.email ?? u.phone ?? '').toLowerCase();
+      result = result.filter(u => u.fullName.toLowerCase().includes(q) || contact(u).includes(q) || (u.username ?? '').toLowerCase().includes(q));
     }
     if (filterStatus === 'active') result = result.filter(u => !u.isBanned);
     if (filterStatus === 'banned') result = result.filter(u => u.isBanned);
@@ -138,8 +183,14 @@ export default function AdminScreen() {
   const filteredMatches = useMemo(() => {
     if (!searchQuery) return matches;
     const q = searchQuery.toLowerCase();
-    return matches.filter(m => m.sport.toLowerCase().includes(q) || m.venue.name.toLowerCase().includes(q));
+    return matches.filter(m => m.sport.toLowerCase().includes(q) || (m.venue?.name ?? '').toLowerCase().includes(q));
   }, [matches, searchQuery]);
+
+  const filteredTournaments = useMemo(() => {
+    if (!searchQuery) return tournaments;
+    const q = searchQuery.toLowerCase();
+    return tournaments.filter(t => t.name.toLowerCase().includes(q) || (t.sport ?? '').toLowerCase().includes(q) || (t.venue?.name ?? '').toLowerCase().includes(q));
+  }, [tournaments, searchQuery]);
 
   if (!isAdmin) {
     return (
@@ -158,53 +209,188 @@ export default function AdminScreen() {
   }
 
   const handleBanUser = async (userId: string, userName: string) => {
+    if (!userId?.trim()) {
+      Alert.alert('Erreur', 'Utilisateur invalide.');
+      return;
+    }
     Alert.alert('Bannir', `Bannir ${userName} ?`, [
       { text: 'Annuler', style: 'cancel' },
-      { text: 'Bannir', style: 'destructive', onPress: async () => {
-        await banUser(userId);
-        await addNotification({ userId, type: 'system', title: 'Compte suspendu', message: 'Votre compte a été suspendu pour violation des règles.' });
-        Alert.alert('Succès', `${userName} a été banni`);
-      }},
+      {
+        text: 'Bannir',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await banUser(userId);
+            try {
+              await addNotification({ userId, type: 'system', title: 'Compte suspendu', message: 'Votre compte a été suspendu pour violation des règles.' });
+            } catch (_) {
+              // Notification échouée mais le ban a réussi
+            }
+            await queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+            Alert.alert('Succès', `${userName} a été banni`);
+          } catch (e) {
+            Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de bannir l\'utilisateur.');
+          }
+        },
+      },
     ]);
   };
 
   const handleUnbanUser = async (userId: string, userName: string) => {
+    if (!userId?.trim()) {
+      Alert.alert('Erreur', 'Utilisateur invalide.');
+      return;
+    }
     Alert.alert('Débannir', `Débannir ${userName} ?`, [
       { text: 'Annuler', style: 'cancel' },
-      { text: 'Débannir', onPress: async () => {
-        await unbanUser(userId);
-        await addNotification({ userId, type: 'system', title: 'Compte réactivé', message: 'Votre compte a été réactivé.' });
-        Alert.alert('Succès', `${userName} a été débanni`);
-      }},
+      {
+        text: 'Débannir',
+        onPress: async () => {
+          try {
+            await unbanUser(userId);
+            try {
+              await addNotification({ userId, type: 'system', title: 'Compte réactivé', message: 'Votre compte a été réactivé.' });
+            } catch (_) {
+              // Notification échouée mais le débannissement a réussi
+            }
+            await queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+            Alert.alert('Succès', `${userName} a été débanni`);
+          } catch (e) {
+            Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de débannir l\'utilisateur.');
+          }
+        },
+      },
     ]);
   };
 
   const handleVerifyUser = async (userId: string, userName: string) => {
+    if (!userId?.trim()) {
+      Alert.alert('Erreur', 'Utilisateur invalide.');
+      return;
+    }
     Alert.alert('Vérifier', `Vérifier le compte de ${userName} ?`, [
       { text: 'Annuler', style: 'cancel' },
-      { text: 'Vérifier', onPress: async () => {
-        await verifyUser(userId);
-        await addNotification({ userId, type: 'system', title: 'Compte vérifié ✓', message: 'Félicitations ! Votre compte est maintenant vérifié.' });
-        Alert.alert('Succès', `${userName} est maintenant vérifié`);
-      }},
+      {
+        text: 'Vérifier',
+        onPress: async () => {
+          try {
+            await verifyUser(userId);
+            try {
+              await addNotification({ userId, type: 'system', title: 'Compte vérifié ✓', message: 'Félicitations ! Votre compte est maintenant vérifié.' });
+            } catch (_) {
+              // Notification échouée mais la vérification a réussi
+            }
+            await queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+            Alert.alert('Succès', `${userName} est maintenant vérifié`);
+          } catch (e) {
+            Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de vérifier l\'utilisateur.');
+          }
+        },
+      },
     ]);
   };
 
   const handleTicketAction = async (ticketId: string, action: 'resolve' | 'close') => {
+    if (!ticketId?.trim()) {
+      Alert.alert('Erreur', 'Ticket invalide.');
+      return;
+    }
     const status = action === 'resolve' ? 'resolved' : 'closed';
-    await updateTicketStatus({ ticketId, status });
-    Alert.alert('Succès', `Ticket ${action === 'resolve' ? 'résolu' : 'fermé'}`);
+    try {
+      await updateTicketStatus({ ticketId, status });
+      await queryClient.invalidateQueries({ queryKey: ['support'] });
+      Alert.alert('Succès', `Ticket ${action === 'resolve' ? 'résolu' : 'fermé'}`);
+    } catch (e) {
+      Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de mettre à jour le ticket.');
+    }
   };
 
   const handleVerificationAction = async (requestId: string, action: 'approve' | 'reject', userId: string) => {
-    await handleVerification({ requestId, action, adminId: user?.id || '' });
-    if (action === 'approve') {
-      await verifyUser(userId);
-      await addNotification({ userId, type: 'system', title: 'Compte vérifié ✓', message: 'Félicitations ! Votre demande de vérification a été approuvée.' });
-    } else {
-      await addNotification({ userId, type: 'system', title: 'Vérification refusée', message: 'Votre demande de vérification a été refusée. Vous pouvez soumettre une nouvelle demande.' });
+    if (!requestId?.trim()) {
+      Alert.alert('Erreur', 'Demande invalide.');
+      return;
     }
-    Alert.alert('Succès', action === 'approve' ? 'Utilisateur vérifié' : 'Demande refusée');
+    try {
+      await handleVerification({ requestId, action, adminId: user?.id ?? '' });
+      if (action === 'approve' && userId?.trim()) {
+        try {
+          await verifyUser(userId);
+        } catch (e) {
+          await queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+          await queryClient.invalidateQueries({ queryKey: ['support'] });
+          Alert.alert('Attention', 'Demande approuvée mais le compte n\'a pas pu être mis à jour : ' + ((e as Error)?.message ?? 'erreur'));
+          return;
+        }
+        try {
+          await addNotification({ userId, type: 'system', title: 'Compte vérifié ✓', message: 'Félicitations ! Votre demande de vérification a été approuvée.' });
+        } catch (_) {}
+      } else if (action === 'reject' && userId?.trim()) {
+        try {
+          await addNotification({ userId, type: 'system', title: 'Vérification refusée', message: 'Votre demande de vérification a été refusée. Vous pouvez soumettre une nouvelle demande.' });
+        } catch (_) {}
+      }
+      await queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+      await queryClient.invalidateQueries({ queryKey: ['support'] });
+      if (action === 'approve' && !userId?.trim()) {
+        Alert.alert('Succès', 'Demande approuvée (compte utilisateur non mis à jour : id manquant).');
+      } else {
+        Alert.alert('Succès', action === 'approve' ? 'Utilisateur vérifié' : 'Demande refusée');
+      }
+    } catch (e) {
+      Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de traiter la demande de vérification.');
+    }
+  };
+
+  const handleDeleteTeam = async (teamId: string, teamName: string) => {
+    if (!teamId?.trim()) {
+      Alert.alert('Erreur', 'Équipe invalide.');
+      return;
+    }
+    Alert.alert('Supprimer l\'équipe', `Dissoudre « ${teamName} » ? Cette action est irréversible.`, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteTeam({ teamId, userId: user?.id ?? '', asAdmin: true });
+            try {
+              await queryClient.invalidateQueries({ queryKey: ['teams'] });
+              await refetchTeams();
+            } catch (_) {}
+            Alert.alert('Succès', 'Équipe supprimée');
+          } catch (e) {
+            Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de supprimer l\'équipe.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleDeleteMatch = async (matchId: string, sportLabel: string) => {
+    if (!matchId?.trim()) {
+      Alert.alert('Erreur', 'Match invalide.');
+      return;
+    }
+    Alert.alert('Supprimer le match', `Supprimer ce match (${sportLabel}) ? Cette action est irréversible.`, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteMatch({ matchId, userId: user?.id ?? '', asAdmin: true });
+            try {
+              await queryClient.invalidateQueries({ queryKey: ['matches'] });
+              await refetchMatches();
+            } catch (_) {}
+            Alert.alert('Succès', 'Match supprimé');
+          } catch (e) {
+            Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de supprimer le match.');
+          }
+        },
+      },
+    ]);
   };
 
   const handleSendGlobalNotification = () => {
@@ -212,12 +398,50 @@ export default function AdminScreen() {
       Alert.alert('Erreur', 'Veuillez entrer un message');
       return;
     }
-    Alert.alert('Confirmer', `Envoyer cette notification à tous les utilisateurs ?\n\n"${notificationMessage}"`, [
+    const message = notificationMessage.trim();
+    const userIds = users.filter(u => !u.isBanned).map(u => u.id);
+    if (userIds.length === 0) {
+      Alert.alert('Info', 'Aucun utilisateur actif à notifier.');
+      return;
+    }
+    Alert.alert('Confirmer', `Envoyer cette annonce à ${userIds.length} utilisateur(s) ?\n\n"${message}"\n\nElle apparaîtra dans la cloche (Notifications) en haut à droite de l\'écran d\'accueil pour chaque utilisateur.`, [
       { text: 'Annuler', style: 'cancel' },
-      { text: 'Envoyer', onPress: () => {
-        Alert.alert('Succès', 'Notification envoyée à tous les utilisateurs');
-        setNotificationMessage('');
-      }},
+      {
+        text: 'Envoyer',
+        onPress: async () => {
+          setSendingNotif(true);
+          let sent = 0;
+          let lastError: string | null = null;
+          const payload = { type: 'system' as const, title: 'Annonce', message, data: { route: '/notifications' } };
+          try {
+            try {
+              await notificationsApi.sendToMany(userIds, payload);
+              sent = userIds.length;
+            } catch (err) {
+              lastError = (err as Error)?.message ?? String(err);
+              for (const uid of userIds) {
+                try {
+                  await notificationsApi.send(uid, payload);
+                  sent += 1;
+                } catch (e) {
+                  if (!lastError) lastError = (e as Error)?.message ?? String(e);
+                }
+              }
+            }
+            setNotificationMessage('');
+            queryClient.invalidateQueries({ queryKey: ['notifications'] });
+            if (sent > 0) {
+              Alert.alert('Succès', `Annonce envoyée à ${sent}/${userIds.length} utilisateur(s). Elle apparaît dans la cloche (écran d\'accueil) de chacun.`);
+            } else {
+              Alert.alert('Échec', `Aucune notification envoyée.${lastError ? ` Erreur : ${lastError}` : ''}\nVérifiez que Supabase est configuré et que la table notifications existe.`);
+            }
+          } catch (err) {
+            Alert.alert('Erreur', (err as Error)?.message ?? 'Impossible d\'envoyer l\'annonce. Vérifiez la connexion.');
+          } finally {
+            setSendingNotif(false);
+          }
+        },
+      },
     ]);
   };
 
@@ -245,6 +469,7 @@ export default function AdminScreen() {
     { key: 'users', label: 'Utilisateurs', icon: <Users size={16} color={activeTab === 'users' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'teams', label: 'Équipes', icon: <Shield size={16} color={activeTab === 'teams' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'matches', label: 'Matchs', icon: <Swords size={16} color={activeTab === 'matches' ? '#FFF' : Colors.text.secondary} /> },
+    { key: 'tournaments', label: 'Tournois', icon: <Award size={16} color={activeTab === 'tournaments' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'tickets', label: 'Tickets', icon: <Ticket size={16} color={activeTab === 'tickets' ? '#FFF' : Colors.text.secondary} />, badge: pendingTickets.length },
     { key: 'verifications', label: 'Vérifications', icon: <UserCheck size={16} color={activeTab === 'verifications' ? '#FFF' : Colors.text.secondary} />, badge: pendingVerifications.length },
     { key: 'activity', label: 'Activité', icon: <Activity size={16} color={activeTab === 'activity' ? '#FFF' : Colors.text.secondary} /> },
@@ -258,58 +483,53 @@ export default function AdminScreen() {
         <StatCard label="Utilisateurs" value={stats.totalUsers} icon={<Users size={20} color={Colors.primary.blue} />} variant="blue" />
         <StatCard label="Équipes" value={stats.totalTeams} icon={<Shield size={20} color={Colors.primary.orange} />} variant="orange" />
         <StatCard label="Matchs" value={stats.totalMatches} icon={<Swords size={20} color={Colors.status.success} />} variant="default" />
+        <StatCard label="Tournois" value={stats.totalTournaments} icon={<Award size={20} color="#A855F7" />} variant="default" />
       </View>
       <View style={styles.statsGrid}>
         <StatCard label="Actifs/jour" value={stats.dailyActiveUsers} icon={<Activity size={20} color={Colors.status.success} />} variant="default" />
         <StatCard label="Vérifiés" value={stats.verifiedUsers} icon={<CheckCircle size={20} color={Colors.primary.blue} />} variant="blue" />
         <StatCard label="Premium" value={stats.premiumUsers} icon={<Star size={20} color="#F59E0B" />} variant="orange" />
       </View>
+      <View style={styles.liveStatsRow}>
+        <RefreshCw size={14} color={Colors.text.muted} />
+        <Text style={styles.liveStatsText}>Stats à jour en temps réel (rafraîchir l’écran pour actualiser)</Text>
+      </View>
 
       <Card style={styles.revenueCard}>
         <View style={styles.revenueHeader}>
           <View>
-            <Text style={styles.revenueTitle}>Revenus du mois</Text>
-            <Text style={styles.revenueAmount}>{stats.monthlyRevenue.toLocaleString()} FCFA</Text>
+            <Text style={styles.revenueTitle}>Revenus</Text>
+            <Text style={styles.revenueAmount}>—</Text>
           </View>
-          <View style={styles.growthBadge}><TrendingUp size={12} color={Colors.status.success} /><Text style={styles.growthText}>+{stats.monthlyGrowth}%</Text></View>
-        </View>
-        <View style={styles.revenueBreakdown}>
-          <View style={styles.revenueItem}>
-            <Text style={styles.revenueItemLabel}>Cette semaine</Text>
-            <Text style={styles.revenueItemValue}>{stats.weeklyRevenue.toLocaleString()} FCFA</Text>
-          </View>
-          <View style={styles.revenueItem}>
-            <Text style={styles.revenueItemLabel}>Total annuel</Text>
-            <Text style={styles.revenueItemValue}>{stats.totalRevenue.toLocaleString()} FCFA</Text>
-          </View>
+          <Text style={styles.revenueSub}>Non disponibles (aucune donnée de paiement)</Text>
         </View>
       </Card>
 
       <Card style={styles.systemCard}>
-        <Text style={styles.cardTitle}>État du système</Text>
+        <Text style={styles.cardTitle}>Matchs par statut</Text>
         <View style={styles.systemStats}>
           <View style={styles.systemStat}>
             <View style={[styles.systemIndicator, { backgroundColor: Colors.status.success }]} />
-            <Server size={18} color={Colors.text.secondary} />
+            <Swords size={18} color={Colors.text.secondary} />
             <View style={styles.systemStatInfo}>
-              <Text style={styles.systemStatLabel}>Uptime</Text>
-              <Text style={styles.systemStatValue}>{stats.serverUptime}%</Text>
+              <Text style={styles.systemStatLabel}>Ouverts</Text>
+              <Text style={styles.systemStatValue}>{stats.openMatches}</Text>
             </View>
           </View>
           <View style={styles.systemStat}>
-            <View style={[styles.systemIndicator, { backgroundColor: Colors.status.success }]} />
-            <Zap size={18} color={Colors.text.secondary} />
+            <View style={[styles.systemIndicator, { backgroundColor: Colors.primary.blue }]} />
+            <Calendar size={18} color={Colors.text.secondary} />
             <View style={styles.systemStatInfo}>
-              <Text style={styles.systemStatLabel}>Latence API</Text>
-              <Text style={styles.systemStatValue}>{stats.apiLatency}ms</Text>
+              <Text style={styles.systemStatLabel}>Confirmés</Text>
+              <Text style={styles.systemStatValue}>{stats.confirmedMatches}</Text>
             </View>
           </View>
           <View style={styles.systemStat}>
-            <View style={[styles.systemIndicator, { backgroundColor: stats.storageUsed / stats.storageTotal > 0.8 ? '#F59E0B' : Colors.status.success }]} />
-            <HardDrive size={18} color={Colors.text.secondary} />
+            <View style={[styles.systemIndicator, { backgroundColor: Colors.text.muted }]} />
+            <CheckCircle size={18} color={Colors.text.secondary} />
             <View style={styles.systemStatInfo}>
-              <Text style={styles.systemStatLabel}>Stockage</Text>
-              <Text style={styles.systemStatValue}>{stats.storageUsed}/{stats.storageTotal} GB</Text>
+              <Text style={styles.systemStatLabel}>Terminés</Text>
+              <Text style={styles.systemStatValue}>{stats.completedMatches}</Text>
             </View>
           </View>
         </View>
@@ -382,7 +602,7 @@ export default function AdminScreen() {
                 {u.isPremium && <Star size={14} color={Colors.primary.orange} />}
                 {u.isBanned && <Ban size={14} color={Colors.status.error} />}
               </View>
-              <Text style={styles.userEmail}>{u.email}</Text>
+              <Text style={styles.userEmail}>{u.email ?? u.phone ?? '-'}</Text>
               <Text style={styles.userMeta}>{u.city} • {formatDate(u.createdAt)}</Text>
             </View>
             <View style={styles.userActions}>
@@ -403,15 +623,20 @@ export default function AdminScreen() {
     <Card style={styles.listCard}>
       <Text style={styles.cardTitle}>Équipes ({filteredTeams.length})</Text>
       {filteredTeams.map((team) => (
-        <TouchableOpacity key={team.id} style={styles.teamItem} onPress={() => router.push(`/team/${team.id}`)}>
-          <Avatar uri={team.logo} name={team.name} size="medium" />
-          <View style={styles.teamInfo}>
-            <Text style={styles.teamName}>{team.name}</Text>
-            <Text style={styles.teamMeta}>{sportLabels[team.sport]} • {team.format}</Text>
-            <Text style={styles.teamStatText}>{team.members.length}/{team.maxMembers} membres • {team.city}</Text>
+        <View key={team.id} style={styles.teamItem}>
+          <TouchableOpacity style={styles.teamItemTouch} onPress={() => router.push(`/team/${team.id}`)}>
+            <Avatar uri={team.logo} name={team.name} size="medium" />
+            <View style={styles.teamInfo}>
+              <Text style={styles.teamName}>{team.name}</Text>
+              <Text style={styles.teamMeta}>{(sportLabels as Record<string, string>)[team.sport] ?? team.sport} • {team.format}</Text>
+              <Text style={styles.teamStatText}>{team.members.length}/{team.maxMembers} membres • {team.city}</Text>
+            </View>
+          </TouchableOpacity>
+          <View style={styles.userActions}>
+            <TouchableOpacity style={styles.actionBtnBlue} onPress={() => router.push(`/team/${team.id}`)} accessibilityLabel="Voir l'équipe"><Eye size={16} color={Colors.primary.blue} /></TouchableOpacity>
+            <TouchableOpacity style={styles.actionBtnRed} onPress={() => handleDeleteTeam(team.id, team.name)} accessibilityLabel="Supprimer l'équipe"><Trash2 size={16} color={Colors.status.error} /></TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.actionBtnBlue} onPress={() => router.push(`/team/${team.id}`)}><Eye size={16} color={Colors.primary.blue} /></TouchableOpacity>
-        </TouchableOpacity>
+        </View>
       ))}
     </Card>
   );
@@ -420,16 +645,42 @@ export default function AdminScreen() {
     <Card style={styles.listCard}>
       <Text style={styles.cardTitle}>Matchs ({filteredMatches.length})</Text>
       {filteredMatches.map((match) => (
-        <TouchableOpacity key={match.id} style={styles.matchItem} onPress={() => router.push(`/match/${match.id}`)}>
-          <View style={[styles.matchStatus, match.status === 'open' ? styles.statusOpen : match.status === 'confirmed' ? styles.statusConfirmed : match.status === 'completed' ? styles.statusCompleted : styles.statusCancelled]} />
-          <View style={styles.matchInfo}>
-            <Text style={styles.matchTitle}>{sportLabels[match.sport]} - {match.format}</Text>
-            <View style={styles.matchDetails}><Calendar size={12} color={Colors.text.muted} /><Text style={styles.matchDetailText}>{formatDate(match.dateTime)}</Text></View>
-            <View style={styles.matchDetails}><MapPin size={12} color={Colors.text.muted} /><Text style={styles.matchDetailText}>{match.venue.name}</Text></View>
+        <View key={match.id} style={styles.matchItem}>
+          <TouchableOpacity style={styles.matchItemTouch} onPress={() => router.push(`/match/${match.id}`)}>
+            <View style={[styles.matchStatus, match.status === 'open' ? styles.statusOpen : match.status === 'confirmed' ? styles.statusConfirmed : match.status === 'completed' ? styles.statusCompleted : styles.statusCancelled]} />
+            <View style={styles.matchInfo}>
+              <Text style={styles.matchTitle}>{(sportLabels as Record<string, string>)[match.sport] ?? match.sport} - {match.format}</Text>
+              <View style={styles.matchDetails}><Calendar size={12} color={Colors.text.muted} /><Text style={styles.matchDetailText}>{formatDate(match.dateTime)}</Text></View>
+              <View style={styles.matchDetails}><MapPin size={12} color={Colors.text.muted} /><Text style={styles.matchDetailText}>{match.venue?.name ?? '-'}</Text></View>
+            </View>
+          </TouchableOpacity>
+          <View style={styles.userActions}>
+            <TouchableOpacity style={styles.actionBtnBlue} onPress={() => router.push(`/match/${match.id}`)} accessibilityLabel="Voir le match"><Eye size={16} color={Colors.primary.blue} /></TouchableOpacity>
+            <TouchableOpacity style={styles.actionBtnRed} onPress={() => handleDeleteMatch(match.id, (sportLabels as Record<string, string>)[match.sport] ?? match.sport)} accessibilityLabel="Supprimer le match"><Trash2 size={16} color={Colors.status.error} /></TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.actionBtnBlue} onPress={() => router.push(`/match/${match.id}`)}><Eye size={16} color={Colors.primary.blue} /></TouchableOpacity>
-        </TouchableOpacity>
+        </View>
       ))}
+    </Card>
+  );
+
+  const renderTournaments = () => (
+    <Card style={styles.listCard}>
+      <Text style={styles.cardTitle}>Tournois ({filteredTournaments.length})</Text>
+      {filteredTournaments.length === 0 ? (
+        <View style={styles.emptyState}><Award size={40} color={Colors.text.muted} /><Text style={styles.emptyText}>Aucun tournoi</Text></View>
+      ) : (
+        filteredTournaments.map((t) => (
+          <TouchableOpacity key={t.id} style={styles.teamItem} onPress={() => router.push(`/tournament/${t.id}`)}>
+            <View style={[styles.matchStatus, t.status === 'registration' ? styles.statusOpen : t.status === 'in_progress' ? styles.statusConfirmed : styles.statusCompleted]} />
+            <View style={styles.teamInfo}>
+              <Text style={styles.teamName}>{t.name}</Text>
+              <Text style={styles.teamMeta}>{(sportLabels as Record<string, string>)[t.sport] ?? t.sport} • {t.format} • {(t.registeredTeams?.length ?? 0)}/{t.maxTeams} équipes</Text>
+              <Text style={styles.teamStatText}>{t.venue?.name ?? '-'} • {formatDate(t.startDate)}</Text>
+            </View>
+            <TouchableOpacity style={styles.actionBtnBlue} onPress={() => router.push(`/tournament/${t.id}`)}><Eye size={16} color={Colors.primary.blue} /></TouchableOpacity>
+          </TouchableOpacity>
+        ))
+      )}
     </Card>
   );
 
@@ -500,6 +751,7 @@ export default function AdminScreen() {
     <>
       <Card style={styles.activityCard}>
         <Text style={styles.cardTitle}>Activité récente</Text>
+        <Text style={styles.activityDemoHint}>Exemple (données de démonstration)</Text>
         {activityLogs.map((log) => (
           <View key={log.id} style={styles.activityItem}>
             <View style={[styles.activityDot, { backgroundColor: getSeverityColor(log.severity) }]} />
@@ -518,22 +770,22 @@ export default function AdminScreen() {
         <View style={styles.summaryGrid}>
           <View style={styles.summaryItem}>
             <Users size={20} color={Colors.primary.blue} />
-            <Text style={styles.summaryValue}>+12</Text>
+            <Text style={styles.summaryValue}>{summaryToday.inscriptions}</Text>
             <Text style={styles.summaryLabel}>Inscriptions</Text>
           </View>
           <View style={styles.summaryItem}>
             <Swords size={20} color={Colors.primary.orange} />
-            <Text style={styles.summaryValue}>8</Text>
+            <Text style={styles.summaryValue}>{summaryToday.matchs}</Text>
             <Text style={styles.summaryLabel}>Matchs créés</Text>
           </View>
           <View style={styles.summaryItem}>
             <Shield size={20} color={Colors.status.success} />
-            <Text style={styles.summaryValue}>3</Text>
+            <Text style={styles.summaryValue}>{summaryToday.equipes}</Text>
             <Text style={styles.summaryLabel}>Équipes créées</Text>
           </View>
           <View style={styles.summaryItem}>
             <MessageSquare size={20} color={Colors.text.secondary} />
-            <Text style={styles.summaryValue}>245</Text>
+            <Text style={styles.summaryValue}>—</Text>
             <Text style={styles.summaryLabel}>Messages</Text>
           </View>
         </View>
@@ -544,22 +796,22 @@ export default function AdminScreen() {
   const renderAnalytics = () => (
     <>
       <Card style={styles.analyticsCard}>
-        <Text style={styles.cardTitle}>Métriques clés</Text>
+        <Text style={styles.cardTitle}>Métriques clés (temps réel)</Text>
         <View style={styles.metricsGrid}>
           <View style={styles.metricItem}>
-            <View style={styles.metricIcon}><Target size={20} color={Colors.primary.blue} /></View>
-            <Text style={styles.metricValue}>{stats.conversionRate}%</Text>
-            <Text style={styles.metricLabel}>Taux de conversion</Text>
+            <View style={styles.metricIcon}><Users size={20} color={Colors.primary.blue} /></View>
+            <Text style={styles.metricValue}>{stats.activeUsers}</Text>
+            <Text style={styles.metricLabel}>Utilisateurs actifs</Text>
           </View>
           <View style={styles.metricItem}>
-            <View style={styles.metricIcon}><Award size={20} color={Colors.status.success} /></View>
-            <Text style={styles.metricValue}>{stats.retentionRate}%</Text>
-            <Text style={styles.metricLabel}>Rétention</Text>
+            <View style={styles.metricIcon}><CheckCircle size={20} color={Colors.status.success} /></View>
+            <Text style={styles.metricValue}>{stats.verifiedUsers}</Text>
+            <Text style={styles.metricLabel}>Vérifiés</Text>
           </View>
           <View style={styles.metricItem}>
-            <View style={styles.metricIcon}><Clock size={20} color={Colors.primary.orange} /></View>
-            <Text style={styles.metricValue}>{stats.avgSessionTime}min</Text>
-            <Text style={styles.metricLabel}>Session moy.</Text>
+            <View style={styles.metricIcon}><Swords size={20} color={Colors.primary.orange} /></View>
+            <Text style={styles.metricValue}>{stats.openMatches}</Text>
+            <Text style={styles.metricLabel}>Matchs ouverts</Text>
           </View>
         </View>
       </Card>
@@ -614,7 +866,8 @@ export default function AdminScreen() {
   const renderSettings = () => (
     <>
       <Card style={styles.settingsCard}>
-        <Text style={styles.cardTitle}>Notifications globales</Text>
+        <Text style={styles.cardTitle}>Notifications globales (annonces)</Text>
+        <Text style={styles.cardDesc}>Chaque utilisateur verra l’annonce dans la cloche en haut à droite de l’écran d’accueil.</Text>
         <TextInput 
           style={styles.notifInput} 
           placeholder="Entrez votre message..." 
@@ -624,8 +877,8 @@ export default function AdminScreen() {
           multiline
           numberOfLines={3}
         />
-        <TouchableOpacity style={styles.sendNotifBtn} onPress={handleSendGlobalNotification}>
-          <Send size={18} color="#FFF" /><Text style={styles.sendNotifText}>Envoyer à tous</Text>
+        <TouchableOpacity style={styles.sendNotifBtn} onPress={handleSendGlobalNotification} disabled={sendingNotif}>
+          <Send size={18} color="#FFF" /><Text style={styles.sendNotifText}>{sendingNotif ? 'Envoi…' : 'Envoyer à tous'}</Text>
         </TouchableOpacity>
       </Card>
 
@@ -655,12 +908,27 @@ export default function AdminScreen() {
           <View style={styles.dbStat}><Database size={20} color={Colors.primary.blue} /><Text style={styles.dbLabel}>Utilisateurs</Text><Text style={styles.dbValue}>{stats.totalUsers}</Text></View>
           <View style={styles.dbStat}><Shield size={20} color={Colors.primary.orange} /><Text style={styles.dbLabel}>Équipes</Text><Text style={styles.dbValue}>{stats.totalTeams}</Text></View>
           <View style={styles.dbStat}><Swords size={20} color={Colors.status.success} /><Text style={styles.dbLabel}>Matchs</Text><Text style={styles.dbValue}>{stats.totalMatches}</Text></View>
+          <View style={styles.dbStat}><Award size={20} color="#A855F7" /><Text style={styles.dbLabel}>Tournois</Text><Text style={styles.dbValue}>{stats.totalTournaments}</Text></View>
         </View>
         <View style={styles.dbActions}>
-          <TouchableOpacity style={styles.dbActionBtn} onPress={() => Alert.alert('Export', 'Export des données en cours...')}>
+          <TouchableOpacity style={styles.dbActionBtn} onPress={async () => {
+            try {
+              const report = JSON.stringify({ users: stats.totalUsers, teams: stats.totalTeams, matchs: stats.totalMatches, tournois: stats.totalTournaments, exportéLe: new Date().toISOString() }, null, 2);
+              await Share.share(Platform.OS === 'web' ? { title: 'Export Admin VS Sport', text: report } : { message: report, title: 'Export Admin VS Sport' });
+            } catch (e) {
+              Alert.alert('Export', (e as Error)?.message ? `Erreur : ${(e as Error).message}` : `Utilisateurs: ${stats.totalUsers}, Équipes: ${stats.totalTeams}, Matchs: ${stats.totalMatches}`);
+            }
+          }}>
             <Download size={16} color={Colors.primary.blue} /><Text style={styles.dbActionText}>Exporter</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.dbActionBtn, styles.dbBackupBtn]} onPress={() => Alert.alert('Sauvegarde', 'Sauvegarde en cours...')}>
+          <TouchableOpacity style={[styles.dbActionBtn, styles.dbBackupBtn]} onPress={async () => {
+            try {
+              await onRefresh();
+              Alert.alert('Sauvegarde', 'Synchronisation effectuée.');
+            } catch (e) {
+              Alert.alert('Erreur', (e as Error)?.message ?? 'Synchronisation échouée.');
+            }
+          }}>
             <RefreshCw size={16} color="#FFF" /><Text style={styles.dbBackupText}>Sauvegarder</Text>
           </TouchableOpacity>
         </View>
@@ -668,11 +936,34 @@ export default function AdminScreen() {
 
       <Card style={[styles.settingsCard, styles.dangerCard]}>
         <Text style={[styles.cardTitle, { color: Colors.status.error }]}>Zone de danger</Text>
-        <TouchableOpacity style={styles.dangerItem} onPress={() => Alert.alert('Attention', 'Cette action est irréversible', [{ text: 'Annuler', style: 'cancel' }, { text: 'Confirmer', style: 'destructive' }])}>
+        <TouchableOpacity style={styles.dangerItem} onPress={() => Alert.alert('Purger le cache', 'Supprimer toutes les données en cache local (tournois, équipes, matchs, utilisateurs, notifications) ? Les données seront rechargées au prochain rafraîchissement.', [{ text: 'Annuler', style: 'cancel' }, { text: 'Purger', style: 'destructive', onPress: async () => {
+          try {
+            const keys = await AsyncStorage.getAllKeys();
+            const toRemove = [
+              ...CACHE_KEYS_TO_PURGE.filter(k => keys.includes(k)),
+              ...keys.filter(k => k.startsWith('vs_notifications')),
+            ];
+            if (toRemove.length > 0) await AsyncStorage.multiRemove(toRemove);
+            await offlineManager.clearCache();
+            await onRefresh();
+            Alert.alert('Succès', 'Cache purgé. Données rechargées.');
+          } catch (e) {
+            Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de purger le cache.');
+          }
+        }}])}>
           <Trash2 size={20} color={Colors.status.error} />
           <Text style={styles.dangerText}>Purger les données de cache</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.dangerItem} onPress={() => Alert.alert('Attention', 'Action irréversible', [{ text: 'Annuler', style: 'cancel' }, { text: 'Confirmer', style: 'destructive' }])}>
+        <TouchableOpacity style={styles.dangerItem} onPress={() => Alert.alert('Réinitialiser les stats', 'Vider les caches technique (offline, last sync) et forcer un rechargement complet des données ?', [{ text: 'Annuler', style: 'cancel' }, { text: 'Réinitialiser', style: 'destructive', onPress: async () => {
+          try {
+            await AsyncStorage.multiRemove(['vs_last_sync']);
+            await offlineManager.clearCache();
+            await onRefresh();
+            Alert.alert('Succès', 'Statistiques réinitialisées et données rechargées.');
+          } catch (e) {
+            Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de réinitialiser.');
+          }
+        }}])}>
           <Trash2 size={20} color={Colors.status.error} />
           <Text style={styles.dangerText}>Réinitialiser les statistiques</Text>
         </TouchableOpacity>
@@ -689,7 +980,12 @@ export default function AdminScreen() {
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
             <Text style={styles.headerTitle}>Administration</Text>
-            <View style={styles.adminBadge}><Shield size={14} color="#FFFFFF" /></View>
+            <View style={styles.headerRight}>
+              <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push('/notifications')}>
+                <Bell size={18} color={Colors.text.primary} />
+              </TouchableOpacity>
+              <View style={styles.adminBadge}><Shield size={14} color="#FFFFFF" /></View>
+            </View>
           </View>
           <View style={styles.searchContainer}>
             <Search size={20} color={Colors.text.muted} />
@@ -710,6 +1006,7 @@ export default function AdminScreen() {
             {activeTab === 'users' && renderUsers()}
             {activeTab === 'teams' && renderTeams()}
             {activeTab === 'matches' && renderMatches()}
+            {activeTab === 'tournaments' && renderTournaments()}
             {activeTab === 'tickets' && renderTickets()}
             {activeTab === 'verifications' && renderVerifications()}
             {activeTab === 'activity' && renderActivity()}
@@ -729,6 +1026,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16 },
   backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerIconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
   adminBadge: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.primary.orange, alignItems: 'center', justifyContent: 'center' },
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.card, marginHorizontal: 20, borderRadius: 12, paddingHorizontal: 16, height: 48, gap: 12 },
   searchInput: { flex: 1, color: Colors.text.primary, fontSize: 15 },
@@ -743,12 +1042,15 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingTop: 20 },
   statsGrid: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  liveStatsRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
+  liveStatsText: { color: Colors.text.muted, fontSize: 12 },
   revenueCard: { marginTop: 8, marginBottom: 16 },
   revenueHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 },
   revenueTitle: { color: Colors.text.secondary, fontSize: 14, marginBottom: 4 },
   growthBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(16, 185, 129, 0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
   growthText: { color: Colors.status.success, fontSize: 12, fontWeight: '600' as const },
   revenueAmount: { color: Colors.primary.orange, fontSize: 28, fontWeight: '700' as const },
+  revenueSub: { color: Colors.text.muted, fontSize: 12, marginTop: 4 },
   revenueBreakdown: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 16, borderTopWidth: 1, borderTopColor: Colors.border.light },
   revenueItem: {},
   revenueItemLabel: { color: Colors.text.muted, fontSize: 12 },
@@ -762,6 +1064,7 @@ const styles = StyleSheet.create({
   systemStatValue: { color: Colors.text.primary, fontSize: 14, fontWeight: '600' as const },
   actionsCard: { marginBottom: 16 },
   cardTitle: { color: Colors.text.primary, fontSize: 16, fontWeight: '600' as const, marginBottom: 16 },
+  cardDesc: { color: Colors.text.muted, fontSize: 12, marginBottom: 12 },
   urgentRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderTopWidth: 1, borderTopColor: Colors.border.light, gap: 12 },
   urgentIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   urgentInfo: { flex: 1 },
@@ -791,11 +1094,13 @@ const styles = StyleSheet.create({
   actionBtnGreen: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(16,185,129,0.1)', alignItems: 'center', justifyContent: 'center' },
   actionBtnBlue: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(21,101,192,0.1)', alignItems: 'center', justifyContent: 'center' },
   teamItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderTopWidth: 1, borderTopColor: Colors.border.light, gap: 12 },
+  teamItemTouch: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
   teamInfo: { flex: 1 },
   teamName: { color: Colors.text.primary, fontSize: 15, fontWeight: '500' as const },
   teamMeta: { color: Colors.text.secondary, fontSize: 13, marginTop: 2 },
   teamStatText: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
   matchItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderTopWidth: 1, borderTopColor: Colors.border.light, gap: 12 },
+  matchItemTouch: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
   matchStatus: { width: 4, height: 48, borderRadius: 2 },
   statusOpen: { backgroundColor: Colors.status.success },
   statusConfirmed: { backgroundColor: Colors.primary.blue },
@@ -825,6 +1130,7 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingVertical: 40 },
   emptyText: { color: Colors.text.muted, fontSize: 14, marginTop: 12 },
   activityCard: { marginBottom: 16 },
+  activityDemoHint: { color: Colors.text.muted, fontSize: 12, marginBottom: 12 },
   activityItem: { flexDirection: 'row', paddingVertical: 12, borderTopWidth: 1, borderTopColor: Colors.border.light, gap: 12 },
   activityDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
   activityContent: { flex: 1 },

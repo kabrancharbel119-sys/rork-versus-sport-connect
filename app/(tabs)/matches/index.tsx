@@ -1,66 +1,97 @@
 import React, { useState, useMemo } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, Modal } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, Modal, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Swords, Calendar, MapPin, Users, Filter, Clock, Trophy, UserPlus, X, Check } from 'lucide-react-native';
+import { Plus, Swords, Calendar, MapPin, Users, Filter, Clock, Trophy, UserPlus, X, Check, History } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMatches } from '@/contexts/MatchesContext';
+import { useTournaments } from '@/contexts/TournamentsContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
-import { sportLabels, levelLabels, mockTournaments, ALL_SPORTS, ambianceLabels } from '@/mocks/data';
+import { NetworkError } from '@/components/NetworkError';
+import { sportLabels, levelLabels, ALL_SPORTS, ambianceLabels } from '@/mocks/data';
 import { Sport, SkillLevel, PlayStyle } from '@/types';
 
-type TabType = 'all' | 'my-matches' | 'need-players' | 'tournaments';
+type TabType = 'all' | 'my-matches' | 'need-players' | 'tournaments' | 'history';
+
+type MatchTypeFilter = 'all' | 'friendly' | 'ranked';
 
 interface Filters {
   sport: Sport | 'all';
   level: SkillLevel | 'all';
   ambiance: PlayStyle | 'all';
   maxDistance: number;
+  matchType: MatchTypeFilter;
 }
 
 export default function MatchesScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { matches, getUpcomingMatches, getUserMatches, getMatchesNeedingPlayers } = useMatches();
+  const { matches, getUpcomingMatches, getUserMatches, getCompletedUserMatches, getMatchesNeedingPlayers, refetchMatches, isLoading, isError } = useMatches();
+  const { getOpenTournaments, refetchTournaments } = useTournaments();
   const { getUserById } = useUsers();
+  const openTournaments = getOpenTournaments();
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const [filters, setFilters] = useState<Filters>({ sport: 'all', level: 'all', ambiance: 'all', maxDistance: 50 });
+  const [filters, setFilters] = useState<Filters>({ sport: 'all', level: 'all', ambiance: 'all', maxDistance: 50, matchType: 'all' });
 
   const allMatches = getUpcomingMatches();
   const myMatches = user ? getUserMatches(user.id) : [];
+  const completedMatches = user ? getCompletedUserMatches(user.id) : [];
   const matchesNeedingPlayers = getMatchesNeedingPlayers(user?.location, filters.maxDistance);
 
   const filteredMatches = useMemo(() => {
-    let result = activeTab === 'all' ? allMatches : activeTab === 'my-matches' ? myMatches : activeTab === 'need-players' ? matchesNeedingPlayers : [];
-    if (filters.sport !== 'all') result = result.filter(m => m.sport === filters.sport);
-    if (filters.level !== 'all') result = result.filter(m => m.level === filters.level);
-    if (filters.ambiance !== 'all') result = result.filter(m => m.ambiance === filters.ambiance);
+    let result = activeTab === 'all' ? allMatches : activeTab === 'my-matches' ? myMatches : activeTab === 'need-players' ? matchesNeedingPlayers : activeTab === 'history' ? [] : [];
+    if (activeTab !== 'history') {
+      if (filters.sport !== 'all') result = result.filter(m => m.sport === filters.sport);
+      if (filters.level !== 'all') result = result.filter(m => m.level === filters.level);
+      if (filters.ambiance !== 'all') result = result.filter(m => m.ambiance === filters.ambiance);
+      if (filters.matchType === 'ranked') result = result.filter(m => m.type === 'ranked');
+      if (filters.matchType === 'friendly') result = result.filter(m => m.type === 'friendly');
+    }
     return result;
   }, [activeTab, allMatches, myMatches, matchesNeedingPlayers, filters]);
 
-  const onRefresh = async () => { setRefreshing(true); await new Promise(r => setTimeout(r, 1000)); setRefreshing(false); };
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refetchMatches(), refetchTournaments()]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   const formatDate = (date: Date) => new Date(date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
   const formatTime = (date: Date) => new Date(date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const getStatusColor = (status: string) => ({ open: Colors.status.success, confirmed: Colors.primary.blue, in_progress: Colors.primary.orange }[status] || Colors.text.muted);
   const getStatusLabel = (status: string) => ({ open: 'Ouvert', confirmed: 'Confirmé', in_progress: 'En cours', completed: 'Terminé' }[status] || status);
 
-  const hasActiveFilters = filters.sport !== 'all' || filters.level !== 'all' || filters.ambiance !== 'all';
+  const hasActiveFilters = filters.sport !== 'all' || filters.level !== 'all' || filters.ambiance !== 'all' || filters.matchType !== 'all';
 
   const renderMatchCard = (match: typeof matches[0], showNeedsPlayers = false) => {
     const creator = getUserById(match.createdBy);
+    const isRanked = match.type === 'ranked';
     return (
-      <Card key={match.id} style={styles.matchCard} onPress={() => router.push(`/match/${match.id}`)} variant="gradient">
+      <Card
+        key={match.id}
+        style={[styles.matchCard, isRanked && styles.matchCardRanked]}
+        onPress={() => router.push(`/match/${match.id}`)}
+        variant="gradient"
+      >
         <View style={styles.matchHeader}>
           <View style={styles.matchTypeRow}>
-            <View style={[styles.typeBadge, { backgroundColor: match.type === 'ranked' ? Colors.primary.orange : Colors.primary.blue }]}>
-              <Text style={styles.typeText}>{match.type === 'friendly' ? 'Amical' : match.type === 'ranked' ? 'Classé' : 'Tournoi'}</Text>
+            <View style={[styles.typeBadge, styles.typeBadgeRow, { backgroundColor: isRanked ? Colors.primary.orange : Colors.primary.blue }]}>
+              {isRanked && <Trophy size={12} color="#FFFFFF" />}
+              <Text style={styles.typeText}>{match.type === 'friendly' ? 'Amical' : isRanked ? 'Classé' : 'Tournoi'}</Text>
             </View>
+            {isRanked && (
+              <View style={styles.rankedStakeBadge}>
+                <Text style={styles.rankedStakeText}>Rang & stats</Text>
+              </View>
+            )}
             <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(match.status)}20` }]}>
               <View style={[styles.statusDot, { backgroundColor: getStatusColor(match.status) }]} />
               <Text style={[styles.statusText, { color: getStatusColor(match.status) }]}>{getStatusLabel(match.status)}</Text>
@@ -70,6 +101,7 @@ export default function MatchesScreen() {
             )}
           </View>
         </View>
+        {isRanked && <Text style={styles.rankedTagline}>Compte pour le classement et la réputation</Text>}
         <Text style={styles.matchTitle}>{sportLabels[match.sport]} • {match.format}</Text>
         <Text style={styles.matchLevel}>{levelLabels[match.level]} • {ambianceLabels[match.ambiance]}</Text>
         <View style={styles.matchDetails}>
@@ -80,14 +112,15 @@ export default function MatchesScreen() {
         {creator && <Text style={styles.organizerText}>Organisé par {creator.fullName || creator.username}</Text>}
         <View style={styles.matchFooter}>
           <View style={styles.playersInfo}><Users size={16} color={Colors.primary.blue} /><Text style={styles.playersText}>{match.registeredPlayers.length}/{match.maxPlayers} joueurs</Text></View>
-          {match.prize && <View style={styles.prizeInfo}><Text style={styles.prizeText}>💰 {match.prize.toLocaleString()} FCFA</Text></View>}
+          {!isRanked && match.prize && <View style={styles.prizeInfo}><Text style={styles.prizeText}>💰 {match.prize.toLocaleString()} FCFA</Text></View>}
+          {isRanked && <View style={styles.rankedFooterBadge}><Text style={styles.rankedFooterText}>Compte pour le classement</Text></View>}
         </View>
       </Card>
     );
   };
 
-  const renderTournamentCard = (tournament: typeof mockTournaments[0]) => (
-    <TouchableOpacity key={tournament.id} activeOpacity={0.8}>
+  const renderTournamentCard = (tournament: typeof openTournaments[0]) => (
+    <TouchableOpacity key={tournament.id} activeOpacity={0.8} onPress={() => router.push(`/tournament/${tournament.id}`)}>
       <LinearGradient colors={[Colors.gradient.orangeStart, Colors.gradient.orangeEnd]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.tournamentCard}>
         <View style={styles.tournamentHeader}><Trophy size={20} color="#FFFFFF" /><Text style={styles.tournamentPrize}>{tournament.prizePool.toLocaleString()} FCFA</Text></View>
         <Text style={styles.tournamentName}>{tournament.name}</Text>
@@ -131,7 +164,7 @@ export default function MatchesScreen() {
           </View>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll} contentContainerStyle={styles.tabs}>
-          {([['all', 'Tous', <Swords key="s" size={16} />], ['my-matches', 'Mes matchs', <Calendar key="c" size={16} />], ['need-players', 'Cherche joueurs', <UserPlus key="u" size={16} />], ['tournaments', 'Tournois', <Trophy key="t" size={16} />]] as const).map(([key, label, icon]) => (
+          {([['all', 'Tous', <Swords key="s" size={16} />], ['my-matches', 'Mes matchs', <Calendar key="c" size={16} />], ['need-players', 'Cherche joueurs', <UserPlus key="u" size={16} />], ['history', 'Historique', <History key="h" size={16} />], ['tournaments', 'Tournois', <Trophy key="t" size={16} />]] as const).map(([key, label, icon]) => (
             <TouchableOpacity key={key} style={[styles.tab, activeTab === key && styles.tabActive]} onPress={() => setActiveTab(key)}>
               {React.cloneElement(icon, { color: activeTab === key ? '#FFFFFF' : Colors.text.secondary })}
               <Text style={[styles.tabText, activeTab === key && styles.tabTextActive]}>{label}</Text>
@@ -139,25 +172,52 @@ export default function MatchesScreen() {
           ))}
         </ScrollView>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />}>
+          {isError && !matches.length ? (
+            <NetworkError onRetry={onRetry} isRetrying={retrying} />
+          ) : isLoading && !matches.length ? (
+            <View style={styles.loadingWrap}><ActivityIndicator size="large" color={Colors.primary.orange} /><Text style={styles.loadingText}>Chargement des matchs...</Text></View>
+          ) : (
+          <>
           {activeTab === 'need-players' && (
             <View style={styles.infoCard}>
               <MapPin size={18} color={Colors.primary.blue} />
               <Text style={styles.infoText}>Matchs dans un rayon de {filters.maxDistance}km autour de {user?.location?.city || user?.city || 'votre position'}</Text>
             </View>
           )}
-          {hasActiveFilters && activeTab !== 'tournaments' && (
+          {hasActiveFilters && activeTab !== 'tournaments' && activeTab !== 'history' && (
             <View style={styles.activeFiltersRow}>
               <Text style={styles.activeFiltersLabel}>Filtres actifs:</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeFiltersChips}>
                 {filters.sport !== 'all' && <View style={styles.activeFilterChip}><Text style={styles.activeFilterText}>{sportLabels[filters.sport]}</Text></View>}
                 {filters.level !== 'all' && <View style={styles.activeFilterChip}><Text style={styles.activeFilterText}>{levelLabels[filters.level]}</Text></View>}
                 {filters.ambiance !== 'all' && <View style={styles.activeFilterChip}><Text style={styles.activeFilterText}>{ambianceLabels[filters.ambiance]}</Text></View>}
+                {filters.matchType !== 'all' && <View style={styles.activeFilterChip}><Text style={styles.activeFilterText}>{filters.matchType === 'ranked' ? 'Classés' : 'Amicaux'}</Text></View>}
               </ScrollView>
-              <TouchableOpacity onPress={() => setFilters({ sport: 'all', level: 'all', ambiance: 'all', maxDistance: 50 })}><Text style={styles.clearFilters}>Effacer</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setFilters({ sport: 'all', level: 'all', ambiance: 'all', maxDistance: 50, matchType: 'all' })}><Text style={styles.clearFilters}>Effacer</Text></TouchableOpacity>
             </View>
           )}
-          {activeTab !== 'tournaments' && (filteredMatches.length > 0 ? filteredMatches.map(m => renderMatchCard(m, activeTab === 'need-players')) : renderEmptyState(<Swords size={64} color={Colors.text.muted} />, hasActiveFilters ? 'Aucun match trouvé' : 'Aucun match', hasActiveFilters ? 'Essayez de modifier vos filtres' : activeTab === 'need-players' ? 'Aucun match ne cherche de joueurs dans votre zone' : 'Soyez le premier à créer un match !', { title: hasActiveFilters ? 'Effacer les filtres' : 'Créer un match', onPress: hasActiveFilters ? () => setFilters({ sport: 'all', level: 'all', ambiance: 'all', maxDistance: 50 }) : () => router.push('/create-match') }))}
-          {activeTab === 'tournaments' && (mockTournaments.length > 0 ? mockTournaments.map(renderTournamentCard) : renderEmptyState(<Trophy size={64} color={Colors.text.muted} />, 'Aucun tournoi', 'Les tournois seront bientôt disponibles'))}
+          {activeTab === 'history' && (
+            completedMatches.length > 0 ? (
+              <View style={styles.historyList}>
+                <Text style={styles.historySectionTitle}>Matchs joués avec résultat</Text>
+                {completedMatches.map((m) => (
+                  <TouchableOpacity key={m.id} style={styles.historyRow} onPress={() => router.push(`/match/${m.id}`)} activeOpacity={0.7}>
+                    <View style={styles.historyRowLeft}>
+                      <Text style={styles.historyRowSport}>{sportLabels[m.sport]} • {m.format}</Text>
+                      <Text style={styles.historyRowVenue}>{m.venue?.name} • {formatDate(m.dateTime)}</Text>
+                    </View>
+                    <View style={styles.historyScoreBadge}>
+                      <Text style={styles.historyScoreText}>{m.score ? `${m.score.home} - ${m.score.away}` : '–'}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : renderEmptyState(<History size={64} color={Colors.text.muted} />, 'Aucun match joué', 'Vos matchs terminés avec résultat apparaîtront ici.')
+          )}
+          {activeTab !== 'tournaments' && activeTab !== 'history' && (filteredMatches.length > 0 ? filteredMatches.map(m => renderMatchCard(m, activeTab === 'need-players')) : renderEmptyState(<Swords size={64} color={Colors.text.muted} />, hasActiveFilters ? 'Aucun match trouvé' : 'Aucun match', hasActiveFilters ? 'Essayez de modifier vos filtres' : activeTab === 'need-players' ? 'Aucun match ne cherche de joueurs dans votre zone' : 'Soyez le premier à créer un match !', { title: hasActiveFilters ? 'Effacer les filtres' : 'Créer un match', onPress: hasActiveFilters ? () => setFilters({ sport: 'all', level: 'all', ambiance: 'all', maxDistance: 50, matchType: 'all' }) : () => router.push('/create-match') }))}
+          {activeTab === 'tournaments' && (openTournaments.length > 0 ? openTournaments.map(renderTournamentCard) : renderEmptyState(<Trophy size={64} color={Colors.text.muted} />, 'Aucun tournoi', 'Tirez pour actualiser ou créez un tournoi'))}
+          </>
+          )}
         </ScrollView>
       </SafeAreaView>
 
@@ -169,6 +229,12 @@ export default function MatchesScreen() {
               <TouchableOpacity onPress={() => setShowFilterModal(false)}><X size={24} color={Colors.text.primary} /></TouchableOpacity>
             </View>
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              <Text style={styles.filterLabel}>Type de match</Text>
+              <View style={styles.filterOptions}>
+                <FilterChip label="Tous" active={filters.matchType === 'all'} onPress={() => setFilters(f => ({ ...f, matchType: 'all' }))} />
+                <FilterChip label="Amicaux" active={filters.matchType === 'friendly'} onPress={() => setFilters(f => ({ ...f, matchType: 'friendly' }))} />
+                <FilterChip label="Classés" active={filters.matchType === 'ranked'} onPress={() => setFilters(f => ({ ...f, matchType: 'ranked' }))} />
+              </View>
               <Text style={styles.filterLabel}>Sport</Text>
               <View style={styles.filterOptions}>
                 <FilterChip label="Tous" active={filters.sport === 'all'} onPress={() => setFilters(f => ({ ...f, sport: 'all' }))} />
@@ -200,7 +266,7 @@ export default function MatchesScreen() {
               </View>
             </ScrollView>
             <View style={styles.modalActions}>
-              <Button title="Réinitialiser" onPress={() => setFilters({ sport: 'all', level: 'all', ambiance: 'all', maxDistance: 50 })} variant="outline" style={styles.modalBtn} />
+              <Button title="Réinitialiser" onPress={() => setFilters({ sport: 'all', level: 'all', ambiance: 'all', maxDistance: 50, matchType: 'all' })} variant="outline" style={styles.modalBtn} />
               <Button title="Appliquer" onPress={() => setShowFilterModal(false)} variant="primary" style={styles.modalBtn} />
             </View>
           </View>
@@ -227,7 +293,9 @@ const styles = StyleSheet.create({
   tabText: { color: Colors.text.secondary, fontSize: 14, fontWeight: '500' as const },
   tabTextActive: { color: '#FFFFFF' },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 20 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 20, flexGrow: 1 },
+  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
+  loadingText: { color: Colors.text.muted, fontSize: 14, marginTop: 12 },
   infoCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(21, 101, 192, 0.1)', padding: 14, borderRadius: 12, marginBottom: 16 },
   infoText: { flex: 1, color: Colors.text.secondary, fontSize: 13 },
   activeFiltersRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 8 },
@@ -237,10 +305,15 @@ const styles = StyleSheet.create({
   activeFilterText: { color: '#FFFFFF', fontSize: 12 },
   clearFilters: { color: Colors.primary.orange, fontSize: 12, fontWeight: '500' as const },
   matchCard: { marginBottom: 16 },
+  matchCardRanked: { borderLeftWidth: 4, borderLeftColor: Colors.primary.orange },
   matchHeader: { marginBottom: 12 },
   matchTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
   typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  typeBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   typeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' as const },
+  rankedStakeBadge: { backgroundColor: Colors.primary.orange + '30', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  rankedStakeText: { color: Colors.primary.orange, fontSize: 11, fontWeight: '600' as const },
+  rankedTagline: { color: Colors.primary.orange, fontSize: 11, fontWeight: '500' as const, marginBottom: 8 },
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: 11, fontWeight: '500' as const },
@@ -257,6 +330,8 @@ const styles = StyleSheet.create({
   playersText: { color: Colors.text.secondary, fontSize: 13 },
   prizeInfo: { backgroundColor: 'rgba(255, 107, 0, 0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   prizeText: { color: Colors.primary.orange, fontSize: 13, fontWeight: '600' as const },
+  rankedFooterBadge: { backgroundColor: Colors.primary.orange + '25', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  rankedFooterText: { color: Colors.primary.orange, fontSize: 12, fontWeight: '600' as const },
   tournamentCard: { padding: 20, borderRadius: 16, marginBottom: 16 },
   tournamentHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   tournamentPrize: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' as const },
@@ -291,4 +366,12 @@ const styles = StyleSheet.create({
   distanceTextActive: { color: '#FFFFFF' },
   modalActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
   modalBtn: { flex: 1 },
+  historyList: { marginBottom: 20 },
+  historySectionTitle: { color: Colors.text.primary, fontSize: 16, fontWeight: '600' as const, marginBottom: 12 },
+  historyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.background.card, padding: 16, borderRadius: 12, marginBottom: 10 },
+  historyRowLeft: { flex: 1 },
+  historyRowSport: { color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const },
+  historyRowVenue: { color: Colors.text.muted, fontSize: 13, marginTop: 4 },
+  historyScoreBadge: { backgroundColor: Colors.primary.blue, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
+  historyScoreText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' as const },
 });

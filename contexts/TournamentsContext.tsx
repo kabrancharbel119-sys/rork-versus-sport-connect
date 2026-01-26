@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
 import { Tournament, Sport, SkillLevel, Venue, TournamentPrize } from '@/types';
-import { mockTournaments, mockVenues } from '@/mocks/data';
+import { tournamentsApi } from '@/lib/api/tournaments';
 
 const TOURNAMENTS_STORAGE_KEY = 'vs_tournaments';
 
@@ -47,15 +47,23 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
   const tournamentsQuery = useQuery({
     queryKey: ['tournaments'],
     queryFn: async () => {
-      console.log('[Tournaments] Loading tournaments...');
+      if (__DEV__) console.log('[Tournaments] Loading tournaments...');
+      try {
+        const serverTournaments = await tournamentsApi.getAll();
+        const parsed = parseTournamentDates(serverTournaments);
+        await AsyncStorage.setItem(TOURNAMENTS_STORAGE_KEY, JSON.stringify(parsed));
+        return parsed;
+      } catch (e) {
+        if (__DEV__) console.log('[Tournaments] Server fetch failed, using local storage');
+      }
       const stored = await AsyncStorage.getItem(TOURNAMENTS_STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored) as Tournament[];
         return parseTournamentDates(parsed);
       }
-      await AsyncStorage.setItem(TOURNAMENTS_STORAGE_KEY, JSON.stringify(mockTournaments));
-      return parseTournamentDates(mockTournaments);
+      return [];
     },
+    staleTime: 60 * 1000,
   });
 
   useEffect(() => {
@@ -71,31 +79,54 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
   const createTournamentMutation = useMutation({
     mutationFn: async (data: CreateTournamentData) => {
       console.log('[Tournaments] Creating tournament:', data.name);
-      const newTournament: Tournament = {
-        id: `tournament-${Date.now()}`,
-        name: data.name,
-        description: data.description,
-        sport: data.sport,
-        format: data.format,
-        type: data.type,
-        status: 'registration',
-        level: data.level,
-        maxTeams: data.maxTeams,
-        registeredTeams: [],
-        entryFee: data.entryFee,
-        prizePool: data.prizePool,
-        prizes: data.prizes,
-        venue: data.venue,
-        startDate: data.startDate,
-        endDate: data.endDate,
-        matches: [],
-        createdBy: data.createdBy,
-        sponsorName: data.sponsorName,
-        sponsorLogo: data.sponsorLogo,
-        createdAt: new Date(),
-      };
-      await saveTournaments([...tournaments, newTournament]);
-      return newTournament;
+      try {
+        const result = await tournamentsApi.create(data.createdBy, {
+          name: data.name,
+          description: data.description,
+          sport: data.sport,
+          format: data.format,
+          type: data.type,
+          level: data.level,
+          maxTeams: data.maxTeams,
+          entryFee: data.entryFee,
+          prizePool: data.prizePool,
+          prizes: data.prizes,
+          venue: data.venue,
+          startDate: data.startDate.toISOString(),
+          endDate: data.endDate.toISOString(),
+          sponsorName: data.sponsorName,
+          sponsorLogo: data.sponsorLogo,
+        });
+        queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+        return result;
+      } catch (err: unknown) {
+        console.log('[Tournaments] API error, creating locally:', (err as Error)?.message);
+        const newTournament: Tournament = {
+          id: `tournament-${Date.now()}`,
+          name: data.name,
+          description: data.description,
+          sport: data.sport,
+          format: data.format,
+          type: data.type,
+          status: 'registration',
+          level: data.level,
+          maxTeams: data.maxTeams,
+          registeredTeams: [],
+          entryFee: data.entryFee,
+          prizePool: data.prizePool,
+          prizes: data.prizes,
+          venue: data.venue,
+          startDate: data.startDate,
+          endDate: data.endDate,
+          matches: [],
+          createdBy: data.createdBy,
+          sponsorName: data.sponsorName,
+          sponsorLogo: data.sponsorLogo,
+          createdAt: new Date(),
+        };
+        await saveTournaments([...tournaments, newTournament]);
+        return newTournament;
+      }
     },
   });
 
@@ -186,9 +217,14 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
     return tournaments.filter(t => t.status === 'registration' || t.status === 'in_progress');
   }, [tournaments]);
 
+  const refetchTournaments = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+  }, [queryClient]);
+
   return {
     tournaments,
     isLoading: tournamentsQuery.isLoading,
+    refetchTournaments,
     createTournament: createTournamentMutation.mutateAsync,
     registerTeam: registerTeamMutation.mutateAsync,
     unregisterTeam: unregisterTeamMutation.mutateAsync,

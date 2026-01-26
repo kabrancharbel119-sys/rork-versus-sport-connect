@@ -8,14 +8,22 @@ import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMatches } from '@/contexts/MatchesContext';
 import { Card } from '@/components/Card';
-import { BarChart, ProgressRing, StatComparison, MatchHistory } from '@/components/StatisticsChart';
+import { BarChart, ProgressRing, StatComparison, MatchHistoryReal } from '@/components/StatisticsChart';
+import { sportLabels } from '@/mocks/data';
 
 export default function StatisticsScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { getUserMatches } = useMatches();
+  const { getUserMatches, getCompletedUserMatches } = useMatches();
 
   const userMatches = useMemo(() => user ? getUserMatches(user.id) : [], [user, getUserMatches]);
+  const completedMatches = useMemo(() => user ? getCompletedUserMatches(user.id) : [], [user, getCompletedUserMatches]);
+  const historyItems = useMemo(() => completedMatches.slice(0, 10).map(m => ({
+    id: m.id,
+    label: `${(sportLabels as Record<string, string>)[m.sport] || m.sport} • ${m.format}`,
+    score: m.score ? `${m.score.home} - ${m.score.away}` : '–',
+    date: m.dateTime instanceof Date ? m.dateTime.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : new Date(m.dateTime).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }),
+  })), [completedMatches]);
   const stats = user?.stats || { matchesPlayed: 0, wins: 0, losses: 0, draws: 0, goalsScored: 0, assists: 0, mvpAwards: 0, fairPlayScore: 5, tournamentWins: 0 };
   
   const winRate = stats.matchesPlayed > 0 ? Math.round((stats.wins / stats.matchesPlayed) * 100) : 0;
@@ -79,10 +87,10 @@ export default function StatisticsScreen() {
             <View style={styles.spacer} />
             <StatComparison label="Passes par match" userValue={parseFloat(assistsPerMatch)} avgValue={0.8} />
 
-            {stats.matchesPlayed > 0 && (
+            {(stats.matchesPlayed > 0 || historyItems.length > 0) && (
               <>
-                <Text style={styles.sectionTitle}>Forme récente</Text>
-                <MatchHistory matches={matchHistory} />
+                <Text style={styles.sectionTitle}>Matchs joués (résultats réels)</Text>
+                <MatchHistoryReal items={historyItems} />
               </>
             )}
 

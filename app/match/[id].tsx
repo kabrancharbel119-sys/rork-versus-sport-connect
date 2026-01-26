@@ -7,6 +7,7 @@ import { ArrowLeft, Calendar, Clock, MapPin, Users, Trophy, DollarSign, Share2, 
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMatches } from '@/contexts/MatchesContext';
+import { useNotifications } from '@/contexts/NotificationsContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
@@ -17,9 +18,16 @@ export default function MatchDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { getMatchById, joinMatch, leaveMatch, updateMatch, deleteMatch, isUpdating } = useMatches();
+  const { getMatchById, joinMatch, leaveMatch, updateMatch, deleteMatch, isUpdating, refetchMatches } = useMatches();
+  const { notifyMatchUpdate } = useNotifications();
   const { getUserById } = useUsers();
   const [isJoining, setIsJoining] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      refetchMatches();
+    }, [refetchMatches])
+  );
 
   const match = getMatchById(id || '');
 
@@ -56,6 +64,7 @@ export default function MatchDetailScreen() {
     setIsJoining(true);
     try {
       await joinMatch({ matchId: match.id, userId: user.id });
+      await notifyMatchUpdate(match.id, 'joined', match.venue?.name, user.id);
       Alert.alert('Succès', 'Vous êtes inscrit !');
     } catch (error: any) {
       Alert.alert('Erreur', error.message);
@@ -75,6 +84,7 @@ export default function MatchDetailScreen() {
           onPress: async () => {
             try {
               await leaveMatch({ matchId: match.id, userId: user!.id });
+              await notifyMatchUpdate(match.id, 'left', match.venue?.name, user!.id);
             } catch (error: any) {
               Alert.alert('Erreur', error.message);
             }
@@ -99,7 +109,9 @@ export default function MatchDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              const registeredIds = [...match.registeredPlayers];
               await deleteMatch({ matchId: match.id, userId: user!.id });
+              await notifyMatchUpdate(match.id, 'cancelled', match.venue?.name, registeredIds.filter((id) => id !== user!.id));
               Alert.alert('Succès', 'Match supprimé');
               router.back();
             } catch (error: any) {
@@ -166,9 +178,12 @@ export default function MatchDetailScreen() {
             <View style={styles.matchHeader}>
               <View style={[styles.typeBadge, { backgroundColor: match.type === 'ranked' ? Colors.primary.orange : Colors.primary.blue }]}>
                 <Text style={styles.typeText}>
-                  {match.type === 'friendly' ? '⚽ Amical' : '🏆 Classé'}
+                  {match.type === 'friendly' ? '⚽ Amical' : '🏆 Match classé'}
                 </Text>
               </View>
+              {match.type === 'ranked' && (
+                <Text style={styles.rankedImportance}>Compte pour le classement et la réputation</Text>
+              )}
 
               <Text style={styles.matchTitle}>
                 {sportLabels[match.sport]} • {match.format}
@@ -218,7 +233,24 @@ export default function MatchDetailScreen() {
               </View>
             </View>
 
-            {(match.entryFee || match.prize) && (
+            {match.type === 'ranked' && (
+              <Card style={styles.rankedStakesCard}>
+                <View style={styles.rankedStakesHeader}>
+                  <Trophy size={20} color={Colors.primary.orange} />
+                  <Text style={styles.rankedStakesTitle}>À quoi sert ce match ?</Text>
+                </View>
+                <Text style={styles.rankedStakesDesc}>
+                  Aucun argent en jeu. Ce match compte pour ton classement et ta réputation. Victoire ou défaite seront enregistrées dans tes statistiques officielles.
+                </Text>
+                <View style={styles.rankedBullets}>
+                  <Text style={styles.rankedBullet}>• Impact sur ton rang</Text>
+                  <Text style={styles.rankedBullet}>• Réputation mise à jour</Text>
+                  <Text style={styles.rankedBullet}>• Stats V / D enregistrées</Text>
+                </View>
+              </Card>
+            )}
+
+            {match.type !== 'ranked' && (match.entryFee || match.prize) && (
               <Card style={styles.prizeCard}>
                 <View style={styles.prizeRow}>
                   {match.entryFee && (
@@ -234,10 +266,8 @@ export default function MatchDetailScreen() {
                     <View style={styles.prizeItem}>
                       <Trophy size={20} color={Colors.primary.orange} />
                       <View>
-                        <Text style={styles.prizeLabel}>Cash Prize</Text>
-                        <Text style={[styles.prizeValue, styles.prizeHighlight]}>
-                          {match.prize.toLocaleString()} FCFA
-                        </Text>
+                        <Text style={styles.prizeLabel}>Récompense</Text>
+                        <Text style={[styles.prizeValue, styles.prizeHighlight]}>{match.prize.toLocaleString()} FCFA</Text>
                       </View>
                     </View>
                   )}
@@ -313,7 +343,7 @@ export default function MatchDetailScreen() {
                 />
               ) : match.status === 'open' ? (
                 <Button
-                  title={match.entryFee ? `S'inscrire (${match.entryFee.toLocaleString()} FCFA)` : "S'inscrire"}
+                  title={match.type === 'ranked' ? "S'inscrire (compte pour ton rang)" : match.entryFee ? `S'inscrire (${match.entryFee.toLocaleString()} FCFA)` : "S'inscrire"}
                   onPress={handleJoin}
                   loading={isJoining}
                   variant="orange"
@@ -476,6 +506,44 @@ const styles = StyleSheet.create({
   tagText: {
     color: Colors.text.secondary,
     fontSize: 13,
+  },
+  rankedImportance: {
+    color: Colors.primary.orange,
+    fontSize: 12,
+    fontWeight: '600' as const,
+    marginTop: -8,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  rankedStakesCard: {
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: Colors.primary.orange + '40',
+  },
+  rankedStakesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  rankedStakesTitle: {
+    color: Colors.text.primary,
+    fontSize: 16,
+    fontWeight: '700' as const,
+  },
+  rankedStakesDesc: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  rankedBullets: {
+    gap: 4,
+  },
+  rankedBullet: {
+    color: Colors.primary.orange,
+    fontSize: 13,
+    fontWeight: '600' as const,
   },
   prizeCard: {
     marginBottom: 24,

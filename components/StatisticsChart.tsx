@@ -93,6 +93,27 @@ export function MatchHistory({ matches }: { matches: { result: 'win' | 'loss' | 
   );
 }
 
+export function MatchHistoryReal({ items }: { items: { id: string; label: string; score: string; date: string }[] }) {
+  return (
+    <View style={styles.historyContainer}>
+      <Text style={styles.historyTitle}>Matchs joués (résultats)</Text>
+      {items.length === 0 ? (
+        <Text style={styles.historyEmpty}>Aucun match terminé</Text>
+      ) : (
+        items.slice(0, 10).map((item) => (
+          <View key={item.id} style={styles.historyRealRow}>
+            <Text style={styles.historyRealLabel} numberOfLines={1}>{item.label}</Text>
+            <View style={styles.historyRealRight}>
+              <Text style={styles.historyRealScore}>{item.score}</Text>
+              <Text style={styles.historyRealDate}>{item.date}</Text>
+            </View>
+          </View>
+        ))
+      )}
+    </View>
+  );
+}
+
 export function TrendLine({ data, color = Colors.primary.blue }: { data: number[]; color?: string }) {
   const max = Math.max(...data, 1);
   const points = data.map((val, i) => ({ x: (i / (data.length - 1)) * 100, y: 100 - (val / max) * 100 }));
@@ -144,6 +165,12 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendText: { color: Colors.text.muted, fontSize: 11 },
+  historyEmpty: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' as const, paddingVertical: 12 },
+  historyRealRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
+  historyRealLabel: { color: Colors.text.primary, fontSize: 14, fontWeight: '500' as const, flex: 1 },
+  historyRealRight: { alignItems: 'flex-end', marginLeft: 12 },
+  historyRealScore: { color: Colors.primary.blue, fontSize: 16, fontWeight: '700' as const },
+  historyRealDate: { color: Colors.text.muted, fontSize: 11, marginTop: 2 },
   trendContainer: { height: 60, position: 'relative' },
   trendDot: { position: 'absolute', width: 8, height: 8, borderRadius: 4, marginLeft: -4, marginTop: -4 },
   trendLine: { position: 'absolute', borderRadius: 2 },

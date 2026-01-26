@@ -1,5 +1,5 @@
-import React from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,14 +8,63 @@ import { Colors } from '@/constants/colors';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { useAuth } from '@/contexts/AuthContext';
-import { mockTournaments, sportLabels, levelLabels } from '@/mocks/data';
+import { useTournaments } from '@/contexts/TournamentsContext';
+import { useTeams } from '@/contexts/TeamsContext';
+import { tournamentsApi } from '@/lib/api/tournaments';
+import { sportLabels, levelLabels } from '@/mocks/data';
+import type { Tournament } from '@/types';
 
 export default function TournamentDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
+  const { getTournamentById, registerTeam, refetchTournaments } = useTournaments();
+  const { getUserTeams } = useTeams();
+  const fromContext = getTournamentById(id || '');
+  const [fetchedTournament, setFetchedTournament] = useState<Tournament | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const tournament = mockTournaments.find(t => t.id === id);
+  useEffect(() => {
+    if (id && !fromContext) {
+      setLoading(true);
+      tournamentsApi.getById(id)
+        .then(t => setFetchedTournament(t))
+        .catch(() => setFetchedTournament(null))
+        .finally(() => setLoading(false));
+    } else {
+      setFetchedTournament(null);
+    }
+  }, [id, fromContext]);
+
+  const tournament = fromContext ?? fetchedTournament;
+  const teamsWhereCaptain = user ? getUserTeams(user.id).filter((t) => t.captainId === user.id) : [];
+  const canRegisterTeam = tournament?.status === 'registration' && teamsWhereCaptain.length > 0;
+  const teamAlreadyRegistered = (tid: string) => (tournament?.registeredTeams ?? []).includes(tid);
+  const teamsEligibleToRegister = teamsWhereCaptain.filter((t) => !teamAlreadyRegistered(t.id));
+
+  if (loading && !tournament) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.container}>
+          <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+          <SafeAreaView style={styles.safeArea}>
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                <ArrowLeft size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Tournoi</Text>
+              <View style={styles.placeholder} />
+            </View>
+            <View style={styles.notFoundContainer}>
+              <ActivityIndicator size="large" color={Colors.primary.orange} />
+              <Text style={styles.notFoundTitle}>Chargement...</Text>
+            </View>
+          </SafeAreaView>
+        </View>
+      </>
+    );
+  }
 
   if (!tournament) {
     return (
@@ -50,6 +99,7 @@ export default function TournamentDetailScreen() {
   const getStatusLabel = (status: string) => {
     switch (status) {
       case 'registration': return 'Inscriptions ouvertes';
+      case 'in_progress':
       case 'ongoing': return 'En cours';
       case 'completed': return 'Terminé';
       default: return status;
@@ -59,6 +109,7 @@ export default function TournamentDetailScreen() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'registration': return Colors.status.success;
+      case 'in_progress':
       case 'ongoing': return Colors.primary.orange;
       case 'completed': return Colors.text.muted;
       default: return Colors.text.muted;
@@ -70,13 +121,55 @@ export default function TournamentDetailScreen() {
       Alert.alert('Inscriptions fermées', 'Les inscriptions pour ce tournoi sont terminées.');
       return;
     }
+    if (teamsEligibleToRegister.length === 0) {
+      if (teamsWhereCaptain.length > 0) {
+        Alert.alert('Déjà inscrites', 'Toutes vos équipes dont vous êtes capitaine sont déjà inscrites à ce tournoi.');
+      } else {
+        Alert.alert('Réservé au capitaine', 'Seul le capitaine d\'une équipe peut l\'inscrire à un tournoi. Vous n\'êtes actuellement capitaine d\'aucune équipe.');
+      }
+      return;
+    }
+    const teamToRegister = teamsEligibleToRegister.length === 1
+      ? teamsEligibleToRegister[0]
+      : null;
+    if (teamToRegister) {
+      Alert.alert(
+        'Inscription au tournoi',
+        `Inscrire ${teamToRegister.name} au tournoi "${tournament.name}" ?\n\nFrais d'inscription : ${tournament.entryFee.toLocaleString()} FCFA`,
+        [
+          { text: 'Annuler', style: 'cancel' },
+          {
+            text: 'Confirmer',
+            onPress: async () => {
+              try {
+                await registerTeam({ tournamentId: tournament.id, teamId: teamToRegister.id });
+                await refetchTournaments();
+                Alert.alert('Succès', `${teamToRegister.name} a été inscrite au tournoi !`);
+              } catch (e: unknown) {
+                Alert.alert('Erreur', (e as Error).message);
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+    const buttons = teamsEligibleToRegister.slice(0, 4).map((t) => ({
+      text: t.name,
+      onPress: async () => {
+        try {
+          await registerTeam({ tournamentId: tournament.id, teamId: t.id });
+          await refetchTournaments();
+          Alert.alert('Succès', `${t.name} a été inscrite au tournoi !`);
+        } catch (e: unknown) {
+          Alert.alert('Erreur', (e as Error).message);
+        }
+      },
+    }));
     Alert.alert(
-      'Inscription au tournoi',
-      `Voulez-vous inscrire votre équipe au tournoi "${tournament.name}" ?\n\nFrais d'inscription: ${tournament.entryFee.toLocaleString()} FCFA`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Confirmer', onPress: () => Alert.alert('Succès', 'Votre demande d\'inscription a été envoyée !') }
-      ]
+      'Choisir l\'équipe à inscrire',
+      `Frais d'inscription : ${tournament.entryFee.toLocaleString()} FCFA par équipe`,
+      [{ text: 'Annuler', style: 'cancel' }, ...buttons]
     );
   };
 
@@ -208,13 +301,19 @@ export default function TournamentDetailScreen() {
 
           {tournament.status === 'registration' && (
             <View style={styles.footer}>
-              <Button
-                title="Inscrire mon équipe"
-                onPress={handleRegister}
-                variant="orange"
-                size="large"
-                style={styles.registerButton}
-              />
+              {canRegisterTeam ? (
+                <Button
+                  title={teamsEligibleToRegister.length === 1 ? `Inscrire ${teamsEligibleToRegister[0].name}` : 'Inscrire mon équipe'}
+                  onPress={handleRegister}
+                  variant="orange"
+                  size="large"
+                  style={styles.registerButton}
+                />
+              ) : (
+                <Text style={{ color: Colors.text.muted, fontSize: 13, textAlign: 'center' }}>
+                  Seul le capitaine d&apos;une équipe peut l&apos;inscrire à ce tournoi.
+                </Text>
+              )}
             </View>
           )}
         </SafeAreaView>
