@@ -47,21 +47,28 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
     queryKey: ['teams'],
     queryFn: async () => {
       console.log('[Teams] Loading teams...');
+      const stored = await AsyncStorage.getItem(TEAMS_STORAGE_KEY);
+      const localTeams = stored ? parseTeamDates(JSON.parse(stored)) : [];
+      
       try {
         const serverTeams = await teamsApi.getAll();
         if (serverTeams.length > 0) {
-          await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(serverTeams));
-          return parseTeamDates(serverTeams);
+          const serverParsed = parseTeamDates(serverTeams);
+          const localOnly = localTeams.filter(lt => !serverParsed.some(st => st.id === lt.id));
+          const merged = [...serverParsed, ...localOnly];
+          await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(merged));
+          console.log('[Teams] Merged teams - server:', serverParsed.length, 'local only:', localOnly.length);
+          return merged;
         }
-      } catch (e) {
+      } catch {
         console.log('[Teams] Server fetch failed, using local storage');
       }
       
-      const stored = await AsyncStorage.getItem(TEAMS_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as Team[];
-        return parseTeamDates(parsed);
+      if (localTeams.length > 0) {
+        console.log('[Teams] Using local teams:', localTeams.length);
+        return localTeams;
       }
+      
       await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(mockTeams));
       return parseTeamDates(mockTeams);
     },
@@ -108,7 +115,7 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
       } catch (err: any) {
         console.log('[Teams] API error, creating locally:', err.message);
         const newTeam: Team = {
-          id: `team-${Date.now()}`,
+          id: `team-local-${Date.now()}`,
           name: data.name,
           logo: data.logo,
           sport: data.sport,
@@ -133,7 +140,6 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
         const updatedTeams = [...existingTeams, newTeam];
         await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(updatedTeams));
         setTeams(updatedTeams);
-        queryClient.invalidateQueries({ queryKey: ['teams'] });
         console.log('[Teams] Team created locally:', newTeam.id, 'Total teams:', updatedTeams.length);
         return newTeam;
       }
