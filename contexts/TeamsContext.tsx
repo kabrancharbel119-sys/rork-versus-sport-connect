@@ -79,7 +79,12 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
 
   const createTeamMutation = useMutation({
     mutationFn: async (data: CreateTeamData) => {
-      console.log('[Teams] Creating team:', data.name);
+      console.log('[Teams] Creating team:', data.name, 'for captain:', data.captainId);
+      
+      const currentTeams = await AsyncStorage.getItem(TEAMS_STORAGE_KEY);
+      const existingTeams: Team[] = currentTeams ? parseTeamDates(JSON.parse(currentTeams)) : [];
+      console.log('[Teams] Current teams count:', existingTeams.length);
+      
       try {
         const result = await teamsApi.create(data.captainId, {
           name: data.name,
@@ -94,10 +99,14 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
           isRecruiting: data.isRecruiting ?? true,
           logo: data.logo,
         });
-        await saveTeams([...teams, result]);
+        const updatedTeams = [...existingTeams, result];
+        await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(updatedTeams));
+        setTeams(updatedTeams);
+        queryClient.invalidateQueries({ queryKey: ['teams'] });
+        console.log('[Teams] Team created successfully via API:', result.id);
         return result;
       } catch (err: any) {
-        console.log('[Teams] Supabase error, using local:', err.message);
+        console.log('[Teams] API error, creating locally:', err.message);
         const newTeam: Team = {
           id: `team-${Date.now()}`,
           name: data.name,
@@ -121,7 +130,11 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
           location: data.location,
           createdAt: new Date(),
         };
-        await saveTeams([...teams, newTeam]);
+        const updatedTeams = [...existingTeams, newTeam];
+        await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(updatedTeams));
+        setTeams(updatedTeams);
+        queryClient.invalidateQueries({ queryKey: ['teams'] });
+        console.log('[Teams] Team created locally:', newTeam.id, 'Total teams:', updatedTeams.length);
         return newTeam;
       }
     },

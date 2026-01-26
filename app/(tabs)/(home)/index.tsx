@@ -22,7 +22,7 @@ const formatTime = (date: Date) => new Date(date).toLocaleTimeString('fr-FR', { 
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { getRecruitingTeams, getUserTeams } = useTeams();
+  const { getRecruitingTeams, getUserTeams, teams } = useTeams();
   const { getUpcomingMatches, matches } = useMatches();
   const { getUserTournaments, getActiveTournaments } = useTournaments();
 
@@ -33,6 +33,11 @@ export default function HomeScreen() {
   const recruitingTeams = getRecruitingTeams().filter(t => !userTeams.some(ut => ut.id === t.id)).slice(0, 3);
   const activeTournaments = getActiveTournaments().filter(t => t.status === 'registration').slice(0, 5);
   const userTournaments = user ? getUserTournaments(user.id).slice(0, 5) : [];
+
+  console.log('[Home] User ID:', user?.id);
+  console.log('[Home] Total teams:', teams.length);
+  console.log('[Home] User teams:', userTeams.length, userTeams.map(t => t.name));
+  console.log('[Home] User created matches:', userCreatedMatches.length);
 
   const TournamentCard = ({ tournament, colors }: { tournament: any; colors: [string, string] }) => (
     <TouchableOpacity key={tournament.id} activeOpacity={0.8} onPress={() => router.push(`/tournament/${tournament.id}`)}>
