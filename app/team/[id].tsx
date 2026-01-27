@@ -23,7 +23,7 @@ export default function TeamDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { getTeamById, sendJoinRequest, leaveTeam, handleRequest, updateMemberRole, addCustomRole, promoteMember, removeMember, getPendingRequests, updateTeam, deleteTeam, transferCaptaincy, isUpdating, refetchTeams, getUserTeams } = useTeams();
+  const { getTeamById, sendJoinRequest, leaveTeam, handleRequest, updateMemberRole, addCustomRole, promoteMember, removeMember, getPendingRequests, updateTeam, deleteTeam, transferCaptaincy, followTeam, unfollowTeam, isUpdating, refetchTeams, getUserTeams } = useTeams();
   const { getUserById } = useUsers();
   const { addNotification, notifyTeamRequest } = useNotifications();
   const fromContext = getTeamById(id || '');
@@ -68,6 +68,7 @@ export default function TeamDetailScreen() {
   const team = fromContext ?? fetchedTeam;
 
   const isMember = team?.members.some(m => m.userId === user?.id) ?? false;
+  const isFan = team?.fans.includes(user?.id || '') ?? false;
   const isCaptain = team?.captainId === user?.id;
   const isCoCaptain = team?.coCaptainIds.includes(user?.id || '') ?? false;
   const canManage = isCaptain || isCoCaptain;
@@ -432,9 +433,63 @@ export default function TeamDetailScreen() {
               ))}
             </View>
 
+            {team.fans && team.fans.length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Communauté ({team.fans.length})</Text>
+                </View>
+                <Card style={styles.fansCard}>
+                  <Text style={styles.fansDescription}>
+                    {team.fans.length} {team.fans.length === 1 ? 'fan' : 'fans'} suivent cette équipe
+                  </Text>
+                  <View style={styles.fansList}>
+                    {team.fans.slice(0, 10).map((fanId) => {
+                      const fan = getUserById(fanId);
+                      return (
+                        <View key={fanId} style={styles.fanItem}>
+                          <Avatar uri={fan?.avatar} name={fan?.fullName || fan?.username || ''} size="small" />
+                          <Text style={styles.fanName}>{fan?.fullName || fan?.username || 'Fan'}</Text>
+                        </View>
+                      );
+                    })}
+                    {team.fans.length > 10 && (
+                      <Text style={styles.fansMore}>+{team.fans.length - 10} autres</Text>
+                    )}
+                  </View>
+                </Card>
+              </View>
+            )}
+
             <View style={styles.actions}>
-              <Button title="Chat d'équipe" onPress={() => router.push('/(tabs)/chat')} variant="primary" icon={<MessageCircle size={18} color="#FFFFFF" />} style={styles.actionButton} />
-              {!isCaptain && <Button title="Quitter l'équipe" onPress={handleLeave} variant="outline" style={styles.actionButton} />}
+              {isMember && (
+                <Button title="Chat d'équipe" onPress={() => router.push('/(tabs)/chat')} variant="primary" icon={<MessageCircle size={18} color="#FFFFFF" />} style={styles.actionButton} />
+              )}
+              {!isMember && !hasRequested && !isFan && (
+                <>
+                  <Button title="Demander à rejoindre" onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
+                  <Button title="Suivre l'équipe" onPress={async () => {
+                    if (!user || !team) return;
+                    try {
+                      await followTeam({ teamId: team.id, userId: user.id });
+                      Alert.alert('Succès', 'Vous suivez maintenant cette équipe !');
+                    } catch (error: any) {
+                      Alert.alert('Erreur', error.message || 'Impossible de suivre l\'équipe');
+                    }
+                  }} variant="outline" icon={<Star size={18} color={Colors.primary.blue} />} style={styles.actionButton} />
+                </>
+              )}
+              {isFan && !isMember && (
+                <Button title="Ne plus suivre" onPress={async () => {
+                  if (!user || !team) return;
+                  try {
+                    await unfollowTeam({ teamId: team.id, userId: user.id });
+                    Alert.alert('Succès', 'Vous ne suivez plus cette équipe');
+                  } catch (error: any) {
+                    Alert.alert('Erreur', error.message || 'Impossible de ne plus suivre l\'équipe');
+                  }
+                }} variant="outline" style={styles.actionButton} />
+              )}
+              {!isCaptain && isMember && <Button title="Quitter l'équipe" onPress={handleLeave} variant="outline" style={styles.actionButton} />}
             </View>
             <View style={styles.bottomSpacer} />
               </>
@@ -756,6 +811,12 @@ const styles = StyleSheet.create({
   actions: { gap: 12, marginBottom: 20 },
   actionButton: { width: '100%' },
   bottomSpacer: { height: 40 },
+  fansCard: { marginBottom: 16 },
+  fansDescription: { color: Colors.text.secondary, fontSize: 14, marginBottom: 12 },
+  fansList: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' },
+  fanItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  fanName: { color: Colors.text.primary, fontSize: 13 },
+  fansMore: { color: Colors.text.muted, fontSize: 13 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '80%' },
   settingsModalContent: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%' },

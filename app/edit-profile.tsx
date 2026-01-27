@@ -191,8 +191,9 @@ export default function EditProfileScreen() {
                       </>
                     )}
 
-                    <Text style={styles.modalLabel}>Années de pratique (optionnel, 1–99)</Text>
-                    <Input value={yearsPlaying} onChangeText={(v) => setYearsPlaying(v.replace(/\D/g, '').slice(0, 2) || '1')} keyboardType="numeric" placeholder="1" />
+                    <Text style={styles.modalLabel}>Nombre d'années d'expérience</Text>
+                    <Text style={styles.modalHint}>Combien d'années pratiquez-vous ce sport ? (1-99 ans)</Text>
+                    <Input value={yearsPlaying} onChangeText={(v) => setYearsPlaying(v.replace(/\D/g, '').slice(0, 2) || '1')} keyboardType="numeric" placeholder="Ex: 5" />
                   </>
                 )}
               </ScrollView>
@@ -235,6 +236,7 @@ const styles = StyleSheet.create({
   modalTitle: { color: Colors.text.primary, fontSize: 20, fontWeight: '700' as const },
   modalScroll: { maxHeight: 400 },
   modalLabel: { color: Colors.text.secondary, fontSize: 14, fontWeight: '500' as const, marginTop: 16, marginBottom: 8 },
+  modalHint: { color: Colors.text.muted, fontSize: 12, marginBottom: 8 },
   sportOption: { flex: 1, margin: 4, padding: 12, borderRadius: 10, backgroundColor: Colors.background.card, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sportOptionActive: { backgroundColor: Colors.primary.blue },
   sportOptionDisabled: { opacity: 0.6, backgroundColor: Colors.background.cardLight },

@@ -370,6 +370,7 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
 
   const getTeamById = useCallback((id: string) => teams.find(t => t.id === id), [teams]);
   const getUserTeams = useCallback((userId: string) => teams.filter(t => t.members.some(m => m.userId === userId)), [teams]);
+  const getFollowedTeams = useCallback((userId: string) => teams.filter(t => t.fans.includes(userId)), [teams]);
   const getRecruitingTeams = useCallback(() => teams.filter(t => t.isRecruiting && t.members.length < t.maxMembers), [teams]);
   /** Toutes les équipes créées (recrutent ou non), pour la découverte */
   const getAllTeams = useCallback(() => teams, [teams]);
@@ -395,8 +396,11 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
     updateTeam: updateTeamMutation.mutateAsync,
     deleteTeam: deleteTeamMutation.mutateAsync,
     transferCaptaincy: transferCaptaincyMutation.mutateAsync,
+    followTeam: followTeamMutation.mutateAsync,
+    unfollowTeam: unfollowTeamMutation.mutateAsync,
     getTeamById,
     getUserTeams,
+    getFollowedTeams,
     getRecruitingTeams,
     getAllTeams,
     getPendingRequests,

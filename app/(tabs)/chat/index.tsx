@@ -17,11 +17,14 @@ import { Input } from '@/components/Input';
 export default function ChatScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { chatRooms, createRoom, createTeamChats, isCreatingRoom } = useChat();
+  const { chatRooms, createRoom, createTeamChats, isCreatingRoom, createChatRequest, getPendingChatRequests, getSentChatRequests, respondToChatRequest, isCreatingRequest } = useChat();
   const { getUserTeams } = useTeams();
   const { users, getUserById } = useUsers();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [selectedUserForRequest, setSelectedUserForRequest] = useState<string | null>(null);
+  const [requestMessage, setRequestMessage] = useState('');
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomType, setNewRoomType] = useState<'general' | 'match' | 'strategy'>('general');
@@ -96,30 +99,45 @@ export default function ChatScreen() {
     }
   };
 
-  const startDirectChat = (targetUserId: string) => {
+  const startDirectChat = async (targetUserId: string) => {
     const targetUser = getUserById(targetUserId);
     if (!targetUser || !user) return;
     if (targetUserId === user.id) {
       setShowNewChatModal(false);
       setSearchQuery('');
-      Alert.alert('Recherche', 'C\'est vous ! Les messages directs avec d\'autres joueurs seront disponibles prochainement.');
+      Alert.alert('Recherche', 'Vous ne pouvez pas vous envoyer un message à vous-même.');
       return;
     }
-    Alert.alert(
-      'Nouvelle conversation',
-      `Voulez-vous démarrer une conversation avec ${targetUser.fullName} ?`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Démarrer',
-          onPress: () => {
-            setShowNewChatModal(false);
-            setSearchQuery('');
-            Alert.alert('Info', 'Les messages directs seront disponibles prochainement. Pour l\'instant, rejoignez une équipe pour discuter.');
-          }
-        }
-      ]
+    
+    // Check if there's already a direct chat room
+    const existingDirectRoom = chatRooms.find(r => 
+      r.type === 'direct' && 
+      r.participants.includes(user.id) && 
+      r.participants.includes(targetUserId)
     );
+    
+    if (existingDirectRoom) {
+      setShowNewChatModal(false);
+      setSearchQuery('');
+      router.push(`/chat/${existingDirectRoom.id}`);
+      return;
+    }
+    
+    // Check if there's a pending request
+    const sentRequests = getSentChatRequests();
+    const pendingRequest = sentRequests.find(r => r.recipientId === targetUserId);
+    
+    if (pendingRequest) {
+      Alert.alert('Demande en attente', 'Vous avez déjà envoyé une demande de conversation à cet utilisateur. En attente de réponse.');
+      setShowNewChatModal(false);
+      setSearchQuery('');
+      return;
+    }
+    
+    setSelectedUserForRequest(targetUserId);
+    setRequestMessage('');
+    setShowNewChatModal(false);
+    setShowRequestModal(true);
   };
 
   const userRooms = useMemo(() => {
@@ -177,60 +195,146 @@ export default function ChatScreen() {
         )}
 
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {filteredConversations.length > 0 ? (
-            <View style={styles.conversationsSection}>
-              <Text style={styles.sectionTitle}>
-                {conversationSearch.trim() ? `Résultats (${filteredConversations.length})` : 'Conversations récentes'}
-              </Text>
-              {filteredConversations.map((room) => {
-                const RoomIcon = getRoomIcon(room.type);
-                const team = myTeams.find(t => t.id === room.teamId);
-                return (
-                  <TouchableOpacity
-                    key={room.id}
-                    style={styles.chatItem}
-                    onPress={() => router.push(`/chat/${room.id}`)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.chatIconContainer}>
-                      {team?.logo ? (
-                        <Avatar uri={team.logo} name={team.name} size="medium" />
-                      ) : (
-                        <View style={styles.iconWrapper}>
-                          <RoomIcon size={22} color={Colors.primary.blue} />
-                        </View>
-                      )}
-                    </View>
-                    <View style={styles.chatContent}>
-                      <View style={styles.chatTop}>
-                        <Text style={styles.chatName} numberOfLines={1}>{room.name}</Text>
-                        {room.lastMessage && (
-                          <Text style={styles.chatTime}>{formatTime(room.lastMessage.createdAt)}</Text>
-                        )}
-                      </View>
-                      {room.lastMessage ? (
-                        <Text style={styles.chatPreview} numberOfLines={1}>
-                          {getLastMessageSender(room.lastMessage.senderId)}{room.lastMessage.content}
-                        </Text>
-                      ) : (
-                        <Text style={styles.chatPreviewEmpty}>Aucun message</Text>
-                      )}
-                    </View>
-                    {room.unreadCount > 0 && (
-                      <View style={styles.unreadBadge}>
-                        <Text style={styles.unreadText}>{room.unreadCount > 99 ? '99+' : room.unreadCount}</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : userRooms.length > 0 && conversationSearch.trim() ? (
+          {(() => {
+            const pendingRequests = getPendingChatRequests();
+            const sentRequests = getSentChatRequests();
+            
+            return (
+              <>
+                {pendingRequests.length > 0 && (
+                  <View style={styles.requestsSection}>
+                    <Text style={styles.sectionTitle}>Demandes reçues ({pendingRequests.length})</Text>
+                    {pendingRequests.map((request) => {
+                      const requester = getUserById(request.requesterId);
+                      return (
+                        <Card key={request.id} style={styles.requestCard}>
+                          <View style={styles.requestHeader}>
+                            <Avatar uri={requester?.avatar} name={requester?.fullName || requester?.username || ''} size="small" />
+                            <View style={styles.requestInfo}>
+                              <Text style={styles.requestName}>{requester?.fullName || requester?.username || 'Utilisateur'}</Text>
+                              {request.message && <Text style={styles.requestMessage}>{request.message}</Text>}
+                            </View>
+                          </View>
+                          <View style={styles.requestActions}>
+                            <TouchableOpacity 
+                              style={[styles.requestBtn, styles.requestBtnAccept]} 
+                              onPress={async () => {
+                                try {
+                                  await respondToChatRequest({ requestId: request.id, action: 'accept' });
+                                  Alert.alert('Succès', 'Demande acceptée ! La conversation est maintenant disponible.');
+                                } catch (error: any) {
+                                  Alert.alert('Erreur', error.message || 'Impossible d\'accepter la demande');
+                                }
+                              }}
+                            >
+                              <Text style={styles.requestBtnText}>Accepter</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                              style={[styles.requestBtn, styles.requestBtnReject]} 
+                              onPress={async () => {
+                                try {
+                                  await respondToChatRequest({ requestId: request.id, action: 'reject' });
+                                  Alert.alert('Succès', 'Demande refusée');
+                                } catch (error: any) {
+                                  Alert.alert('Erreur', error.message || 'Impossible de refuser la demande');
+                                }
+                              }}
+                            >
+                              <Text style={styles.requestBtnText}>Refuser</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </Card>
+                      );
+                    })}
+                  </View>
+                )}
+                
+                {sentRequests.length > 0 && (
+                  <View style={styles.requestsSection}>
+                    <Text style={styles.sectionTitle}>Demandes envoyées ({sentRequests.length})</Text>
+                    {sentRequests.map((request) => {
+                      const recipient = getUserById(request.recipientId);
+                      return (
+                        <Card key={request.id} style={styles.requestCard}>
+                          <View style={styles.requestHeader}>
+                            <Avatar uri={recipient?.avatar} name={recipient?.fullName || recipient?.username || ''} size="small" />
+                            <View style={styles.requestInfo}>
+                              <Text style={styles.requestName}>{recipient?.fullName || recipient?.username || 'Utilisateur'}</Text>
+                              <Text style={styles.requestStatus}>En attente de réponse...</Text>
+                            </View>
+                          </View>
+                        </Card>
+                      );
+                    })}
+                  </View>
+                )}
+                
+                {filteredConversations.length > 0 && (
+                  <View style={styles.conversationsSection}>
+                    <Text style={styles.sectionTitle}>
+                      {conversationSearch.trim() ? `Résultats (${filteredConversations.length})` : 'Conversations récentes'}
+                    </Text>
+                    {filteredConversations.map((room) => {
+                      const RoomIcon = getRoomIcon(room.type);
+                      const team = myTeams.find(t => t.id === room.teamId);
+                      const isDirectChat = room.type === 'direct';
+                      const otherParticipantId = isDirectChat && room.participants.find(id => id !== user?.id);
+                      const otherUser = otherParticipantId ? getUserById(otherParticipantId) : null;
+                      
+                      return (
+                        <TouchableOpacity
+                          key={room.id}
+                          style={styles.chatItem}
+                          onPress={() => router.push(`/chat/${room.id}`)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.chatIconContainer}>
+                            {isDirectChat && otherUser ? (
+                              <Avatar uri={otherUser.avatar} name={otherUser.fullName || otherUser.username || ''} size="medium" />
+                            ) : team?.logo ? (
+                              <Avatar uri={team.logo} name={team.name} size="medium" />
+                            ) : (
+                              <View style={styles.iconWrapper}>
+                                <RoomIcon size={22} color={Colors.primary.blue} />
+                              </View>
+                            )}
+                          </View>
+                          <View style={styles.chatContent}>
+                            <View style={styles.chatTop}>
+                              <Text style={styles.chatName} numberOfLines={1}>
+                                {isDirectChat && otherUser ? (otherUser.fullName || otherUser.username || 'Utilisateur') : room.name}
+                              </Text>
+                              {room.lastMessage && (
+                                <Text style={styles.chatTime}>{formatTime(room.lastMessage.createdAt)}</Text>
+                              )}
+                            </View>
+                            {room.lastMessage ? (
+                              <Text style={styles.chatPreview} numberOfLines={1}>
+                                {getLastMessageSender(room.lastMessage.senderId)}{room.lastMessage.content}
+                              </Text>
+                            ) : (
+                              <Text style={styles.chatPreviewEmpty}>Aucun message</Text>
+                            )}
+                          </View>
+                          {room.unreadCount > 0 && (
+                            <View style={styles.unreadBadge}>
+                              <Text style={styles.unreadText}>{room.unreadCount > 99 ? '99+' : room.unreadCount}</Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+                
+                {filteredConversations.length === 0 && pendingRequests.length === 0 && sentRequests.length === 0 && userRooms.length > 0 && conversationSearch.trim() && (
             <View style={styles.emptySearch}>
               <Search size={40} color={Colors.text.muted} />
               <Text style={styles.emptySearchText}>Aucune conversation ne correspond à « {conversationSearch} »</Text>
             </View>
-          ) : myTeams.length > 0 ? (
+                )}
+                
+                {filteredConversations.length === 0 && pendingRequests.length === 0 && sentRequests.length === 0 && myTeams.length > 0 && !conversationSearch.trim() && (
             <View style={styles.noChatsSection}>
               <Card style={styles.noChatsCard}>
                 <MessageCircle size={48} color={Colors.text.muted} />
@@ -249,8 +353,10 @@ export default function ChatScreen() {
                 ))}
               </Card>
             </View>
-          ) : (
-            <View style={styles.emptyState}>
+                )}
+                
+                {filteredConversations.length === 0 && pendingRequests.length === 0 && sentRequests.length === 0 && myTeams.length === 0 && !conversationSearch.trim() && (
+                  <View style={styles.emptyState}>
               <View style={styles.emptyIconWrapper}>
                 <MessageCircle size={64} color={Colors.text.muted} />
               </View>
@@ -267,8 +373,10 @@ export default function ChatScreen() {
                 <UserPlus size={18} color={Colors.primary.blue} />
                 <Text style={styles.searchUsersBtnText}>Rechercher des joueurs</Text>
               </TouchableOpacity>
-            </View>
-          )}
+                  </View>
+                )}
+              </>
+            )}
         </ScrollView>
 
         <Modal visible={showCreateModal} animationType="slide" transparent>
@@ -390,6 +498,56 @@ export default function ChatScreen() {
             </KeyboardAvoidingView>
           </View>
         </Modal>
+
+        <Modal visible={showRequestModal} animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Envoyer une demande</Text>
+                <TouchableOpacity onPress={() => { setShowRequestModal(false); setSelectedUserForRequest(null); setRequestMessage(''); }}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              {selectedUserForRequest && (
+                <>
+                  <Text style={styles.modalLabel}>
+                    Envoyer une demande de conversation à {getUserById(selectedUserForRequest)?.fullName || getUserById(selectedUserForRequest)?.username || 'cet utilisateur'} ?
+                  </Text>
+                  <Text style={styles.modalLabel}>Message (optionnel)</Text>
+                  <TextInput
+                    style={styles.modalTextInput}
+                    value={requestMessage}
+                    onChangeText={setRequestMessage}
+                    placeholder="Ajouter un message optionnel..."
+                    placeholderTextColor={Colors.text.muted}
+                    multiline
+                    numberOfLines={3}
+                  />
+                  <View style={styles.modalActions}>
+                    <Button title="Annuler" onPress={() => { setShowRequestModal(false); setSelectedUserForRequest(null); setRequestMessage(''); }} variant="outline" style={styles.modalButton} />
+                    <Button 
+                      title="Envoyer" 
+                      onPress={async () => {
+                        try {
+                          await createChatRequest({ recipientId: selectedUserForRequest, message: requestMessage.trim() || undefined });
+                          setShowRequestModal(false);
+                          setSelectedUserForRequest(null);
+                          setRequestMessage('');
+                          Alert.alert('Succès', 'Demande de conversation envoyée !');
+                        } catch (error: any) {
+                          Alert.alert('Erreur', error.message || 'Impossible d\'envoyer la demande');
+                        }
+                      }} 
+                      variant="primary" 
+                      style={styles.modalButton}
+                      loading={isCreatingRequest}
+                    />
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -472,4 +630,19 @@ const styles = StyleSheet.create({
   verifiedText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' as const },
   noResults: { color: Colors.text.muted, fontSize: 15, textAlign: 'center' as const, marginTop: 16 },
   searchHint: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' as const, marginTop: 12, lineHeight: 20 },
+  requestsSection: { marginBottom: 24 },
+  requestCard: { marginBottom: 12 },
+  requestHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  requestInfo: { flex: 1 },
+  requestName: { color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const },
+  requestMessage: { color: Colors.text.secondary, fontSize: 13, marginTop: 4 },
+  requestStatus: { color: Colors.text.muted, fontSize: 12, marginTop: 4 },
+  requestActions: { flexDirection: 'row', gap: 8 },
+  requestBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' as const },
+  requestBtnAccept: { backgroundColor: Colors.status.success },
+  requestBtnReject: { backgroundColor: Colors.background.card, borderWidth: 1, borderColor: Colors.border.light },
+  requestBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' as const },
+  modalTextInput: { backgroundColor: Colors.background.cardLight, borderRadius: 12, padding: 16, color: Colors.text.primary, fontSize: 14, minHeight: 100, textAlignVertical: 'top' as const, marginBottom: 16 },
+  modalActions: { flexDirection: 'row', gap: 12, paddingTop: 12 },
+  modalButton: { flex: 1 },
 });

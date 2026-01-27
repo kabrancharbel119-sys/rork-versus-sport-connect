@@ -15,6 +15,7 @@ export interface TeamRow {
   captain_id: string | null;
   co_captain_ids: string[];
   members: TeamMember[];
+  fans: string[];
   max_members: number;
   stats: TeamStats;
   reputation: number;
@@ -43,6 +44,7 @@ export const mapTeamRowToTeam = (row: TeamRow): Team => ({
     ...m,
     joinedAt: new Date(m.joinedAt)
   })),
+  fans: (row.fans as string[]) || [],
   maxMembers: row.max_members ?? 15,
   stats: (row.stats as unknown as TeamStats) || {
     matchesPlayed: 0, wins: 0, losses: 0, draws: 0,
@@ -157,6 +159,7 @@ export const teamsApi = {
     isRecruiting: boolean;
     maxMembers: number;
     members: TeamMember[];
+    fans: string[];
     joinRequests: JoinRequest[];
     coCaptainIds: string[];
     stats: TeamStats;
@@ -170,6 +173,7 @@ export const teamsApi = {
     if (updates.isRecruiting !== undefined) dbUpdates.is_recruiting = updates.isRecruiting;
     if (updates.maxMembers !== undefined) dbUpdates.max_members = updates.maxMembers;
     if (updates.members !== undefined) dbUpdates.members = updates.members;
+    if (updates.fans !== undefined) dbUpdates.fans = updates.fans;
     if (updates.joinRequests !== undefined) dbUpdates.join_requests = updates.joinRequests;
     if (updates.coCaptainIds !== undefined) dbUpdates.co_captain_ids = updates.coCaptainIds;
     if (updates.stats !== undefined) dbUpdates.stats = updates.stats;
@@ -352,5 +356,41 @@ export const teamsApi = {
 
     await this.update(teamId, { members: team.members, coCaptainIds });
     return team.members[memberIndex];
+  },
+
+  async followTeam(teamId: string, userId: string) {
+    console.log('[TeamsAPI] Following team:', teamId, 'by user:', userId);
+    
+    const team = await this.getById(teamId);
+    
+    // Check if already a member
+    if (team.members.some(m => m.userId === userId)) {
+      throw new Error('Vous êtes déjà membre de cette équipe');
+    }
+    
+    // Check if already a fan
+    if (team.fans.includes(userId)) {
+      throw new Error('Vous suivez déjà cette équipe');
+    }
+    
+    const fans = [...team.fans, userId];
+    await this.update(teamId, { fans });
+    
+    return { success: true };
+  },
+
+  async unfollowTeam(teamId: string, userId: string) {
+    console.log('[TeamsAPI] Unfollowing team:', teamId, 'by user:', userId);
+    
+    const team = await this.getById(teamId);
+    
+    if (!team.fans.includes(userId)) {
+      throw new Error('Vous ne suivez pas cette équipe');
+    }
+    
+    const fans = team.fans.filter(id => id !== userId);
+    await this.update(teamId, { fans });
+    
+    return { success: true };
   },
 };

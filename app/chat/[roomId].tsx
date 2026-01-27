@@ -9,10 +9,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { ArrowLeft, Send, Image as ImageIcon, MoreVertical, Search, Bell, BellOff, Share2, Users, X } from 'lucide-react-native';
+import { Button } from '@/components/Button';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useChat } from '@/contexts/ChatContext';
 import { useUsers } from '@/contexts/UsersContext';
+import { useTeams } from '@/contexts/TeamsContext';
 import { Avatar } from '@/components/Avatar';
 
 export default function ChatRoomScreen() {
@@ -21,6 +23,7 @@ export default function ChatRoomScreen() {
   const { user } = useAuth();
   const { chatRooms, getRoomMessages, sendMessage, markAsRead, removeParticipant, isSending } = useChat();
   const { getUserById } = useUsers();
+  const { getTeamById } = useTeams();
   const [messageText, setMessageText] = useState('');
   const [roomSearchQuery, setRoomSearchQuery] = useState('');
   const [showSearchBar, setShowSearchBar] = useState(false);
@@ -35,6 +38,11 @@ export default function ChatRoomScreen() {
   };
 
   const room = chatRooms.find(r => r.id === roomId);
+  const team = room?.teamId ? getTeamById(room.teamId) : null;
+  const isTeamMember = team ? team.members.some(m => m.userId === user?.id) : true;
+  const isDirectChat = room?.type === 'direct';
+  const canAccessChat = isDirectChat || !team || isTeamMember;
+  
   const allMessages = getRoomMessages(roomId || '');
   const messages = useMemo(() => {
     if (!roomSearchQuery.trim()) return allMessages;
@@ -213,6 +221,33 @@ export default function ChatRoomScreen() {
             <Text style={styles.errorText}>Discussion non trouvée</Text>
             <TouchableOpacity onPress={() => router.back()}>
               <Text style={styles.errorLink}>Retour</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  if (!canAccessChat) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+              <ArrowLeft size={24} color={Colors.text.primary} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Accès restreint</Text>
+            <View style={styles.placeholder} />
+          </View>
+          <View style={styles.errorContainer}>
+            <Users size={64} color={Colors.text.muted} />
+            <Text style={styles.errorTitle}>Discussion réservée aux membres</Text>
+            <Text style={styles.errorText}>
+              Seuls les membres de l'équipe peuvent accéder aux discussions. Les fans peuvent suivre l'équipe mais ne peuvent pas participer aux conversations.
+            </Text>
+            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+              <Text style={styles.backBtnText}>Retour</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -457,14 +492,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
+    paddingHorizontal: 40,
+  },
+  errorTitle: {
+    color: Colors.text.primary,
+    fontSize: 20,
+    fontWeight: '700' as const,
+    marginTop: 20,
+    marginBottom: 12,
+    textAlign: 'center',
   },
   errorText: {
-    color: Colors.text.primary,
-    fontSize: 16,
+    color: Colors.text.muted,
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
   },
   errorLink: {
     color: Colors.primary.blue,
     fontSize: 14,
+  },
+  backBtn: {
+    marginTop: 24,
+    backgroundColor: Colors.primary.blue,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  backBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600' as const,
+  },
+  placeholder: {
+    width: 40,
   },
   keyboardView: {
     flex: 1,

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, RefreshControl, Switch, Share, Platform } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, RefreshControl, Switch, Share, Platform, Modal } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -44,7 +44,7 @@ export default function AdminScreen() {
   const { matches, refetchMatches, deleteMatch } = useMatches();
   const { users, banUser, unbanUser, verifyUser } = useUsers();
   const { addNotification } = useNotifications();
-  const { tickets, verificationRequests, updateTicketStatus, handleVerification, getPendingTickets, getPendingVerifications } = useSupport();
+  const { tickets, verificationRequests, updateTicketStatus, handleVerification, getPendingTickets, getPendingVerifications, respondToTicket } = useSupport();
   const { tournaments, refetchTournaments } = useTournaments();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
@@ -53,6 +53,8 @@ export default function AdminScreen() {
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState('');
   const [sendingNotif, setSendingNotif] = useState(false);
+  const [selectedTicketForResponse, setSelectedTicketForResponse] = useState<SupportTicket | null>(null);
+  const [ticketResponseText, setTicketResponseText] = useState('');
 
   const doRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -302,6 +304,28 @@ export default function AdminScreen() {
       Alert.alert('Succès', `Ticket ${action === 'resolve' ? 'résolu' : 'fermé'}`);
     } catch (e) {
       Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de mettre à jour le ticket.');
+    }
+  };
+
+  const handleRespondToTicket = async () => {
+    if (!selectedTicketForResponse || !ticketResponseText.trim()) {
+      Alert.alert('Erreur', 'Veuillez entrer une réponse');
+      return;
+    }
+    try {
+      await respondToTicket({
+        ticketId: selectedTicketForResponse.id,
+        oderId: user?.id || '',
+        userName: user?.fullName || user?.username || 'Admin',
+        isAdmin: true,
+        message: ticketResponseText.trim(),
+      });
+      setTicketResponseText('');
+      setSelectedTicketForResponse(null);
+      await queryClient.invalidateQueries({ queryKey: ['support'] });
+      Alert.alert('Succès', 'Réponse envoyée');
+    } catch (e) {
+      Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible d\'envoyer la réponse.');
     }
   };
 
@@ -705,8 +729,23 @@ export default function AdminScreen() {
             </View>
             {(ticket.status === 'open' || ticket.status === 'in_progress') && (
               <View style={styles.ticketActions}>
+                <TouchableOpacity style={styles.actionBtnBlue} onPress={() => { setSelectedTicketForResponse(ticket); setTicketResponseText(''); }}>
+                  <MessageSquare size={16} color={Colors.primary.blue} />
+                </TouchableOpacity>
                 <TouchableOpacity style={styles.actionBtnGreen} onPress={() => handleTicketAction(ticket.id, 'resolve')}><CheckCircle size={16} color={Colors.status.success} /></TouchableOpacity>
                 <TouchableOpacity style={styles.actionBtnRed} onPress={() => handleTicketAction(ticket.id, 'close')}><XCircle size={16} color={Colors.status.error} /></TouchableOpacity>
+              </View>
+            )}
+            {ticket.responses && ticket.responses.length > 0 && (
+              <View style={styles.ticketResponses}>
+                <Text style={styles.ticketResponsesTitle}>Réponses ({ticket.responses.length})</Text>
+                {ticket.responses.map((response) => (
+                  <View key={response.id} style={styles.ticketResponseItem}>
+                    <Text style={styles.ticketResponseAuthor}>{response.userName} {response.isAdmin ? '(Admin)' : ''}</Text>
+                    <Text style={styles.ticketResponseText}>{response.message}</Text>
+                    <Text style={styles.ticketResponseDate}>{formatDate(response.createdAt)}</Text>
+                  </View>
+                ))}
               </View>
             )}
           </View>
@@ -1012,10 +1051,44 @@ export default function AdminScreen() {
             {activeTab === 'activity' && renderActivity()}
             {activeTab === 'analytics' && renderAnalytics()}
             {activeTab === 'settings' && renderSettings()}
-            <View style={styles.bottomSpacer} />
-          </ScrollView>
-        </SafeAreaView>
-      </View>
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
+      </SafeAreaView>
+      
+      <Modal visible={selectedTicketForResponse !== null} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Répondre au ticket</Text>
+              <TouchableOpacity onPress={() => { setSelectedTicketForResponse(null); setTicketResponseText(''); }}>
+                <X size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            {selectedTicketForResponse && (
+              <>
+                <Text style={styles.modalLabel}>Sujet: {selectedTicketForResponse.subject}</Text>
+                <Text style={styles.modalLabel}>Message:</Text>
+                <Text style={styles.modalText}>{selectedTicketForResponse.description || selectedTicketForResponse.message}</Text>
+                <Text style={styles.modalLabel}>Votre réponse:</Text>
+                <TextInput
+                  style={styles.modalTextInput}
+                  value={ticketResponseText}
+                  onChangeText={setTicketResponseText}
+                  placeholder="Tapez votre réponse..."
+                  multiline
+                  numberOfLines={6}
+                  placeholderTextColor={Colors.text.muted}
+                />
+                <View style={styles.modalActions}>
+                  <Button title="Annuler" onPress={() => { setSelectedTicketForResponse(null); setTicketResponseText(''); }} variant="outline" style={styles.modalButton} />
+                  <Button title="Envoyer" onPress={handleRespondToTicket} variant="primary" style={styles.modalButton} />
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+    </View>
     </>
   );
 }
@@ -1190,4 +1263,19 @@ const styles = StyleSheet.create({
   backBtn: { marginTop: 24, backgroundColor: Colors.primary.blue, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
   backBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' as const },
   bottomSpacer: { height: 40 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '85%' },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  modalTitle: { color: Colors.text.primary, fontSize: 20, fontWeight: '700' as const },
+  modalLabel: { color: Colors.text.secondary, fontSize: 14, fontWeight: '500' as const, marginTop: 12, marginBottom: 8 },
+  modalText: { color: Colors.text.primary, fontSize: 14, marginBottom: 12, padding: 12, backgroundColor: Colors.background.card, borderRadius: 8 },
+  modalTextInput: { backgroundColor: Colors.background.cardLight, borderRadius: 12, padding: 16, color: Colors.text.primary, fontSize: 14, minHeight: 120, textAlignVertical: 'top' as const, marginBottom: 16 },
+  modalActions: { flexDirection: 'row', gap: 12 },
+  modalButton: { flex: 1 },
+  ticketResponses: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border.light },
+  ticketResponsesTitle: { color: Colors.text.secondary, fontSize: 13, fontWeight: '600' as const, marginBottom: 8 },
+  ticketResponseItem: { backgroundColor: Colors.background.cardLight, padding: 12, borderRadius: 8, marginBottom: 8 },
+  ticketResponseAuthor: { color: Colors.text.primary, fontSize: 13, fontWeight: '600' as const, marginBottom: 4 },
+  ticketResponseText: { color: Colors.text.secondary, fontSize: 14, marginBottom: 4 },
+  ticketResponseDate: { color: Colors.text.muted, fontSize: 11 },
 });

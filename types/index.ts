@@ -90,6 +90,7 @@ export interface Team {
   captainId: string;
   coCaptainIds: string[];
   members: TeamMember[];
+  fans: string[]; // IDs des fans/abonnés (pas de membres, juste abonnés)
   maxMembers: number;
   stats: TeamStats;
   reputation: number;
@@ -219,13 +220,23 @@ export interface TournamentPrize {
 
 export interface ChatRoom {
   id: string;
-  teamId: string;
+  teamId?: string; // Optionnel pour les conversations directes
   name: string;
-  type: 'general' | 'match' | 'strategy';
+  type: 'general' | 'match' | 'strategy' | 'direct';
   lastMessage?: ChatMessage;
   unreadCount: number;
   participants: string[];
   createdAt: Date;
+}
+
+export interface ChatRequest {
+  id: string;
+  requesterId: string;
+  recipientId: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  message?: string;
+  createdAt: Date;
+  respondedAt?: Date;
 }
 
 export interface ChatMessage {

@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { ChatRoom, ChatMessage } from '@/types';
+import { ChatRoom, ChatMessage, ChatRequest } from '@/types';
 import { mockChatRooms, mockMessages } from '@/mocks/data';
 import { emitRealtimeEvent } from '@/lib/realtime';
 import { chatApi } from '@/lib/api/chat';
@@ -16,6 +16,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
   const queryClient = useQueryClient();
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatRequests, setChatRequests] = useState<ChatRequest[]>([]);
   const [isPollingActive, setIsPollingActive] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
@@ -337,9 +338,116 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     queryClient.invalidateQueries({ queryKey: ['chats'] });
   }, [queryClient]);
 
+  // Chat Requests
+  const chatRequestsQuery = useQuery({
+    queryKey: ['chatRequests', currentUserId],
+    queryFn: async () => {
+      if (!currentUserId) return [];
+      try {
+        return await chatApi.getChatRequests(currentUserId);
+      } catch (e) {
+        console.log('[Chat] Failed to load chat requests');
+        return [];
+      }
+    },
+    enabled: !!currentUserId,
+    refetchInterval: isPollingActive ? 10000 : false,
+  });
+
+  useEffect(() => {
+    if (chatRequestsQuery.data) {
+      setChatRequests(chatRequestsQuery.data);
+    }
+  }, [chatRequestsQuery.data]);
+
+  const createChatRequestMutation = useMutation({
+    mutationFn: async ({ recipientId, message }: { recipientId: string; message?: string }) => {
+      if (!currentUserId) throw new Error('Non connecté');
+      return await chatApi.createChatRequest(currentUserId, recipientId, message);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chatRequests'] });
+    },
+  });
+
+  const respondToChatRequestMutation = useMutation({
+    mutationFn: async ({ requestId, action }: { requestId: string; action: 'accept' | 'reject' }) => {
+      if (!currentUserId) throw new Error('Non connecté');
+      
+      const request = chatRequests.find(r => r.id === requestId);
+      if (!request) throw new Error('Demande non trouvée');
+      
+      try {
+        const result = await chatApi.respondToChatRequest(requestId, currentUserId, action);
+        
+        // If accepted, create direct chat room locally
+        if (action === 'accept') {
+          const directRoom: ChatRoom = {
+            id: `direct-${Date.now()}`,
+            name: `Conversation directe`,
+            type: 'direct',
+            participants: [request.requesterId, request.recipientId],
+            unreadCount: 0,
+            createdAt: new Date(),
+          };
+          
+          const updatedRooms = [...chatRooms, directRoom];
+          await saveRooms(updatedRooms);
+          queryClient.invalidateQueries({ queryKey: ['chats'] });
+        }
+        
+        return result;
+      } catch (e) {
+        console.log('[Chat] Supabase error, using local');
+        // Update request status locally
+        const updatedRequests = chatRequests.map(r => 
+          r.id === requestId 
+            ? { ...r, status: action === 'accept' ? 'accepted' as const : 'rejected' as const, respondedAt: new Date() }
+            : r
+        );
+        setChatRequests(updatedRequests);
+        
+        // If accepted, create direct chat room locally
+        if (action === 'accept') {
+          const directRoom: ChatRoom = {
+            id: `direct-${Date.now()}`,
+            name: `Conversation directe`,
+            type: 'direct',
+            participants: [request.requesterId, request.recipientId],
+            unreadCount: 0,
+            createdAt: new Date(),
+          };
+          
+          const updatedRooms = [...chatRooms, directRoom];
+          await saveRooms(updatedRooms);
+        }
+        
+        return { success: true };
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chatRequests'] });
+    },
+  });
+
+  const getPendingChatRequests = useCallback(() => {
+    if (!currentUserId) return [];
+    return chatRequests.filter(r => 
+      r.recipientId === currentUserId && r.status === 'pending'
+    );
+  }, [chatRequests, currentUserId]);
+
+  const getSentChatRequests = useCallback(() => {
+    if (!currentUserId) return [];
+    return chatRequests.filter(r => 
+      r.requesterId === currentUserId && r.status === 'pending'
+    );
+  }, [chatRequests, currentUserId]);
+
   return {
     chatRooms,
     messages,
+    chatRequests,
     isLoading: chatsQuery.isLoading,
     isPollingActive,
     createRoom: createRoomMutation.mutateAsync,
@@ -349,12 +457,17 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     addParticipant: addParticipantMutation.mutateAsync,
     removeParticipant: removeParticipantMutation.mutateAsync,
     createTeamChats: createTeamChatsMutation.mutateAsync,
+    createChatRequest: createChatRequestMutation.mutateAsync,
+    respondToChatRequest: respondToChatRequestMutation.mutateAsync,
     getRoomMessages,
     getTeamRooms,
     getTotalUnread,
     getUserRooms,
+    getPendingChatRequests,
+    getSentChatRequests,
     forceRefresh,
     isSending: sendMessageMutation.isPending,
     isCreatingRoom: createRoomMutation.isPending,
+    isCreatingRequest: createChatRequestMutation.isPending,
   };
 });

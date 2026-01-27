@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS teams (
   captain_id UUID REFERENCES users(id) ON DELETE SET NULL,
   co_captain_ids JSONB DEFAULT '[]'::jsonb,
   members JSONB DEFAULT '[]'::jsonb,
+  fans JSONB DEFAULT '[]'::jsonb,
   max_members INTEGER DEFAULT 15,
   stats JSONB DEFAULT '{"matchesPlayed":0,"wins":0,"losses":0,"draws":0,"goalsFor":0,"goalsAgainst":0,"tournamentWins":0,"totalCashPrize":0}'::jsonb,
   reputation REAL DEFAULT 5.0,
@@ -157,6 +158,20 @@ CREATE TABLE IF NOT EXISTS chat_rooms (
   participants JSONB DEFAULT '[]'::jsonb,
   last_message_id UUID,
   created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================
+-- CHAT REQUESTS TABLE (for direct messages)
+-- =============================================
+CREATE TABLE IF NOT EXISTS chat_requests (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  requester_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  recipient_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT DEFAULT 'pending',
+  message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  responded_at TIMESTAMPTZ,
+  UNIQUE(requester_id, recipient_id)
 );
 
 -- =============================================
@@ -278,6 +293,7 @@ ALTER TABLE matches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tournaments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_rooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE referrals ENABLE ROW LEVEL SECURITY;
@@ -327,6 +343,12 @@ CREATE POLICY "Chat messages are viewable by everyone" ON chat_messages FOR SELE
 CREATE POLICY "Chat messages can be created" ON chat_messages FOR INSERT WITH CHECK (true);
 CREATE POLICY "Chat messages can be updated" ON chat_messages FOR UPDATE USING (true);
 CREATE POLICY "Chat messages can be deleted" ON chat_messages FOR DELETE USING (true);
+
+-- CHAT REQUESTS POLICIES
+CREATE POLICY "Chat requests are viewable by participants" ON chat_requests FOR SELECT USING (true);
+CREATE POLICY "Chat requests can be created" ON chat_requests FOR INSERT WITH CHECK (true);
+CREATE POLICY "Chat requests can be updated" ON chat_requests FOR UPDATE USING (true);
+CREATE POLICY "Chat requests can be deleted" ON chat_requests FOR DELETE USING (true);
 
 -- NOTIFICATIONS POLICIES (public access - auth handled at app level)
 CREATE POLICY "Notifications are viewable by everyone" ON notifications FOR SELECT USING (true);

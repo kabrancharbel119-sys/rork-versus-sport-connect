@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { ChatRoom, ChatMessage } from '@/types';
+import type { ChatRoom, ChatMessage, ChatRequest } from '@/types';
 
 export interface ChatRoomRow {
   id: string;
@@ -24,7 +24,7 @@ export interface ChatMessageRow {
 
 export const mapChatRoomRowToRoom = (row: ChatRoomRow): ChatRoom => ({
   id: row.id,
-  teamId: row.team_id || '',
+  teamId: row.team_id || undefined,
   name: row.name,
   type: row.type as ChatRoom['type'],
   participants: (row.participants as string[]) || [],
@@ -81,9 +81,9 @@ export const chatApi = {
   },
 
   async createRoom(userId: string, roomData: {
-    teamId: string;
+    teamId?: string;
     name: string;
-    type: 'general' | 'match' | 'strategy';
+    type: 'general' | 'match' | 'strategy' | 'direct';
     participants: string[];
   }) {
     console.log('[ChatAPI] Creating room:', roomData.name);
@@ -102,7 +102,7 @@ export const chatApi = {
     const { data, error } = await (supabase
       .from('chat_rooms')
       .insert({
-        team_id: roomData.teamId,
+        team_id: roomData.teamId || null,
         name: roomData.name,
         type: roomData.type,
         participants: [...new Set([userId, ...roomData.participants])],
@@ -283,5 +283,104 @@ export const chatApi = {
         callback(mapChatMessageRowToMessage(payload.new as ChatMessageRow));
       })
       .subscribe();
+  },
+
+  // Chat Requests (for direct messages)
+  async createChatRequest(requesterId: string, recipientId: string, message?: string) {
+    console.log('[ChatAPI] Creating chat request from', requesterId, 'to', recipientId);
+    
+    // Check if request already exists
+    const { data: existing } = await (supabase
+      .from('chat_requests')
+      .select('*')
+      .eq('requester_id', requesterId)
+      .eq('recipient_id', recipientId)
+      .single() as any);
+    
+    if (existing && existing.status === 'pending') {
+      throw new Error('Demande déjà envoyée');
+    }
+    
+    const { data, error } = await (supabase
+      .from('chat_requests')
+      .insert({
+        requester_id: requesterId,
+        recipient_id: recipientId,
+        status: 'pending',
+        message: message || null,
+      } as any)
+      .select()
+      .single() as any);
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async getChatRequests(userId: string) {
+    console.log('[ChatAPI] Getting chat requests for user:', userId);
+    const { data, error } = await (supabase
+      .from('chat_requests')
+      .select('*')
+      .or(`requester_id.eq.${userId},recipient_id.eq.${userId}`)
+      .order('created_at', { ascending: false }) as any);
+    
+    if (error) throw error;
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      requesterId: row.requester_id,
+      recipientId: row.recipient_id,
+      status: row.status,
+      message: row.message,
+      createdAt: new Date(row.created_at),
+      respondedAt: row.responded_at ? new Date(row.responded_at) : undefined,
+    }));
+  },
+
+  async respondToChatRequest(requestId: string, recipientId: string, action: 'accept' | 'reject') {
+    console.log('[ChatAPI] Responding to chat request:', requestId, action);
+    
+    const { data: request, error: fetchError } = await (supabase
+      .from('chat_requests')
+      .select('*')
+      .eq('id', requestId)
+      .single() as any);
+    
+    if (fetchError || !request) throw new Error('Demande non trouvée');
+    if (request.recipient_id !== recipientId) throw new Error('Non autorisé');
+    if (request.status !== 'pending') throw new Error('Demande déjà traitée');
+    
+    const status = action === 'accept' ? 'accepted' : 'rejected';
+    const { data, error } = await (supabase
+      .from('chat_requests')
+      .update({
+        status,
+        responded_at: new Date().toISOString(),
+      } as any)
+      .eq('id', requestId)
+      .select()
+      .single() as any);
+    
+    if (error) throw error;
+    
+    // If accepted, create a direct chat room
+    if (action === 'accept') {
+      // Check if room already exists
+      const { data: existingRooms } = await (supabase
+        .from('chat_rooms')
+        .select('*')
+        .eq('type', 'direct')
+        .contains('participants', [request.requester_id, request.recipient_id]) as any);
+      
+      if (!existingRooms || existingRooms.length === 0) {
+        // Create direct chat room
+        await this.createRoom(recipientId, {
+          name: `Conversation directe`,
+          type: 'direct',
+          participants: [request.requester_id, request.recipient_id],
+        });
+      }
+    }
+    
+    return data;
   },
 };
