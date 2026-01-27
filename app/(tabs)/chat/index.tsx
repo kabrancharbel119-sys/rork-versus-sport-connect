@@ -376,7 +376,7 @@ export default function ChatScreen() {
                   </View>
                 )}
               </>
-            )}
+            )})()}
         </ScrollView>
 
         <Modal visible={showCreateModal} animationType="slide" transparent>
