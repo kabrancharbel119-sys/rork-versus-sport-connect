@@ -11,7 +11,7 @@ import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Sport, SkillLevel, PlayStyle } from '@/types';
-import { sportLabels, levelLabels, ambianceLabels } from '@/mocks/data';
+import { sportLabels, levelLabels, ambianceLabels, mockVenues } from '@/mocks/data';
 
 const sports: Sport[] = ['football', 'basketball', 'volleyball', 'tennis', 'handball', 'rugby'];
 const levels: SkillLevel[] = ['beginner', 'intermediate', 'advanced', 'expert'];
@@ -54,6 +54,9 @@ export default function CreateMatchScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { createMatch, venues, isCreating } = useMatches();
+  
+  // Utiliser les terrains de l'API ou les données mockées en fallback
+  const availableVenues = venues.length > 0 ? venues : mockVenues;
 
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -72,7 +75,7 @@ export default function CreateMatchScreen() {
     maxPlayers: '10',
   });
 
-  const selectedVenue = venues.find(v => v.id === formData.venueId);
+  const selectedVenue = availableVenues.find(v => v.id === formData.venueId);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -254,7 +257,7 @@ export default function CreateMatchScreen() {
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Terrain</Text>
-                {venues.map((venue) => (
+                {availableVenues.map((venue) => (
                   <TouchableOpacity
                     key={venue.id}
                     onPress={() => updateField('venueId', venue.id)}
