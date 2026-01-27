@@ -16,7 +16,7 @@ import { LocationProvider } from "@/contexts/LocationContext";
 import { UsersProvider } from "@/contexts/UsersContext";
 import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { SupportProvider } from "@/contexts/SupportContext";
-import { TrophiesProvider } from "@/contexts/TrophiesProvider";
+import { TrophiesProvider } from "@/contexts/TrophiesContext";
 import { I18nProvider } from "@/contexts/I18nContext";
 import { OfflineProvider } from "@/contexts/OfflineContext";
 import { ReferralProvider } from "@/contexts/ReferralContext";
