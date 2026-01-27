@@ -2,9 +2,12 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { User } from '@/types';
 import { mockUser, mockAdminUser } from '@/mocks/data';
 import { usersApi } from '@/lib/api/users';
+
+const USERS_REFETCH_INTERVAL_MS = 30_000;
 
 const USERS_STORAGE_KEY = 'vs_all_users';
 const FOLLOWS_STORAGE_KEY = 'vs_follows';
@@ -28,6 +31,14 @@ export const [UsersProvider, useUsers] = createContextHook(() => {
   const queryClient = useQueryClient();
   const [users, setUsers] = useState<User[]>([]);
   const [follows, setFollows] = useState<FollowRelation[]>([]);
+  const [isAppActive, setIsAppActive] = useState(true);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      setIsAppActive(state === 'active');
+    });
+    return () => sub.remove();
+  }, []);
 
   const usersQuery = useQuery({
     queryKey: ['allUsers'],
@@ -61,6 +72,8 @@ export const [UsersProvider, useUsers] = createContextHook(() => {
       
       return { users: usersList, follows: followsList };
     },
+    refetchInterval: isAppActive ? USERS_REFETCH_INTERVAL_MS : false,
+    refetchIntervalInBackground: false,
   });
 
   useEffect(() => {

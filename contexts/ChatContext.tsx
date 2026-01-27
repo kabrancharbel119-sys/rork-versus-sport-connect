@@ -137,12 +137,13 @@ export const [ChatProvider, useChat] = createContextHook(() => {
   });
 
   const sendMessageMutation = useMutation({
-    mutationFn: async ({ roomId, senderId, content, senderName }: { roomId: string; senderId: string; content: string; senderName?: string }) => {
-      console.log('[Chat] Sending message to room:', roomId);
+    mutationFn: async ({ roomId, senderId, content, senderName, type }: { roomId: string; senderId: string; content: string; senderName?: string; type?: 'text' | 'image' | 'video' }) => {
+      const messageType = type || 'text';
+      console.log('[Chat] Sending message to room:', roomId, 'type:', messageType);
 
       if (currentUserId) {
         try {
-          const message = await chatApi.sendMessage(roomId, senderId, content);
+          const message = await chatApi.sendMessage(roomId, senderId, content, messageType);
           const updatedMessages = [...messages, message];
           await saveMessages(updatedMessages);
           
@@ -170,7 +171,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
         roomId,
         senderId,
         content,
-        type: 'text',
+        type: messageType,
         createdAt: new Date(),
         readBy: [senderId],
       };

@@ -1,6 +1,37 @@
 import { supabase } from '@/lib/supabase';
+import { getApiBaseUrl } from '@/lib/api-base-url';
+import { logger } from '@/lib/logger';
 import type { User, UserSport, UserStats } from '@/types';
 import * as Crypto from 'expo-crypto';
+
+/** Colonnes user sans password_hash : à utiliser pour tout select exposé au client */
+const USER_PUBLIC_COLUMNS =
+  'id,email,username,full_name,avatar,phone,city,country,bio,sports,stats,reputation,wallet_balance,teams,followers,following,is_verified,is_premium,is_banned,role,location_lat,location_lng,location_city,location_country,availability,referral_code,created_at';
+
+function getAuthBaseUrl(): string {
+  return getApiBaseUrl();
+}
+
+function useBackendAuth(): boolean {
+  return (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_USE_BACKEND_AUTH === 'true' && !!getAuthBaseUrl()) || false;
+}
+
+function normalizeBackendUser(raw: Record<string, unknown>): User {
+  return {
+    ...raw,
+    createdAt: raw.createdAt instanceof Date ? raw.createdAt : new Date(String(raw.createdAt ?? '')),
+    location:
+      raw.location && typeof raw.location === 'object' && raw.location !== null
+        ? {
+            ...(raw.location as object),
+            lastUpdated:
+              (raw.location as { lastUpdated?: unknown }).lastUpdated instanceof Date
+                ? (raw.location as { lastUpdated: Date }).lastUpdated
+                : new Date(),
+          }
+        : undefined,
+  } as User;
+}
 
 async function hashPassword(password: string): Promise<string> {
   const hash = await Crypto.digestStringAsync(
@@ -78,10 +109,10 @@ export const mapUserRowToUser = (row: UserRow): User => ({
 
 export const usersApi = {
   async getAll() {
-    console.log('[UsersAPI] Getting all users');
+    logger.debug('UsersAPI', 'Getting all users');
     const { data, error } = await (supabase
       .from('users')
-      .select('*')
+      .select(USER_PUBLIC_COLUMNS)
       .eq('is_banned', false) as any);
     
     if (error) throw error;
@@ -89,10 +120,10 @@ export const usersApi = {
   },
 
   async getById(id: string) {
-    console.log('[UsersAPI] Getting user by id:', id);
+    logger.debug('UsersAPI', 'Getting user by id:', id);
     const { data, error } = await (supabase
       .from('users')
-      .select('*')
+      .select(USER_PUBLIC_COLUMNS)
       .eq('id', id)
       .single() as any);
     
@@ -102,10 +133,10 @@ export const usersApi = {
   },
 
   async getByPhone(phone: string) {
-    console.log('[UsersAPI] Getting user by phone:', phone);
+    logger.debug('UsersAPI', 'Getting user by phone');
     const { data, error } = await (supabase
       .from('users')
-      .select('*')
+      .select(USER_PUBLIC_COLUMNS)
       .eq('phone', phone)
       .single() as any);
     
@@ -122,8 +153,32 @@ export const usersApi = {
     city?: string;
     country?: string;
   }) {
-    console.log('[UsersAPI] Creating user:', userData.username);
-    
+    logger.debug('UsersAPI', 'Creating user:', userData.username);
+    if (useBackendAuth()) {
+      try {
+        const base = getAuthBaseUrl().replace(/\/$/, '');
+        const res = await fetch(`${base}/api/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: userData.id,
+            username: userData.username,
+            fullName: userData.fullName,
+            phone: userData.phone,
+            password: userData.password,
+            city: userData.city,
+            country: userData.country,
+          }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { user?: Record<string, unknown>; message?: string };
+        if (!res.ok) throw new Error(json.message ?? 'Erreur lors de la création du compte');
+        if (!json.user) throw new Error('Réponse invalide');
+        return normalizeBackendUser(json.user);
+      } catch (e) {
+        if (e instanceof Error) throw e;
+        throw new Error('Service d’authentification indisponible');
+      }
+    }
     // Check if phone already exists
     const { data: existingByPhone } = await (supabase
       .from('users')
@@ -167,11 +222,11 @@ export const usersApi = {
     const { data, error } = await (supabase
       .from('users')
       .insert(insertData as any)
-      .select()
+      .select(USER_PUBLIC_COLUMNS)
       .single() as any);
     
     if (error) {
-      console.log('[UsersAPI] Create error:', error);
+      logger.debug('UsersAPI', 'Create error:', error?.message ?? error);
       if (error.code === '23505') {
         if (error.message?.includes('phone')) {
           throw new Error('Ce numéro est déjà utilisé. Essayez de vous connecter.');
@@ -187,12 +242,29 @@ export const usersApi = {
       throw error;
     }
     
-    console.log('[UsersAPI] User created successfully with server-side password');
+    logger.debug('UsersAPI', 'User created successfully');
     return mapUserRowToUser(data as UserRow);
   },
 
   async authenticate(phone: string, password: string) {
-    console.log('[UsersAPI] Authenticating user by phone:', phone);
+    logger.debug('UsersAPI', 'Authenticating by phone');
+    if (useBackendAuth()) {
+      try {
+        const base = getAuthBaseUrl().replace(/\/$/, '');
+        const res = await fetch(`${base}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, password }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { user?: Record<string, unknown>; message?: string };
+        if (!res.ok) throw new Error(json.message ?? 'Numéro ou mot de passe incorrect');
+        if (!json.user) throw new Error('Réponse invalide');
+        return normalizeBackendUser(json.user);
+      } catch (e) {
+        if (e instanceof Error) throw e;
+        throw new Error('Service d’authentification indisponible');
+      }
+    }
     const { data, error } = await (supabase
       .from('users')
       .select('*')
@@ -200,7 +272,7 @@ export const usersApi = {
       .single() as any);
     
     if (error || !data) {
-      console.log('[UsersAPI] User not found for phone:', phone);
+      logger.debug('UsersAPI', 'User not found for phone');
       throw new Error('Numéro ou mot de passe incorrect');
     }
     
@@ -213,18 +285,18 @@ export const usersApi = {
     const passwordHash = await hashPassword(password);
     
     if (user.password_hash && user.password_hash !== passwordHash) {
-      console.log('[UsersAPI] Password mismatch for phone:', phone);
+      logger.debug('UsersAPI', 'Password mismatch');
       throw new Error('Numéro ou mot de passe incorrect');
     }
     
     if (!user.password_hash) {
-      console.log('[UsersAPI] No server password, updating...');
+      logger.debug('UsersAPI', 'No server password, updating');
       await ((supabase.from('users') as any)
         .update({ password_hash: passwordHash })
         .eq('id', user.id));
     }
     
-    console.log('[UsersAPI] Authentication successful');
+    logger.debug('UsersAPI', 'Authentication successful');
     return mapUserRowToUser(user);
   },
 
@@ -243,7 +315,7 @@ export const usersApi = {
     isPremium: boolean;
     role: string;
   }>) {
-    console.log('[UsersAPI] Updating user:', id);
+    logger.debug('UsersAPI', 'Updating user:', id);
     const dbUpdates: Record<string, unknown> = {};
     
     if (updates.fullName !== undefined) dbUpdates.full_name = updates.fullName;
@@ -263,7 +335,7 @@ export const usersApi = {
     const { data, error } = await ((supabase.from('users') as any)
       .update(dbUpdates)
       .eq('id', id)
-      .select()
+      .select(USER_PUBLIC_COLUMNS)
       .single());
     
     if (error) throw error;
@@ -271,7 +343,7 @@ export const usersApi = {
   },
 
   async delete(id: string) {
-    console.log('[UsersAPI] Deleting user:', id);
+    logger.debug('UsersAPI', 'Deleting user:', id);
     const { error } = await (supabase
       .from('users')
       .delete()
@@ -289,10 +361,10 @@ export const usersApi = {
     minReputation?: number;
     isVerified?: boolean;
   }) {
-    console.log('[UsersAPI] Searching users:', params);
+    logger.debug('UsersAPI', 'Searching users');
     let query = supabase
       .from('users')
-      .select('*')
+      .select(USER_PUBLIC_COLUMNS)
       .eq('is_banned', false) as any;
 
     if (params.city) {
@@ -328,7 +400,7 @@ export const usersApi = {
   },
 
   async follow(followerId: string, followingId: string) {
-    console.log('[UsersAPI] Following:', followerId, '->', followingId);
+    logger.debug('UsersAPI', 'Following');
     
     const { error: insertError } = await (supabase
       .from('follows')
@@ -346,7 +418,7 @@ export const usersApi = {
   },
 
   async unfollow(followerId: string, followingId: string) {
-    console.log('[UsersAPI] Unfollowing:', followerId, '->', followingId);
+    logger.debug('UsersAPI', 'Unfollowing');
     
     const { error } = await (supabase
       .from('follows')
@@ -363,7 +435,7 @@ export const usersApi = {
   },
 
   async getFollowers(userId: string) {
-    console.log('[UsersAPI] Getting followers for:', userId);
+    logger.debug('UsersAPI', 'Getting followers');
     const { data, error } = await (supabase
       .from('follows')
       .select('follower_id')
@@ -376,7 +448,7 @@ export const usersApi = {
 
     const { data: users, error: usersError } = await (supabase
       .from('users')
-      .select('*')
+      .select(USER_PUBLIC_COLUMNS)
       .in('id', followerIds) as any);
     
     if (usersError) throw usersError;
@@ -384,7 +456,7 @@ export const usersApi = {
   },
 
   async getFollowing(userId: string) {
-    console.log('[UsersAPI] Getting following for:', userId);
+    logger.debug('UsersAPI', 'Getting following');
     const { data, error } = await (supabase
       .from('follows')
       .select('following_id')
@@ -397,7 +469,7 @@ export const usersApi = {
 
     const { data: users, error: usersError } = await (supabase
       .from('users')
-      .select('*')
+      .select(USER_PUBLIC_COLUMNS)
       .in('id', followingIds) as any);
     
     if (usersError) throw usersError;

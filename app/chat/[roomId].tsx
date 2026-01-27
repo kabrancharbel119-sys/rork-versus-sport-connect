@@ -1,12 +1,14 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { 
-  StyleSheet, View, Text, ScrollView, TouchableOpacity, 
-  TextInput, KeyboardAvoidingView, Platform 
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import {
+  StyleSheet, View, Text, ScrollView, TouchableOpacity,
+  TextInput, KeyboardAvoidingView, Platform, Pressable, Alert, Share,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Send, Image as ImageIcon, MoreVertical } from 'lucide-react-native';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import { ArrowLeft, Send, Image as ImageIcon, MoreVertical, Search, Bell, BellOff, Share2, Users, X } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useChat } from '@/contexts/ChatContext';
@@ -17,9 +19,12 @@ export default function ChatRoomScreen() {
   const router = useRouter();
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const { user } = useAuth();
-  const { chatRooms, getRoomMessages, sendMessage, markAsRead, isSending } = useChat();
+  const { chatRooms, getRoomMessages, sendMessage, markAsRead, removeParticipant, isSending } = useChat();
   const { getUserById } = useUsers();
   const [messageText, setMessageText] = useState('');
+  const [roomSearchQuery, setRoomSearchQuery] = useState('');
+  const [showSearchBar, setShowSearchBar] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
   const getSenderName = (senderId: string) => {
@@ -30,7 +35,12 @@ export default function ChatRoomScreen() {
   };
 
   const room = chatRooms.find(r => r.id === roomId);
-  const messages = getRoomMessages(roomId || '');
+  const allMessages = getRoomMessages(roomId || '');
+  const messages = useMemo(() => {
+    if (!roomSearchQuery.trim()) return allMessages;
+    const q = roomSearchQuery.toLowerCase().trim();
+    return allMessages.filter(m => m.type === 'text' && m.content.toLowerCase().includes(q));
+  }, [allMessages, roomSearchQuery]);
 
   useEffect(() => {
     if (room && user) {
@@ -46,16 +56,137 @@ export default function ChatRoomScreen() {
 
   const handleSend = async () => {
     if (!messageText.trim() || !user || !roomId) return;
-    
+
     const text = messageText.trim();
     setMessageText('');
-    
+
     try {
       await sendMessage({ roomId, senderId: user.id, content: text });
       scrollViewRef.current?.scrollToEnd({ animated: true });
     } catch (error) {
       console.log('[Chat] Send error:', error);
     }
+  };
+
+  const sendImageMessage = async (uri: string) => {
+    if (!user || !roomId) return;
+    try {
+      await sendMessage({ roomId, senderId: user.id, content: uri, type: 'image' });
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    } catch (error) {
+      console.log('[Chat] Send image error:', error);
+      Alert.alert('Erreur', 'Impossible d\'envoyer l\'image.');
+    }
+  };
+
+  const pickImageFromLibrary = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission requise', 'Autorisez l\'accès à la galerie pour envoyer une photo.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets[0]) {
+      await sendImageMessage(result.assets[0].uri);
+    }
+  };
+
+  const takePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission requise', 'Autorisez l\'accès à la caméra pour prendre une photo.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets[0]) {
+      await sendImageMessage(result.assets[0].uri);
+    }
+  };
+
+  const handleAttach = () => {
+    Alert.alert('Envoyer une image', undefined, [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Photo de la galerie', onPress: pickImageFromLibrary },
+      { text: 'Prendre une photo', onPress: takePhoto },
+    ]);
+  };
+
+  const participantNames = room
+    ? room.participants.map((id) => (id === user?.id ? 'Vous' : getUserById(id)?.fullName || getUserById(id)?.username || id)).join(', ')
+    : '';
+
+  const handleSearchPress = () => {
+    setShowSearchBar((v) => !v);
+    if (showSearchBar) setRoomSearchQuery('');
+  };
+
+  const handleNotifications = () => {
+    setIsMuted((m) => !m);
+    Alert.alert(
+      isMuted ? 'Notifications activées' : 'Notifications désactivées',
+      isMuted
+        ? 'Vous recevrez à nouveau les alertes pour les nouveaux messages de ce groupe.'
+        : 'Vous ne serez plus notifié des nouveaux messages de ce groupe. Vous pouvez réactiver à tout moment.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleShare = async () => {
+    if (!room) return;
+    try {
+      await Share.share({
+        message: `Rejoins la discussion « ${room.name} » sur VS Sport !`,
+        title: `Invitation : ${room.name}`,
+      });
+    } catch (_) {}
+  };
+
+  const handleMore = () => {
+    if (!room || !user) return;
+    Alert.alert(room.name, undefined, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Infos du groupe',
+        onPress: () =>
+          Alert.alert(room.name, `Type: ${room.type}\n\nMembres (${room.participants.length}) :\n${participantNames}`, [{ text: 'OK' }]),
+      },
+      { text: 'Partager l\'invitation', onPress: handleShare },
+      {
+        text: isMuted ? 'Activer les notifications' : 'Désactiver les notifications',
+        onPress: handleNotifications,
+      },
+      {
+        text: 'Quitter la discussion',
+        style: 'destructive',
+        onPress: () =>
+          Alert.alert(
+            'Quitter la discussion',
+            'Vous ne recevrez plus les messages de ce groupe. Vous pourrez être réinvité par un membre.',
+            [
+              { text: 'Annuler', style: 'cancel' },
+              {
+                text: 'Quitter',
+                style: 'destructive',
+                onPress: async () => {
+                  try {
+                    await removeParticipant({ roomId: room.id, userId: user.id });
+                  } catch (_) {}
+                  router.back();
+                },
+              },
+            ]
+          ),
+      },
+    ]);
   };
 
   const formatTime = (date: Date) => {
@@ -98,25 +229,27 @@ export default function ChatRoomScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         
         <SafeAreaView style={styles.safeArea} edges={['top']}>
-          <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-              <ArrowLeft size={24} color={Colors.text.primary} />
-            </TouchableOpacity>
-            <View style={styles.headerInfo}>
-              <Text style={styles.headerTitle} numberOfLines={1}>{room.name}</Text>
-              <Text style={styles.headerSubtitle}>
-                {room.participants.length} membres
-              </Text>
+          {showSearchBar && (
+            <View style={styles.roomSearchBar}>
+              <Search size={18} color={Colors.text.muted} />
+              <TextInput
+                style={styles.roomSearchInput}
+                placeholder="Rechercher dans les messages..."
+                placeholderTextColor={Colors.text.muted}
+                value={roomSearchQuery}
+                onChangeText={setRoomSearchQuery}
+                autoFocus
+              />
+              <Pressable onPress={() => { setRoomSearchQuery(''); setShowSearchBar(false); }} hitSlop={8}>
+                <X size={18} color={Colors.text.muted} />
+              </Pressable>
             </View>
-            <TouchableOpacity style={styles.moreButton}>
-              <MoreVertical size={22} color={Colors.text.primary} />
-            </TouchableOpacity>
-          </View>
+          )}
 
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.keyboardView}
-            keyboardVerticalOffset={0}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
           >
             <ScrollView
               ref={scrollViewRef}
@@ -124,7 +257,36 @@ export default function ChatRoomScreen() {
               contentContainerStyle={styles.messagesContent}
               showsVerticalScrollIndicator={false}
             >
-              {messages.map((message, index) => {
+              <View style={styles.header}>
+                <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                  <ArrowLeft size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+                <View style={styles.headerInfo}>
+                  <Text style={styles.headerTitle} numberOfLines={1}>{room.name}</Text>
+                  <Text style={styles.headerSubtitle}>
+                    {room.participants.length} membres
+                  </Text>
+                </View>
+                <View style={styles.headerActions}>
+                  <Pressable style={styles.headerIconBtn} onPress={handleSearchPress} hitSlop={6}>
+                    <Search size={20} color={roomSearchQuery.trim() ? Colors.primary.blue : Colors.text.primary} />
+                  </Pressable>
+                  <Pressable style={styles.headerIconBtn} onPress={handleNotifications} hitSlop={6}>
+                    {isMuted ? <BellOff size={20} color={Colors.text.muted} /> : <Bell size={20} color={Colors.text.primary} />}
+                  </Pressable>
+                  <Pressable style={styles.headerIconBtn} onPress={handleMore} hitSlop={6}>
+                    <MoreVertical size={20} color={Colors.text.primary} />
+                  </Pressable>
+                </View>
+              </View>
+
+              {roomSearchQuery.trim() && messages.length === 0 ? (
+                <View style={styles.searchNoResults}>
+                  <Search size={32} color={Colors.text.muted} />
+                  <Text style={styles.searchNoResultsText}>Aucun message ne contient « {roomSearchQuery} »</Text>
+                </View>
+              ) : (
+              messages.map((message, index) => {
                 const isOwnMessage = message.senderId === user?.id;
                 const dateLabel = formatDate(message.createdAt);
                 const showDateLabel = dateLabel !== lastDateLabel;
@@ -151,12 +313,20 @@ export default function ChatRoomScreen() {
                         {!isOwnMessage && (
                           <Text style={styles.senderName}>{getSenderName(message.senderId)}</Text>
                         )}
-                        <Text style={[
-                          styles.messageText,
-                          isOwnMessage && styles.ownMessageText
-                        ]}>
-                          {message.content}
-                        </Text>
+                        {message.type === 'image' && (message.content.startsWith('http') || message.content.startsWith('file') || message.content.startsWith('content')) ? (
+                          <Image
+                            source={{ uri: message.content }}
+                            style={styles.messageImage}
+                            contentFit="cover"
+                          />
+                        ) : (
+                          <Text style={[
+                            styles.messageText,
+                            isOwnMessage && styles.ownMessageText
+                          ]}>
+                            {message.content}
+                          </Text>
+                        )}
                         <Text style={[
                           styles.messageTime,
                           isOwnMessage && styles.ownMessageTime
@@ -167,29 +337,33 @@ export default function ChatRoomScreen() {
                     </View>
                   </View>
                 );
-              })}
+              })
+              )}
             </ScrollView>
 
             <View style={styles.inputContainer}>
-              <TouchableOpacity style={styles.attachButton}>
+              <Pressable style={styles.attachButton} onPress={handleAttach} hitSlop={8}>
                 <ImageIcon size={22} color={Colors.text.muted} />
-              </TouchableOpacity>
+              </Pressable>
               <TextInput
                 style={styles.textInput}
                 placeholder="Écrire un message..."
                 placeholderTextColor={Colors.text.muted}
                 value={messageText}
                 onChangeText={setMessageText}
+                onSubmitEditing={() => messageText.trim() && handleSend()}
                 multiline
                 maxLength={1000}
+                blurOnSubmit={false}
               />
-              <TouchableOpacity 
-                style={[styles.sendButton, !messageText.trim() && styles.sendButtonDisabled]}
+              <Pressable 
+                style={({ pressed }) => [styles.sendButton, !messageText.trim() && styles.sendButtonDisabled, pressed && styles.sendButtonPressed]}
                 onPress={handleSend}
                 disabled={!messageText.trim() || isSending}
+                hitSlop={8}
               >
                 <Send size={20} color={messageText.trim() ? '#FFFFFF' : Colors.text.muted} />
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
@@ -210,6 +384,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    marginBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
@@ -235,12 +410,47 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  moreButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  headerIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: Colors.background.card,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  roomSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: Colors.background.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    gap: 10,
+  },
+  roomSearchInput: {
+    flex: 1,
+    color: Colors.text.primary,
+    fontSize: 15,
+    paddingVertical: 2,
+  },
+  searchNoResults: {
+    alignItems: 'center',
+    paddingVertical: 32,
+  },
+  searchNoResultsText: {
+    color: Colors.text.muted,
+    fontSize: 14,
+    marginTop: 12,
+    textAlign: 'center',
   },
   errorContainer: {
     flex: 1,
@@ -313,6 +523,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
   },
+  messageImage: {
+    width: 200,
+    height: 150,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
   ownMessageText: {
     color: '#FFFFFF',
   },
@@ -363,5 +579,8 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: Colors.background.cardLight,
+  },
+  sendButtonPressed: {
+    opacity: 0.8,
   },
 });

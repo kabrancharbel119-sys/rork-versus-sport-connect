@@ -149,32 +149,32 @@ export default function MatchDetailScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         
         <SafeAreaView style={styles.safeArea} edges={['top']}>
-          <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-              <ArrowLeft size={24} color={Colors.text.primary} />
-            </TouchableOpacity>
-            <View style={styles.headerActions}>
-              {isCreator && (
-                <>
-                  <TouchableOpacity style={styles.headerButton} onPress={handleEdit}>
-                    <Edit2 size={20} color={Colors.primary.blue} />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.headerButton} onPress={handleDelete}>
-                    <Trash2 size={20} color={Colors.status.error} />
-                  </TouchableOpacity>
-                </>
-              )}
-              <TouchableOpacity style={styles.headerButton}>
-                <Share2 size={20} color={Colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
           <ScrollView
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                <ArrowLeft size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+              <View style={styles.headerActions}>
+                {isCreator && (
+                  <>
+                    <TouchableOpacity style={styles.headerButton} onPress={handleEdit}>
+                      <Edit2 size={20} color={Colors.primary.blue} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.headerButton} onPress={handleDelete}>
+                      <Trash2 size={20} color={Colors.status.error} />
+                    </TouchableOpacity>
+                  </>
+                )}
+                <TouchableOpacity style={styles.headerButton}>
+                  <Share2 size={20} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
             <View style={styles.matchHeader}>
               <View style={[styles.typeBadge, { backgroundColor: match.type === 'ranked' ? Colors.primary.orange : Colors.primary.blue }]}>
                 <Text style={styles.typeText}>
@@ -382,6 +382,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 12,
+    marginBottom: 8,
   },
   backButton: {
     width: 44,
@@ -408,6 +409,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
+    paddingTop: 8,
   },
   errorContainer: {
     flex: 1,

@@ -1,0 +1,60 @@
+-- =============================================================================
+-- RLS PRODUCTION – Exemple de politiques restrictives
+-- =============================================================================
+-- À utiliser UNIQUEMENT quand vous identifiez les utilisateurs via Supabase Auth
+-- (auth.uid() renvoie l’id de l’utilisateur connecté).
+--
+-- Tant que l’app utilise l’auth custom (phone/mot de passe) et la clé anon,
+-- NE PAS appliquer ce fichier, sinon les requêtes client casseront.
+--
+-- Quand vous êtes prêts :
+-- 1. Migrer l’auth vers Supabase Auth (magic link, OTP, ou custom JWT depuis
+--    votre backend), puis
+-- 2. Exécuter ce script dans l’éditeur SQL Supabase (après avoir supprimé ou
+--    désactivé les anciennes politiques si besoin).
+-- =============================================================================
+
+-- Exemple pour la table users :
+-- DROP POLICY IF EXISTS "Users are viewable by everyone" ON users;
+-- DROP POLICY IF EXISTS "Users can be updated" ON users;
+-- DROP POLICY IF EXISTS "Users can be inserted" ON users;
+-- DROP POLICY IF EXISTS "Users can be deleted" ON users;
+--
+-- CREATE POLICY "Users read all" ON users FOR SELECT USING (true);
+-- CREATE POLICY "Users update own" ON users FOR UPDATE USING (auth.uid()::text = id);
+-- CREATE POLICY "Users insert own" ON users FOR INSERT WITH CHECK (auth.uid()::text = id);
+-- CREATE POLICY "Users delete own" ON users FOR DELETE USING (auth.uid()::text = id);
+
+-- Exemple pour notifications (chaque user ne voit que les siennes) :
+-- DROP POLICY IF EXISTS "Notifications are viewable by everyone" ON notifications;
+-- DROP POLICY IF EXISTS "Notifications can be created" ON notifications;
+-- DROP POLICY IF EXISTS "Notifications can be updated" ON notifications;
+-- DROP POLICY IF EXISTS "Notifications can be deleted" ON notifications;
+--
+-- CREATE POLICY "Notifications read own" ON notifications FOR SELECT USING (auth.uid()::text = user_id);
+-- CREATE POLICY "Notifications insert own" ON notifications FOR INSERT WITH CHECK (auth.uid()::text = user_id);
+-- CREATE POLICY "Notifications update own" ON notifications FOR UPDATE USING (auth.uid()::text = user_id);
+-- CREATE POLICY "Notifications delete own" ON notifications FOR DELETE USING (auth.uid()::text = user_id);
+
+-- Exemple pour push_tokens :
+-- DROP POLICY IF EXISTS "Push tokens are viewable by everyone" ON push_tokens;
+-- DROP POLICY IF EXISTS "Push tokens can be created" ON push_tokens;
+-- DROP POLICY IF EXISTS "Push tokens can be updated" ON push_tokens;
+-- DROP POLICY IF EXISTS "Push tokens can be deleted" ON push_tokens;
+--
+-- (même logique : user_id = auth.uid()::text)
+
+-- =============================================================================
+-- Alternative « tout en lecture seule pour anon »
+-- =============================================================================
+-- Si toute l’écriture passe par votre backend (service_role), vous pouvez
+-- révoquer INSERT/UPDATE/DELETE pour le rôle anon sur les tables sensibles.
+-- Attention : l’app actuelle écrit encore depuis le client ; il faudrait d’abord
+-- que toutes les mutations passent par votre API.
+--
+-- Exemple (à adapter selon vos besoins) :
+--
+-- REVOKE INSERT, UPDATE, DELETE ON users FROM anon;
+-- REVOKE INSERT, UPDATE, DELETE ON notifications FROM anon;
+-- (etc.)
+-- =============================================================================

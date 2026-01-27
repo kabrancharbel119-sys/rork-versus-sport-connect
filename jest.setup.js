@@ -1,3 +1,11 @@
+// Env pour Supabase : évite "supabaseUrl is required" au chargement de lib/supabase
+process.env.EXPO_PUBLIC_SUPABASE_URL =
+  process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://test.supabase.co';
+process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'test-anon-key';
+
+jest.mock('uuid', () => ({ v4: () => 'test-uuid-1234-5678' }));
+
 import '@testing-library/jest-native/extend-expect';
 
 jest.mock('expo-haptics', () => ({
@@ -76,3 +84,9 @@ global.console = {
   warn: jest.fn(),
   error: jest.fn(),
 };
+
+// Aide Jest à sortir proprement : timers / abonnements (React Query, Supabase, etc.)
+afterAll(() => {
+  jest.useRealTimers();
+  jest.clearAllTimers();
+});

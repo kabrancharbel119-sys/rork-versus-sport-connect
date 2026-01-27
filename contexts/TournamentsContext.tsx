@@ -2,8 +2,11 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { Tournament, Sport, SkillLevel, Venue, TournamentPrize } from '@/types';
 import { tournamentsApi } from '@/lib/api/tournaments';
+
+const TOURNAMENTS_REFETCH_INTERVAL_MS = 15_000;
 
 const TOURNAMENTS_STORAGE_KEY = 'vs_tournaments';
 
@@ -29,6 +32,14 @@ interface CreateTournamentData {
 export const [TournamentsProvider, useTournaments] = createContextHook(() => {
   const queryClient = useQueryClient();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  const [isAppActive, setIsAppActive] = useState(true);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      setIsAppActive(state === 'active');
+    });
+    return () => sub.remove();
+  }, []);
 
   const parseTournamentDates = (tournaments: Tournament[]): Tournament[] => {
     return tournaments.map(t => ({
@@ -63,7 +74,9 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
       }
       return [];
     },
-    staleTime: 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchInterval: isAppActive ? TOURNAMENTS_REFETCH_INTERVAL_MS : false,
+    refetchIntervalInBackground: false,
   });
 
   useEffect(() => {

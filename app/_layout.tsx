@@ -22,7 +22,9 @@ import { OfflineProvider } from "@/contexts/OfflineContext";
 import { ReferralProvider } from "@/contexts/ReferralContext";
 import { Colors } from "@/constants/colors";
 import { trpc, trpcClient } from "@/lib/trpc";
+import { initCrashReporting } from "@/lib/crash-reporting";
 
+initCrashReporting();
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient({

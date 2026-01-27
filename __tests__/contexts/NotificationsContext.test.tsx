@@ -36,6 +36,7 @@ jest.mock('@/lib/api/notifications', () => ({
   },
 }));
 
+const { AuthProvider } = require('@/contexts/AuthContext');
 const { NotificationsProvider, useNotifications } = require('@/contexts/NotificationsContext');
 
 const createWrapper = () => {
@@ -48,7 +49,9 @@ const createWrapper = () => {
 
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <NotificationsProvider>{children}</NotificationsProvider>
+      <AuthProvider>
+        <NotificationsProvider>{children}</NotificationsProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 };

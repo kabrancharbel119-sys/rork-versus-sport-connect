@@ -1,13 +1,17 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, MapPin, Calendar, Trophy, Swords, Star, Users, MessageCircle, UserPlus, UserMinus, CheckCircle, Shield, Award } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
+import type { Team, User } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { useTeams } from '@/contexts/TeamsContext';
+import { usersApi } from '@/lib/api/users';
+import { teamsApi } from '@/lib/api/teams';
 import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
@@ -19,14 +23,42 @@ export default function UserProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user: currentUser } = useAuth();
   const { getUserById, isFollowing, follow, unfollow, getFollowers, getFollowing } = useUsers();
-  const { getUserTeams } = useTeams();
+  const { getUserTeams, getTeamById } = useTeams();
 
-  const profileUser = getUserById(id || '');
+  const profileUserId = id || '';
+
+  const { data: fetchedUser } = useQuery({
+    queryKey: ['profileUser', profileUserId],
+    queryFn: () => usersApi.getById(profileUserId),
+    enabled: !!profileUserId,
+    staleTime: 0,
+  });
+
+  const profileUser = (fetchedUser ?? getUserById(profileUserId)) as User | undefined;
+
+  const teamIds = useMemo(() => (profileUser?.teams ?? []).filter(Boolean), [profileUser?.teams]);
+
+  const { data: fetchedTeams = [] } = useQuery({
+    queryKey: ['profileTeams', profileUserId, teamIds],
+    queryFn: async () => {
+      if (teamIds.length === 0) return [];
+      const results = await Promise.all(teamIds.map(tid => teamsApi.getById(tid).catch(() => null)));
+      return results.filter((t): t is Team => t != null);
+    },
+    enabled: !!profileUserId && teamIds.length > 0,
+    staleTime: 0,
+  });
+
   const isOwnProfile = currentUser?.id === id;
-  const following = currentUser ? isFollowing(currentUser.id, id || '') : false;
-  const userTeams = getUserTeams(id || '');
-  const followers = getFollowers(id || '');
-  const followingList = getFollowing(id || '');
+  const following = currentUser ? isFollowing(currentUser.id, profileUserId) : false;
+  const userTeamsFromContext = getUserTeams(profileUserId);
+
+  const displayTeams = useMemo(() => {
+    const fromApi = fetchedTeams;
+    const seen = new Set(fromApi.map(t => t.id));
+    const fromContext = userTeamsFromContext.filter(t => !seen.has(t.id));
+    return [...fromApi, ...fromContext];
+  }, [fetchedTeams, userTeamsFromContext]);
 
   if (!profileUser) {
     return (
@@ -67,15 +99,19 @@ export default function UserProfileScreen() {
       <View style={styles.container}>
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
-          <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-              <ArrowLeft size={24} color={Colors.text.primary} />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Profil</Text>
-            <View style={styles.placeholder} />
-          </View>
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                <ArrowLeft size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Profil</Text>
+              <View style={styles.placeholder} />
+            </View>
 
-          <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             <View style={styles.profileHeader}>
               <Avatar uri={profileUser.avatar} name={profileUser.fullName} size="xlarge" />
               <View style={styles.nameRow}>
@@ -88,6 +124,18 @@ export default function UserProfileScreen() {
                 <MapPin size={14} color={Colors.text.muted} />
                 <Text style={styles.locationText}>{profileUser.city}, {profileUser.country}</Text>
               </View>
+              {displayTeams.length > 0 && (
+                <View style={styles.teamTagRow}>
+                  <Shield size={14} color={Colors.primary.orange} />
+                  <Text style={styles.teamTagText} numberOfLines={2}>
+                    Joue chez {displayTeams.length === 1
+                      ? displayTeams[0].name
+                      : displayTeams.length === 2
+                        ? `${displayTeams[0].name} et ${displayTeams[1].name}`
+                        : `${displayTeams[0].name} et ${displayTeams.length - 1} autre${displayTeams.length > 2 ? 's' : ''}`}
+                  </Text>
+                </View>
+              )}
               {profileUser.bio && <Text style={styles.bio}>{profileUser.bio}</Text>}
 
               <View style={styles.statsRow}>
@@ -156,31 +204,33 @@ export default function UserProfileScreen() {
               </>
             )}
 
-            {userTeams.length > 0 && (
-              <>
-                <Text style={styles.sectionTitle}>Équipes ({userTeams.length})</Text>
-                {userTeams.map((team) => (
-                  <Card key={team.id} style={styles.teamCard} onPress={() => router.push(`/team/${team.id}`)}>
-                    <View style={styles.teamRow}>
-                      <Avatar uri={team.logo} name={team.name} size="medium" />
-                      <View style={styles.teamInfo}>
-                        <Text style={styles.teamName}>{team.name}</Text>
-                        <Text style={styles.teamMeta}>{sportLabels[team.sport]} • {team.format}</Text>
-                        <View style={styles.teamLocation}>
-                          <MapPin size={12} color={Colors.text.muted} />
-                          <Text style={styles.teamLocationText}>{team.city}</Text>
-                        </View>
+            <Text style={styles.sectionTitle}>Équipes ({displayTeams.length})</Text>
+            {displayTeams.length > 0 ? (
+              displayTeams.map((team) => (
+                <Card key={team.id} style={styles.teamCard} onPress={() => router.push(`/team/${team.id}`)}>
+                  <View style={styles.teamRow}>
+                    <Avatar uri={team.logo} name={team.name} size="medium" />
+                    <View style={styles.teamInfo}>
+                      <Text style={styles.teamName}>{team.name}</Text>
+                      <Text style={styles.teamMeta}>{sportLabels[team.sport]} • {team.format}</Text>
+                      <View style={styles.teamLocation}>
+                        <MapPin size={12} color={Colors.text.muted} />
+                        <Text style={styles.teamLocationText}>{team.city}</Text>
                       </View>
-                      {team.captainId === id && (
-                        <View style={styles.captainBadge}>
-                          <Shield size={14} color={Colors.primary.orange} />
-                          <Text style={styles.captainText}>Capitaine</Text>
-                        </View>
-                      )}
                     </View>
-                  </Card>
-                ))}
-              </>
+                    {team.captainId === id && (
+                      <View style={styles.captainBadge}>
+                        <Shield size={14} color={Colors.primary.orange} />
+                        <Text style={styles.captainText}>Capitaine</Text>
+                      </View>
+                    )}
+                  </View>
+                </Card>
+              ))
+            ) : (
+              <Card style={styles.teamCardEmpty}>
+                <Text style={styles.teamEmptyText}>Aucune équipe pour le moment</Text>
+              </Card>
             )}
 
             <View style={styles.joinedRow}>
@@ -199,18 +249,20 @@ export default function UserProfileScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, marginBottom: 8 },
   backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const },
   placeholder: { width: 40 },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 8 },
   profileHeader: { alignItems: 'center', paddingVertical: 24 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16 },
   fullName: { color: Colors.text.primary, fontSize: 24, fontWeight: '700' as const },
   username: { color: Colors.text.muted, fontSize: 15, marginTop: 4 },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
   locationText: { color: Colors.text.secondary, fontSize: 14 },
+  teamTagRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+  teamTagText: { color: Colors.primary.orange, fontSize: 14, fontWeight: '500' as const },
   bio: { color: Colors.text.secondary, fontSize: 14, textAlign: 'center', marginTop: 12, lineHeight: 20, paddingHorizontal: 20 },
   statsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 24, gap: 24 },
   statItem: { alignItems: 'center' },
@@ -231,6 +283,8 @@ const styles = StyleSheet.create({
   sportLevel: { backgroundColor: Colors.primary.blue, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   sportLevelText: { color: '#FFFFFF', fontSize: 12, fontWeight: '500' as const },
   teamCard: { marginBottom: 12 },
+  teamCardEmpty: { marginBottom: 12, paddingVertical: 20, alignItems: 'center' },
+  teamEmptyText: { color: Colors.text.muted, fontSize: 14 },
   teamRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   teamInfo: { flex: 1 },
   teamName: { color: Colors.text.primary, fontSize: 16, fontWeight: '600' as const },

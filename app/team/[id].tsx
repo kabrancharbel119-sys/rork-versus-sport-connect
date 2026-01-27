@@ -327,18 +327,18 @@ export default function TeamDetailScreen() {
       <View style={styles.container}>
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea} edges={['top']}>
-          <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
-            <View style={styles.headerActions}>
-              {!previewForNonMember && canManage && pendingRequests.length > 0 && (
-                <TouchableOpacity style={styles.requestsBadge} onPress={() => setShowRequestsModal(true)}>
-                  <UserPlus size={18} color="#FFFFFF" /><Text style={styles.requestsCount}>{pendingRequests.length}</Text>
-                </TouchableOpacity>
-              )}
-              {!previewForNonMember && isCaptain && <TouchableOpacity style={styles.settingsButton} onPress={() => setShowSettingsModal(true)}><Settings size={22} color={Colors.text.primary} /></TouchableOpacity>}
-            </View>
-          </View>
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
+              <View style={styles.headerActions}>
+                {!previewForNonMember && canManage && pendingRequests.length > 0 && (
+                  <TouchableOpacity style={styles.requestsBadge} onPress={() => setShowRequestsModal(true)}>
+                    <UserPlus size={18} color="#FFFFFF" /><Text style={styles.requestsCount}>{pendingRequests.length}</Text>
+                  </TouchableOpacity>
+                )}
+                {!previewForNonMember && isCaptain && <TouchableOpacity style={styles.settingsButton} onPress={() => setShowSettingsModal(true)}><Settings size={22} color={Colors.text.primary} /></TouchableOpacity>}
+              </View>
+            </View>
             <View style={styles.teamHeader}>
               <Avatar uri={team.logo} name={team.name} size="xlarge" />
               <Text style={styles.teamName}>{team.name}</Text>
@@ -701,14 +701,14 @@ export default function TeamDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12, marginBottom: 8 },
   backButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
   headerActions: { flexDirection: 'row', gap: 10 },
   requestsBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primary.orange, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 22 },
   requestsCount: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' as const },
   settingsButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 8 },
   errorContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
   errorText: { color: Colors.text.primary, fontSize: 18 },
   teamHeader: { alignItems: 'center', marginBottom: 24 },

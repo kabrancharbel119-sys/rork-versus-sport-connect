@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Modal, TextInput, Alert, FlatList } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Modal, TextInput, Alert, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,17 +26,17 @@ export default function ChatScreen() {
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomType, setNewRoomType] = useState<'general' | 'match' | 'strategy'>('general');
   const [searchQuery, setSearchQuery] = useState('');
+  const [conversationSearch, setConversationSearch] = useState('');
 
   const myTeams = user ? getUserTeams(user.id) : [];
 
   const filteredUsers = useMemo(() => {
     if (!searchQuery.trim()) return [];
-    return users.filter(u => 
-      u.id !== user?.id && 
-      (u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-       u.fullName.toLowerCase().includes(searchQuery.toLowerCase()))
+    const q = searchQuery.toLowerCase();
+    return users.filter(u =>
+      (u.username.toLowerCase().includes(q) || u.fullName.toLowerCase().includes(q))
     ).slice(0, 10);
-  }, [users, searchQuery, user?.id]);
+  }, [users, searchQuery]);
 
   const formatTime = (date: Date) => {
     const d = new Date(date);
@@ -58,10 +58,10 @@ export default function ChatScreen() {
   };
 
   const getLastMessageSender = (senderId: string) => {
-    if (senderId === user?.id) return 'Vous';
+    if (senderId === user?.id) return 'Vous : ';
     if (senderId === 'system') return '';
     const sender = getUserById(senderId);
-    return sender?.username ? `${sender.username}: ` : '';
+    return sender?.username ? `${sender.username} : ` : '';
   };
 
   const handleCreateTeamChats = async (teamId: string, teamName: string, members: string[]) => {
@@ -99,14 +99,19 @@ export default function ChatScreen() {
   const startDirectChat = (targetUserId: string) => {
     const targetUser = getUserById(targetUserId);
     if (!targetUser || !user) return;
-    
+    if (targetUserId === user.id) {
+      setShowNewChatModal(false);
+      setSearchQuery('');
+      Alert.alert('Recherche', 'C\'est vous ! Les messages directs avec d\'autres joueurs seront disponibles prochainement.');
+      return;
+    }
     Alert.alert(
       'Nouvelle conversation',
       `Voulez-vous démarrer une conversation avec ${targetUser.fullName} ?`,
       [
         { text: 'Annuler', style: 'cancel' },
-        { 
-          text: 'Démarrer', 
+        {
+          text: 'Démarrer',
           onPress: () => {
             setShowNewChatModal(false);
             setSearchQuery('');
@@ -117,13 +122,21 @@ export default function ChatScreen() {
     );
   };
 
-  const allRooms = chatRooms.sort((a, b) => {
-    const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : new Date(a.createdAt).getTime();
-    const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : new Date(b.createdAt).getTime();
-    return bTime - aTime;
-  });
+  const userRooms = useMemo(() => {
+    return [...chatRooms]
+      .filter(r => r.participants.includes(user?.id || ''))
+      .sort((a, b) => {
+        const aT = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : new Date(a.createdAt).getTime();
+        const bT = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : new Date(b.createdAt).getTime();
+        return bT - aT;
+      });
+  }, [chatRooms, user?.id]);
 
-  const userRooms = allRooms.filter(r => r.participants.includes(user?.id || ''));
+  const filteredConversations = useMemo(() => {
+    if (!conversationSearch.trim()) return userRooms;
+    const q = conversationSearch.toLowerCase().trim();
+    return userRooms.filter(r => r.name.toLowerCase().includes(q));
+  }, [userRooms, conversationSearch]);
 
   return (
     <View style={styles.container}>
@@ -143,11 +156,33 @@ export default function ChatScreen() {
           </View>
         </View>
 
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {userRooms.length > 0 ? (
+        {userRooms.length > 0 && (
+          <View style={styles.searchBarWrap}>
+            <View style={styles.searchIcon}>
+              <Search size={20} color={Colors.text.muted} />
+            </View>
+            <TextInput
+              style={styles.conversationSearchInput}
+              placeholder="Rechercher une conversation..."
+              placeholderTextColor={Colors.text.muted}
+              value={conversationSearch}
+              onChangeText={setConversationSearch}
+            />
+            {conversationSearch.length > 0 && (
+              <TouchableOpacity hitSlop={8} onPress={() => setConversationSearch('')} style={styles.searchClear}>
+                <X size={18} color={Colors.text.muted} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          {filteredConversations.length > 0 ? (
             <View style={styles.conversationsSection}>
-              <Text style={styles.sectionTitle}>Conversations récentes</Text>
-              {userRooms.map((room) => {
+              <Text style={styles.sectionTitle}>
+                {conversationSearch.trim() ? `Résultats (${filteredConversations.length})` : 'Conversations récentes'}
+              </Text>
+              {filteredConversations.map((room) => {
                 const RoomIcon = getRoomIcon(room.type);
                 const team = myTeams.find(t => t.id === room.teamId);
                 return (
@@ -189,6 +224,11 @@ export default function ChatScreen() {
                   </TouchableOpacity>
                 );
               })}
+            </View>
+          ) : userRooms.length > 0 && conversationSearch.trim() ? (
+            <View style={styles.emptySearch}>
+              <Search size={40} color={Colors.text.muted} />
+              <Text style={styles.emptySearchText}>Aucune conversation ne correspond à « {conversationSearch} »</Text>
             </View>
           ) : myTeams.length > 0 ? (
             <View style={styles.noChatsSection}>
@@ -285,49 +325,69 @@ export default function ChatScreen() {
           </View>
         </Modal>
 
-        <Modal visible={showNewChatModal} animationType="slide" transparent>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Nouvelle conversation</Text>
-                <TouchableOpacity style={styles.modalClose} onPress={() => { setShowNewChatModal(false); setSearchQuery(''); }}>
-                  <X size={24} color={Colors.text.primary} />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.searchContainer}>
-                <Search size={20} color={Colors.text.muted} />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Rechercher un joueur..."
-                  placeholderTextColor={Colors.text.muted}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  autoFocus
-                />
-              </View>
-              <ScrollView style={styles.usersList}>
-                {filteredUsers.length > 0 ? (
-                  filteredUsers.map((u) => (
-                    <TouchableOpacity key={u.id} style={styles.userItem} onPress={() => startDirectChat(u.id)}>
-                      <Avatar uri={u.avatar} name={u.fullName} size="medium" />
-                      <View style={styles.userInfo}>
-                        <Text style={styles.userName}>{u.fullName}</Text>
-                        <Text style={styles.userHandle}>@{u.username}</Text>
-                      </View>
-                      {u.isVerified && (
-                        <View style={styles.verifiedBadge}>
-                          <Text style={styles.verifiedText}>✓</Text>
-                        </View>
-                      )}
+        <Modal visible={showNewChatModal} animationType="slide" transparent statusBarTranslucent>
+          <View style={styles.modalSearchOverlay}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalSearchWrapper}>
+              <SafeAreaView style={styles.modalSearchSafe} edges={['top']}>
+                <View style={styles.modalSearchHeader}>
+                  <Text style={styles.modalTitle}>Nouvelle conversation</Text>
+                  <TouchableOpacity style={styles.modalClose} onPress={() => { setShowNewChatModal(false); setSearchQuery(''); }}>
+                    <X size={24} color={Colors.text.primary} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.modalSearchBarContainer}>
+                  <Search size={22} color={Colors.text.muted} />
+                  <TextInput
+                    style={styles.modalSearchInput}
+                    placeholder="Rechercher un joueur (nom ou pseudo)..."
+                    placeholderTextColor={Colors.text.muted}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    autoFocus
+                    returnKeyType="search"
+                  />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity hitSlop={8} onPress={() => setSearchQuery('')}>
+                      <X size={20} color={Colors.text.muted} />
                     </TouchableOpacity>
-                  ))
+                  )}
+                </View>
+              </SafeAreaView>
+              <View style={styles.modalUserListContainer}>
+                {filteredUsers.length > 0 ? (
+                  <FlatList
+                    data={filteredUsers}
+                    keyExtractor={(u) => u.id}
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={styles.userListContent}
+                    renderItem={({ item: u }) => (
+                      <TouchableOpacity style={styles.userItem} onPress={() => startDirectChat(u.id)}>
+                        <Avatar uri={u.avatar} name={u.fullName} size="medium" />
+                        <View style={styles.userInfo}>
+                          <Text style={styles.userName}>{u.fullName}</Text>
+                          <Text style={styles.userHandle}>@{u.username}</Text>
+                        </View>
+                        {u.isVerified && (
+                          <View style={styles.verifiedBadge}>
+                            <Text style={styles.verifiedText}>✓</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  />
                 ) : searchQuery.trim() ? (
-                  <Text style={styles.noResults}>Aucun joueur trouvé</Text>
+                  <View style={styles.searchEmptyState}>
+                    <Search size={48} color={Colors.text.muted} />
+                    <Text style={styles.noResults}>Aucun joueur trouvé pour « {searchQuery} »</Text>
+                  </View>
                 ) : (
-                  <Text style={styles.searchHint}>Tapez un nom ou pseudo pour rechercher</Text>
+                  <View style={styles.searchEmptyState}>
+                    <Search size={48} color={Colors.text.muted} />
+                    <Text style={styles.searchHint}>La barre de recherche est en haut.{'\n'}Tapez un nom ou un pseudo pour trouver un joueur.</Text>
+                  </View>
                 )}
-              </ScrollView>
-            </View>
+              </View>
+            </KeyboardAvoidingView>
           </View>
         </Modal>
       </SafeAreaView>
@@ -370,8 +430,23 @@ const styles = StyleSheet.create({
   findTeamBtn: { marginTop: 24 },
   searchUsersBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, paddingVertical: 12, paddingHorizontal: 20 },
   searchUsersBtnText: { color: Colors.primary.blue, fontSize: 14, fontWeight: '500' as const },
+  searchBarWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.card, marginHorizontal: 20, marginBottom: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: Colors.border.light },
+  searchIcon: { marginRight: 10 },
+  conversationSearchInput: { flex: 1, color: Colors.text.primary, fontSize: 16, paddingVertical: 12 },
+  searchClear: { padding: 4 },
+  emptySearch: { alignItems: 'center', paddingVertical: 48 },
+  emptySearchText: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' as const, marginTop: 12, paddingHorizontal: 24 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  modalSearchOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)' },
   modalContent: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%' },
+  modalSearchWrapper: { flex: 1, backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
+  modalSearchSafe: { backgroundColor: Colors.background.dark, paddingTop: 8, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
+  modalSearchHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  modalSearchBarContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.card, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: Colors.border.light, gap: 10 },
+  modalSearchInput: { flex: 1, color: Colors.text.primary, fontSize: 16, paddingVertical: 2 },
+  modalUserListContainer: { flex: 1, minHeight: 200 },
+  userListContent: { paddingHorizontal: 16, paddingBottom: 24 },
+  searchEmptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 48, paddingHorizontal: 24 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
   modalTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const },
   modalClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
@@ -389,13 +464,12 @@ const styles = StyleSheet.create({
   createBtn: { marginTop: 12, marginBottom: 40 },
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.card, margin: 20, marginTop: 0, paddingHorizontal: 16, borderRadius: 12, gap: 12 },
   searchInput: { flex: 1, color: Colors.text.primary, fontSize: 15, paddingVertical: 14 },
-  usersList: { paddingHorizontal: 20, maxHeight: 400 },
-  userItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border.light, gap: 12 },
+  userItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border.light, gap: 12 },
   userInfo: { flex: 1 },
   userName: { color: Colors.text.primary, fontSize: 15, fontWeight: '500' as const },
   userHandle: { color: Colors.text.muted, fontSize: 13, marginTop: 2 },
   verifiedBadge: { width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.primary.blue, alignItems: 'center', justifyContent: 'center' },
   verifiedText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' as const },
-  noResults: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' as const, paddingVertical: 40 },
-  searchHint: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' as const, paddingVertical: 40 },
+  noResults: { color: Colors.text.muted, fontSize: 15, textAlign: 'center' as const, marginTop: 16 },
+  searchHint: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' as const, marginTop: 12, lineHeight: 20 },
 });

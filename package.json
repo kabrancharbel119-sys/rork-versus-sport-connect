@@ -6,7 +6,10 @@
     "start": "bunx rork start -p sjxgixvkcfy7t6xtks0wp --tunnel",
     "start-web": "bunx rork start -p sjxgixvkcfy7t6xtks0wp --web --tunnel",
     "start-web-dev": "DEBUG=expo* bunx rork start -p sjxgixvkcfy7t6xtks0wp --web --tunnel",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "jest --runInBand --detectOpenHandles",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -62,6 +65,8 @@
     "react-native-svg": "15.12.1",
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.5.1",
+    "@sentry/react-native": "^6.12.0",
+    "bcryptjs": "^2.4.3",
     "resend": "^6.8.0",
     "superjson": "^2.2.6",
     "uuid": "^13.0.0",

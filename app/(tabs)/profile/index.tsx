@@ -54,13 +54,13 @@ export default function ProfileScreen() {
     <View style={styles.container}>
       <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Profil</Text>
-          <TouchableOpacity style={styles.settingsButton} onPress={() => router.push('/settings')}>
-            <Settings size={22} color={Colors.text.primary} />
-          </TouchableOpacity>
-        </View>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Profil</Text>
+            <TouchableOpacity style={styles.settingsButton} onPress={() => router.push('/settings')}>
+              <Settings size={22} color={Colors.text.primary} />
+            </TouchableOpacity>
+          </View>
           <LinearGradient colors={[Colors.primary.blue, Colors.primary.blueDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.profileCard}>
             <View style={styles.profileTop}>
               <Avatar uri={user?.avatar} name={user?.fullName} size="xlarge" />
@@ -234,11 +234,11 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, marginBottom: 8 },
   headerTitle: { color: Colors.text.primary, fontSize: 28, fontWeight: '700' as const },
   settingsButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 20 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 20 },
   profileCard: { borderRadius: 20, padding: 24, alignItems: 'center', marginBottom: 20 },
   profileTop: { position: 'relative', marginBottom: 16 },
   editButton: { position: 'absolute', bottom: 0, right: 0, width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.primary.orange, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: Colors.primary.blue },

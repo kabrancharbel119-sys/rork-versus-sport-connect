@@ -2,9 +2,12 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { Match, Sport, SkillLevel, PlayStyle, Venue, UserLocation, MatchPlayerStats } from '@/types';
 import { matchesApi } from '@/lib/api/matches';
 import { venuesApi } from '@/lib/api/venues';
+
+const MATCHES_REFETCH_INTERVAL_MS = 15_000;
 
 const MATCHES_STORAGE_KEY = 'vs_matches';
 
@@ -30,6 +33,14 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
   const queryClient = useQueryClient();
   const [matches, setMatches] = useState<Match[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
+  const [isAppActive, setIsAppActive] = useState(true);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      setIsAppActive(state === 'active');
+    });
+    return () => sub.remove();
+  }, []);
 
   const parseMatchDates = (matches: Match[]): Match[] => {
     return matches.map(m => ({
@@ -58,7 +69,9 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
         throw e;
       }
     },
-    staleTime: 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchInterval: isAppActive ? MATCHES_REFETCH_INTERVAL_MS : false,
+    refetchIntervalInBackground: false,
   });
 
   const venuesQuery = useQuery({

@@ -227,38 +227,6 @@ export default function HomeScreen() {
       />
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={[styles.header, Platform.OS === 'ios' && styles.headerBlur]}>
-          {Platform.OS === 'ios' && <BlurView intensity={48} tint="dark" style={StyleSheet.absoluteFill} />}
-          <View style={styles.headerInner}>
-            <TouchableOpacity
-              style={styles.headerLeft}
-              onPress={() => router.push('/(tabs)/profile')}
-              activeOpacity={0.75}
-            >
-              <View style={styles.avatarRing}>
-                <Avatar uri={user?.avatar} name={user?.fullName} size="medium" />
-              </View>
-              <View style={styles.headerText}>
-                <Text style={styles.greeting}>{getGreeting()}</Text>
-                <Text style={styles.userName}>{user?.fullName?.split(' ')[0] || 'Joueur'}</Text>
-              </View>
-            </TouchableOpacity>
-            <View style={styles.headerRight}>
-              <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/search')} accessibilityLabel="Recherche" accessibilityRole="button">
-                <Search size={21} color={Colors.text.primary} strokeWidth={2} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/notifications')} accessibilityLabel="Notifications" accessibilityRole="button">
-                <Bell size={21} color={Colors.text.primary} strokeWidth={2} />
-                {unreadNotifs > 0 && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeNum}>{unreadNotifs > 99 ? '99+' : unreadNotifs}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-
         <ScrollView
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
@@ -267,6 +235,38 @@ export default function HomeScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />
           }
         >
+          <View style={[styles.header, Platform.OS === 'ios' && styles.headerBlur]}>
+            {Platform.OS === 'ios' && <BlurView intensity={48} tint="dark" style={StyleSheet.absoluteFill} />}
+            <View style={styles.headerInner}>
+              <TouchableOpacity
+                style={styles.headerLeft}
+                onPress={() => router.push('/(tabs)/profile')}
+                activeOpacity={0.75}
+              >
+                <View style={styles.avatarRing}>
+                  <Avatar uri={user?.avatar} name={user?.fullName} size="medium" />
+                </View>
+                <View style={styles.headerText}>
+                  <Text style={styles.greeting}>{getGreeting()}</Text>
+                  <Text style={styles.userName}>{user?.fullName?.split(' ')[0] || 'Joueur'}</Text>
+                </View>
+              </TouchableOpacity>
+              <View style={styles.headerRight}>
+                <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/search')} accessibilityLabel="Recherche" accessibilityRole="button">
+                  <Search size={21} color={Colors.text.primary} strokeWidth={2} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/notifications')} accessibilityLabel="Notifications" accessibilityRole="button">
+                  <Bell size={21} color={Colors.text.primary} strokeWidth={2} />
+                  {unreadNotifs > 0 && (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeNum}>{unreadNotifs > 99 ? '99+' : unreadNotifs}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
           <TouchableOpacity
             activeOpacity={0.97}
             onPress={() => router.push('/(tabs)/matches')}
@@ -516,6 +516,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: PAD,
     paddingTop: 10,
     paddingBottom: 14,
+    marginBottom: 16,
     overflow: 'hidden',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.06)',
@@ -561,7 +562,7 @@ const styles = StyleSheet.create({
   },
   badgeNum: { color: '#FFF', fontSize: 11, fontWeight: '800' as const },
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: PAD, paddingTop: 20, paddingBottom: 28 },
+  scrollContent: { paddingHorizontal: PAD, paddingTop: 8, paddingBottom: 28 },
   bannerWrap: {
     borderRadius: RADIUS,
     marginBottom: 22,

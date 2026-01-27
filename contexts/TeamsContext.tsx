@@ -2,8 +2,11 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { Team, JoinRequest, TeamRole, Sport, SkillLevel, PlayStyle, UserLocation } from '@/types';
 import { teamsApi } from '@/lib/api/teams';
+
+const TEAMS_REFETCH_INTERVAL_MS = 15_000;
 
 const TEAMS_STORAGE_KEY = 'vs_teams';
 
@@ -27,6 +30,14 @@ interface CreateTeamData {
 export const [TeamsProvider, useTeams] = createContextHook(() => {
   const queryClient = useQueryClient();
   const [teams, setTeams] = useState<Team[]>([]);
+  const [isAppActive, setIsAppActive] = useState(true);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      setIsAppActive(state === 'active');
+    });
+    return () => sub.remove();
+  }, []);
 
   const parseTeamDates = (teams: Team[]): Team[] => {
     return teams.map(t => ({
@@ -62,7 +73,9 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
         throw new Error('Network error');
       }
     },
-    staleTime: 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchInterval: isAppActive ? TEAMS_REFETCH_INTERVAL_MS : false,
+    refetchIntervalInBackground: false,
   });
 
   useEffect(() => {
