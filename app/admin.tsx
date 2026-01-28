@@ -1300,5 +1300,5 @@ const styles = StyleSheet.create({
   ticketResponseItem: { backgroundColor: Colors.background.cardLight, padding: 12, borderRadius: 8, marginBottom: 8 },
   ticketResponseAuthor: { color: Colors.text.primary, fontSize: 13, fontWeight: '600' as const, marginBottom: 4 },
   ticketResponseText: { color: Colors.text.secondary, fontSize: 14, marginBottom: 4 },
-  ticketResponseDate: { color: Colors.text.muted, fontSize: 11 },
+  ticketResponseDate: { color: Colors.text.muted, fontSize: 11 }
 });
