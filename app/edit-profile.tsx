@@ -19,10 +19,10 @@ export default function EditProfileScreen() {
   const [formData, setFormData] = useState({ fullName: user?.fullName || '', username: user?.username || '', phone: user?.phone || '', city: user?.city || '', country: user?.country || '', bio: user?.bio || '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showSportModal, setShowSportModal] = useState(false);
-  const [selectedSport, setSelectedSport] = useState<Sport | null>(null);
-  const [selectedLevel, setSelectedLevel] = useState<SkillLevel>('intermediate');
-  const [selectedPosition, setSelectedPosition] = useState<string>('');
-  const [yearsPlaying, setYearsPlaying] = useState('1');
+  const [selectedSports, setSelectedSports] = useState<Set<Sport>>(new Set());
+  const [sportYears, setSportYears] = useState<Record<Sport, string>>({} as Record<Sport, string>);
+  const [sportLevels, setSportLevels] = useState<Record<Sport, SkillLevel>>({} as Record<Sport, SkillLevel>);
+  const [sportPositions, setSportPositions] = useState<Record<Sport, string>>({} as Record<Sport, string>);
 
   const updateField = (field: string, value: string) => { setFormData(prev => ({ ...prev, [field]: value })); if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' })); };
 
@@ -52,23 +52,60 @@ export default function EditProfileScreen() {
 
   const alreadyHasSport = (s: Sport) => user?.sports?.some(us => us.sport === s) ?? false;
 
-  const handleAddSport = async () => {
-    if (!selectedSport) return;
-    if (alreadyHasSport(selectedSport)) {
-      Alert.alert('Déjà ajouté', `${sportLabels[selectedSport]} est déjà dans vos sports. Modifiez-le depuis la liste ou supprimez-le pour le réajouter.`);
+  const toggleSport = (sport: Sport) => {
+    if (alreadyHasSport(sport)) {
+      Alert.alert('Déjà ajouté', `${sportLabels[sport]} est déjà dans vos sports.`);
       return;
     }
-    const years = Math.min(99, Math.max(1, parseInt(yearsPlaying, 10) || 1));
-    const newSport: UserSport = { sport: selectedSport, level: selectedLevel, position: selectedPosition || undefined, yearsPlaying: years };
+    const newSelected = new Set(selectedSports);
+    if (newSelected.has(sport)) {
+      newSelected.delete(sport);
+      const newYears = { ...sportYears };
+      delete newYears[sport];
+      setSportYears(newYears);
+      const newLevels = { ...sportLevels };
+      delete newLevels[sport];
+      setSportLevels(newLevels);
+      const newPositions = { ...sportPositions };
+      delete newPositions[sport];
+      setSportPositions(newPositions);
+    } else {
+      newSelected.add(sport);
+      setSportYears({ ...sportYears, [sport]: '1' });
+      setSportLevels({ ...sportLevels, [sport]: 'intermediate' });
+      setSportPositions({ ...sportPositions, [sport]: '' });
+    }
+    setSelectedSports(newSelected);
+  };
+
+  const handleAddAllSports = async () => {
+    if (selectedSports.size === 0) {
+      Alert.alert('Aucun sport', 'Veuillez sélectionner au moins un sport.');
+      return;
+    }
+
+    const sportsToAdd: UserSport[] = Array.from(selectedSports).map(sport => {
+      const years = Math.min(99, Math.max(1, parseInt(sportYears[sport] || '1', 10) || 1));
+      return {
+        sport,
+        level: sportLevels[sport] || 'intermediate',
+        position: sportPositions[sport] || undefined,
+        yearsPlaying: years,
+      };
+    });
+
     try {
-      await addSport(newSport);
-      // Don't close modal - allow adding multiple sports
-      setSelectedSport(null);
-      setSelectedLevel('intermediate');
-      setSelectedPosition('');
-      setYearsPlaying('1');
-      Alert.alert('Succès', `${sportLabels[selectedSport]} ajouté ! Vous pouvez en ajouter un autre.`);
-    } catch { Alert.alert('Erreur', 'Impossible d\'ajouter le sport'); }
+      for (const sport of sportsToAdd) {
+        await addSport(sport);
+      }
+      Alert.alert('Succès', `${sportsToAdd.length} sport(s) ajouté(s) !`);
+      setSelectedSports(new Set());
+      setSportYears({} as Record<Sport, string>);
+      setSportLevels({} as Record<Sport, SkillLevel>);
+      setSportPositions({} as Record<Sport, string>);
+    } catch (error: any) {
+      Alert.alert('Erreur', error.message || 'Impossible d\'ajouter les sports');
+    }
   };
 
   const handleRemoveSport = (sport: Sport) => {
@@ -138,69 +175,120 @@ export default function EditProfileScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Ajouter un sport</Text>
-                <TouchableOpacity onPress={() => setShowSportModal(false)}><X size={24} color={Colors.text.primary} /></TouchableOpacity>
+                <Text style={styles.modalTitle}>Ajouter des sports</Text>
+                <TouchableOpacity onPress={() => {
+                  setShowSportModal(false);
+                  setSelectedSports(new Set());
+                  setSportYears({} as Record<Sport, string>);
+                  setSportLevels({} as Record<Sport, SkillLevel>);
+                  setSportPositions({} as Record<Sport, string>);
+                }}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
               </View>
               <ScrollView style={styles.modalScroll}>
-                <Text style={styles.modalLabel}>Sport (obligatoire)</Text>
-                <FlatList data={ALL_SPORTS} keyExtractor={(item) => item} numColumns={2} scrollEnabled={false} renderItem={({ item }) => {
-                  const isAdded = alreadyHasSport(item);
-                  return (
-                    <TouchableOpacity
-                      style={[
-                        styles.sportOption,
-                        selectedSport === item && styles.sportOptionActive,
-                        isAdded && styles.sportOptionDisabled,
-                      ]}
-                      onPress={() => !isAdded && setSelectedSport(item)}
-                      disabled={isAdded}
-                    >
-                      <Text style={[
-                        styles.sportOptionText,
-                        selectedSport === item && styles.sportOptionTextActive,
-                        isAdded && styles.sportOptionTextDisabled,
-                      ]}>
-                        {sportLabels[item]}
-                        {isAdded ? ' ✓' : ''}
-                      </Text>
-                      {selectedSport === item && !isAdded && <Check size={16} color="#FFFFFF" />}
-                    </TouchableOpacity>
-                  );
-                }} />
-
-                {selectedSport && (
-                  <>
-                    <Text style={styles.modalLabel}>Niveau</Text>
-                    <View style={styles.levelOptions}>
-                      {levels.map(level => (
-                        <TouchableOpacity key={level} style={[styles.levelOption, selectedLevel === level && styles.levelOptionActive]} onPress={() => setSelectedLevel(level)}>
-                          <Text style={[styles.levelOptionText, selectedLevel === level && styles.levelOptionTextActive]}>{levelLabels[level]}</Text>
+                <Text style={styles.modalLabel}>Sélectionnez un ou plusieurs sports</Text>
+                <View style={styles.sportsGrid}>
+                  {ALL_SPORTS.map((sport) => {
+                    const isAdded = alreadyHasSport(sport);
+                    const isSelected = selectedSports.has(sport);
+                    const positions = DEFAULT_POSITIONS[sport] || DEFAULT_POSITIONS.default;
+                    return (
+                      <View key={sport} style={styles.sportCheckboxContainer}>
+                        <TouchableOpacity
+                          style={[
+                            styles.sportCheckboxRow,
+                            isSelected && styles.sportCheckboxRowActive,
+                            isAdded && styles.sportCheckboxRowDisabled,
+                          ]}
+                          onPress={() => !isAdded && toggleSport(sport)}
+                          disabled={isAdded}
+                        >
+                          <View style={[styles.checkbox, isSelected && styles.checkboxChecked, isAdded && styles.checkboxDisabled]}>
+                            {isSelected && !isAdded && <Check size={14} color="#FFFFFF" />}
+                            {isAdded && <Check size={14} color={Colors.text.muted} />}
+                          </View>
+                          <Text style={[
+                            styles.sportCheckboxLabel,
+                            isSelected && styles.sportCheckboxLabelActive,
+                            isAdded && styles.sportCheckboxLabelDisabled,
+                          ]}>
+                            {sportLabels[sport]}
+                            {isAdded ? ' (déjà ajouté)' : ''}
+                          </Text>
                         </TouchableOpacity>
-                      ))}
-                    </View>
+                        
+                        {isSelected && !isAdded && (
+                          <View style={styles.sportDetails}>
+                            <Text style={styles.modalLabel}>Niveau</Text>
+                            <View style={styles.levelOptions}>
+                              {levels.map(level => (
+                                <TouchableOpacity
+                                  key={level}
+                                  style={[styles.levelOption, sportLevels[sport] === level && styles.levelOptionActive]}
+                                  onPress={() => setSportLevels({ ...sportLevels, [sport]: level })}
+                                >
+                                  <Text style={[styles.levelOptionText, sportLevels[sport] === level && styles.levelOptionTextActive]}>
+                                    {levelLabels[level]}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
 
-                    {positions.length > 0 && (
-                      <>
-                        <Text style={styles.modalLabel}>Position</Text>
-                        <View style={styles.positionOptions}>
-                          {positions.map(pos => (
-                            <TouchableOpacity key={pos} style={[styles.positionOption, selectedPosition === pos && styles.positionOptionActive]} onPress={() => setSelectedPosition(pos)}>
-                              <Text style={[styles.positionOptionText, selectedPosition === pos && styles.positionOptionTextActive]}>{pos}</Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </>
-                    )}
+                            {positions.length > 0 && (
+                              <>
+                                <Text style={styles.modalLabel}>Position (optionnel)</Text>
+                                <View style={styles.positionOptions}>
+                                  {positions.map(pos => (
+                                    <TouchableOpacity
+                                      key={pos}
+                                      style={[styles.positionOption, sportPositions[sport] === pos && styles.positionOptionActive]}
+                                      onPress={() => setSportPositions({ ...sportPositions, [sport]: pos })}
+                                    >
+                                      <Text style={[styles.positionOptionText, sportPositions[sport] === pos && styles.positionOptionTextActive]}>
+                                        {pos}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  ))}
+                                </View>
+                              </>
+                            )}
 
-                    <Text style={styles.modalLabel}>Nombre d'années d'expérience</Text>
-                    <Text style={styles.modalHint}>Combien d'années pratiquez-vous ce sport ? (1-99 ans)</Text>
-                    <Input value={yearsPlaying} onChangeText={(v) => setYearsPlaying(v.replace(/\D/g, '').slice(0, 2) || '1')} keyboardType="numeric" placeholder="Ex: 5" />
-                  </>
-                )}
+                            <Text style={styles.modalLabel}>Nombre d'années d'expérience</Text>
+                            <Text style={styles.modalHint}>Combien d'années pratiquez-vous ce sport ? (1-99 ans)</Text>
+                            <Input
+                              value={sportYears[sport] || '1'}
+                              onChangeText={(v) => setSportYears({ ...sportYears, [sport]: v.replace(/\D/g, '').slice(0, 2) || '1' })}
+                              keyboardType="numeric"
+                              placeholder="Ex: 5"
+                            />
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
               </ScrollView>
               <View style={styles.modalActions}>
-                <Button title="Ajouter" onPress={handleAddSport} variant="primary" disabled={!selectedSport} style={[styles.modalButton, { flex: 1 }]} />
-                <Button title="Terminé" onPress={() => setShowSportModal(false)} variant="outline" style={[styles.modalButton, { flex: 1 }]} />
+                <Button
+                  title={`Ajouter ${selectedSports.size} sport(s)`}
+                  onPress={handleAddAllSports}
+                  variant="primary"
+                  disabled={selectedSports.size === 0}
+                  style={[styles.modalButton, { flex: 1 }]}
+                />
+                <Button
+                  title="Terminé"
+                  onPress={() => {
+                    setShowSportModal(false);
+                    setSelectedSports(new Set());
+                    setSportYears({} as Record<Sport, string>);
+                    setSportLevels({} as Record<Sport, SkillLevel>);
+                    setSportPositions({} as Record<Sport, string>);
+                  }}
+                  variant="outline"
+                  style={[styles.modalButton, { flex: 1 }]}
+                />
               </View>
             </View>
           </View>
@@ -259,4 +347,16 @@ const styles = StyleSheet.create({
   positionOptionTextActive: { color: '#FFFFFF', fontWeight: '500' as const },
   modalButton: { marginTop: 20 },
   modalActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
+  sportsGrid: { gap: 12 },
+  sportCheckboxContainer: { marginBottom: 16 },
+  sportCheckboxRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 10, backgroundColor: Colors.background.card, borderWidth: 2, borderColor: 'transparent' },
+  sportCheckboxRowActive: { borderColor: Colors.primary.blue, backgroundColor: Colors.primary.blue + '15' },
+  sportCheckboxRowDisabled: { opacity: 0.5 },
+  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: Colors.border.light, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.background.cardLight },
+  checkboxChecked: { backgroundColor: Colors.primary.blue, borderColor: Colors.primary.blue },
+  checkboxDisabled: { backgroundColor: Colors.background.cardLight, borderColor: Colors.border.light },
+  sportCheckboxLabel: { flex: 1, color: Colors.text.primary, fontSize: 15, fontWeight: '500' as const },
+  sportCheckboxLabelActive: { color: Colors.primary.blue, fontWeight: '600' as const },
+  sportCheckboxLabelDisabled: { color: Colors.text.muted },
+  sportDetails: { marginTop: 12, marginLeft: 36, padding: 12, backgroundColor: Colors.background.cardLight, borderRadius: 8 },
 });

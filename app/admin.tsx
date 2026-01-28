@@ -6,7 +6,7 @@ import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Users, Swords, Shield, Ban, Search, ChevronRight, TrendingUp, Settings, BarChart3, Calendar, MapPin, Star, CheckCircle, XCircle, Eye, RefreshCw, Globe, Database, DollarSign, Ticket, UserCheck, Activity, Clock, AlertTriangle, Zap, Server, HardDrive, Send, Lock, Trash2, FileText, Download, MessageSquare, Award, Target, PieChart, Bell } from 'lucide-react-native';
+import { ArrowLeft, Users, Swords, Shield, Ban, Search, ChevronRight, TrendingUp, Settings, BarChart3, Calendar, MapPin, Star, CheckCircle, XCircle, Eye, RefreshCw, Globe, Database, DollarSign, Ticket, UserCheck, Activity, Clock, AlertTriangle, Zap, Server, HardDrive, Send, Lock, Trash2, FileText, Download, MessageSquare, Award, Target, PieChart, Bell, X } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
@@ -18,6 +18,7 @@ import { useTournaments } from '@/contexts/TournamentsContext';
 import { Card } from '@/components/Card';
 import { StatCard } from '@/components/StatCard';
 import { Avatar } from '@/components/Avatar';
+import { Button } from '@/components/Button';
 import { sportLabels } from '@/mocks/data';
 import { notificationsApi } from '@/lib/api/notifications';
 import { offlineManager } from '@/lib/offline';
@@ -46,23 +47,6 @@ export default function AdminScreen() {
   const { addNotification } = useNotifications();
   const { tickets = [], verificationRequests = [], updateTicketStatus, handleVerification, getPendingTickets, getPendingVerifications, respondToTicket } = useSupport();
   const { tournaments = [], refetchTournaments } = useTournaments();
-
-  // Early return if not admin to prevent crashes
-  if (!user || !isAdmin) {
-    return (
-      <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.errorContainer}>
-            <Shield size={64} color={Colors.status.error} />
-            <Text style={styles.errorTitle}>Accès refusé</Text>
-            <Text style={styles.errorText}>Vous n&apos;avez pas les permissions administrateur.</Text>
-            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}><Text style={styles.backBtnText}>Retour</Text></TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </View>
-    );
-  }
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'banned' | 'verified'>('all');
@@ -99,8 +83,27 @@ export default function AdminScreen() {
 
   const onRefresh = doRefresh;
 
-  const pendingTickets = getPendingTickets();
-  const pendingVerifications = getPendingVerifications();
+  const pendingTickets = getPendingTickets() ?? [];
+  const pendingVerifications = getPendingVerifications() ?? [];
+
+  // Early return if not admin to prevent crashes
+  if (!user || !isAdmin) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background.dark }}>
+        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 }}>
+          <View style={{ alignItems: 'center' }}>
+            <Shield size={64} color={Colors.status.error} />
+            <Text style={{ color: Colors.text.primary, fontSize: 24, fontWeight: '700' as const, marginTop: 20 }}>Accès refusé</Text>
+            <Text style={{ color: Colors.text.muted, fontSize: 15, textAlign: 'center' as const, marginTop: 8 }}>Vous n&apos;avez pas les permissions administrateur.</Text>
+            <TouchableOpacity style={{ marginTop: 24, backgroundColor: Colors.primary.blue, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }} onPress={() => router.back()}>
+              <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' as const }}>Retour</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
 
   const activityLogs: ActivityLog[] = useMemo(() => [
     { id: '1', type: 'user_joined', title: 'Nouvel utilisateur', description: 'Amadou Diallo a rejoint la plateforme', timestamp: new Date(Date.now() - 1000 * 60 * 5), severity: 'success' },
@@ -181,34 +184,37 @@ export default function AdminScreen() {
   }, [users, matches, teams]);
 
   const filteredUsers = useMemo(() => {
-    let result = users ?? [];
+    let result = (users ?? []).filter(u => u != null);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      const contact = (u: typeof result[0]) => (u.email ?? u.phone ?? '').toLowerCase();
-      result = result.filter(u => u.fullName?.toLowerCase().includes(q) || contact(u).includes(q) || (u.username ?? '').toLowerCase().includes(q));
+      const contact = (u: typeof result[0]) => (u?.email ?? u?.phone ?? '').toLowerCase();
+      result = result.filter(u => u?.fullName?.toLowerCase().includes(q) || contact(u).includes(q) || (u?.username ?? '').toLowerCase().includes(q));
     }
-    if (filterStatus === 'active') result = result.filter(u => !u.isBanned);
-    if (filterStatus === 'banned') result = result.filter(u => u.isBanned);
-    if (filterStatus === 'verified') result = result.filter(u => u.isVerified);
+    if (filterStatus === 'active') result = result.filter(u => !u?.isBanned);
+    if (filterStatus === 'banned') result = result.filter(u => u?.isBanned);
+    if (filterStatus === 'verified') result = result.filter(u => u?.isVerified);
     return result;
   }, [users, searchQuery, filterStatus]);
 
   const filteredTeams = useMemo(() => {
-    if (!searchQuery) return teams;
+    const safeTeams = teams ?? [];
+    if (!searchQuery) return safeTeams;
     const q = searchQuery.toLowerCase();
-    return teams.filter(t => t.name?.toLowerCase().includes(q) || t.city?.toLowerCase().includes(q));
+    return safeTeams.filter(t => t?.name?.toLowerCase().includes(q) || t?.city?.toLowerCase().includes(q));
   }, [teams, searchQuery]);
 
   const filteredMatches = useMemo(() => {
-    if (!searchQuery) return matches;
+    const safeMatches = matches ?? [];
+    if (!searchQuery) return safeMatches;
     const q = searchQuery.toLowerCase();
-    return matches.filter(m => m.sport?.toLowerCase().includes(q) || (m.venue?.name ?? '').toLowerCase().includes(q));
+    return safeMatches.filter(m => m?.sport?.toLowerCase().includes(q) || (m?.venue?.name ?? '').toLowerCase().includes(q));
   }, [matches, searchQuery]);
 
   const filteredTournaments = useMemo(() => {
-    if (!searchQuery) return tournaments;
+    const safeTournaments = tournaments ?? [];
+    if (!searchQuery) return safeTournaments;
     const q = searchQuery.toLowerCase();
-    return tournaments.filter(t => t.name?.toLowerCase().includes(q) || (t.sport ?? '').toLowerCase().includes(q) || (t.venue?.name ?? '').toLowerCase().includes(q));
+    return safeTournaments.filter(t => t?.name?.toLowerCase().includes(q) || (t?.sport ?? '').toLowerCase().includes(q) || (t?.venue?.name ?? '').toLowerCase().includes(q));
   }, [tournaments, searchQuery]);
 
   const handleBanUser = async (userId: string, userName: string) => {
@@ -501,18 +507,18 @@ export default function AdminScreen() {
     }
   };
 
-  const tabs: { key: AdminTab; label: string; icon: React.ReactNode; badge?: number }[] = [
+  const tabs: { key: AdminTab; label: string; icon: React.ReactNode; badge?: number }[] = useMemo(() => [
     { key: 'overview', label: 'Vue d\'ensemble', icon: <BarChart3 size={16} color={activeTab === 'overview' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'users', label: 'Utilisateurs', icon: <Users size={16} color={activeTab === 'users' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'teams', label: 'Équipes', icon: <Shield size={16} color={activeTab === 'teams' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'matches', label: 'Matchs', icon: <Swords size={16} color={activeTab === 'matches' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'tournaments', label: 'Tournois', icon: <Award size={16} color={activeTab === 'tournaments' ? '#FFF' : Colors.text.secondary} /> },
-    { key: 'tickets', label: 'Tickets', icon: <Ticket size={16} color={activeTab === 'tickets' ? '#FFF' : Colors.text.secondary} />, badge: pendingTickets.length },
-    { key: 'verifications', label: 'Vérifications', icon: <UserCheck size={16} color={activeTab === 'verifications' ? '#FFF' : Colors.text.secondary} />, badge: pendingVerifications.length },
+    { key: 'tickets', label: 'Tickets', icon: <Ticket size={16} color={activeTab === 'tickets' ? '#FFF' : Colors.text.secondary} />, badge: (pendingTickets ?? []).length },
+    { key: 'verifications', label: 'Vérifications', icon: <UserCheck size={16} color={activeTab === 'verifications' ? '#FFF' : Colors.text.secondary} />, badge: (pendingVerifications ?? []).length },
     { key: 'activity', label: 'Activité', icon: <Activity size={16} color={activeTab === 'activity' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'analytics', label: 'Analytiques', icon: <TrendingUp size={16} color={activeTab === 'analytics' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'settings', label: 'Paramètres', icon: <Settings size={16} color={activeTab === 'settings' ? '#FFF' : Colors.text.secondary} /> },
-  ];
+  ], [activeTab, pendingTickets, pendingVerifications]);
 
   const renderOverview = () => (
     <>
@@ -574,28 +580,28 @@ export default function AdminScreen() {
 
       <Card style={styles.actionsCard}>
         <Text style={styles.cardTitle}>Actions urgentes</Text>
-        {pendingTickets.length > 0 && (
+        {(pendingTickets ?? []).length > 0 && (
           <TouchableOpacity style={styles.urgentRow} onPress={() => setActiveTab('tickets')}>
             <View style={[styles.urgentIcon, { backgroundColor: 'rgba(239,68,68,0.1)' }]}><AlertTriangle size={18} color={Colors.status.error} /></View>
-            <View style={styles.urgentInfo}><Text style={styles.urgentTitle}>{pendingTickets.length} tickets en attente</Text><Text style={styles.urgentDesc}>Nécessite votre attention</Text></View>
+            <View style={styles.urgentInfo}><Text style={styles.urgentTitle}>{(pendingTickets ?? []).length} tickets en attente</Text><Text style={styles.urgentDesc}>Nécessite votre attention</Text></View>
             <ChevronRight size={20} color={Colors.text.muted} />
           </TouchableOpacity>
         )}
-        {pendingVerifications.length > 0 && (
+        {(pendingVerifications ?? []).length > 0 && (
           <TouchableOpacity style={styles.urgentRow} onPress={() => setActiveTab('verifications')}>
             <View style={[styles.urgentIcon, { backgroundColor: 'rgba(21,101,192,0.1)' }]}><UserCheck size={18} color={Colors.primary.blue} /></View>
-            <View style={styles.urgentInfo}><Text style={styles.urgentTitle}>{pendingVerifications.length} vérifications</Text><Text style={styles.urgentDesc}>En attente d&apos;approbation</Text></View>
+            <View style={styles.urgentInfo}><Text style={styles.urgentTitle}>{(pendingVerifications ?? []).length} vérifications</Text><Text style={styles.urgentDesc}>En attente d&apos;approbation</Text></View>
             <ChevronRight size={20} color={Colors.text.muted} />
           </TouchableOpacity>
         )}
-        {stats.bannedUsers > 0 && (
+        {(stats?.bannedUsers ?? 0) > 0 && (
           <TouchableOpacity style={styles.urgentRow} onPress={() => { setActiveTab('users'); setFilterStatus('banned'); }}>
             <View style={[styles.urgentIcon, { backgroundColor: 'rgba(239,68,68,0.1)' }]}><Ban size={18} color={Colors.status.error} /></View>
             <View style={styles.urgentInfo}><Text style={styles.urgentTitle}>{stats.bannedUsers} utilisateurs bannis</Text><Text style={styles.urgentDesc}>Réviser les suspensions</Text></View>
             <ChevronRight size={20} color={Colors.text.muted} />
           </TouchableOpacity>
         )}
-        {pendingTickets.length === 0 && pendingVerifications.length === 0 && stats.bannedUsers === 0 && (
+        {(pendingTickets ?? []).length === 0 && (pendingVerifications ?? []).length === 0 && (stats?.bannedUsers ?? 0) === 0 && (
           <View style={styles.noUrgent}><CheckCircle size={32} color={Colors.status.success} /><Text style={styles.noUrgentText}>Aucune action urgente</Text></View>
         )}
       </Card>
@@ -721,13 +727,15 @@ export default function AdminScreen() {
     </Card>
   );
 
-  const renderTickets = () => (
+  const renderTickets = () => {
+    const safeTickets = tickets ?? [];
+    return (
     <Card style={styles.listCard}>
-      <Text style={styles.cardTitle}>Tickets Support ({tickets.length})</Text>
-      {tickets.length === 0 ? (
+      <Text style={styles.cardTitle}>Tickets Support ({safeTickets.length})</Text>
+      {safeTickets.length === 0 ? (
         <View style={styles.emptyState}><Ticket size={40} color={Colors.text.muted} /><Text style={styles.emptyText}>Aucun ticket</Text></View>
       ) : (
-        tickets.map((ticket: SupportTicket) => (
+        safeTickets.map((ticket: SupportTicket) => (
           <View key={ticket.id} style={styles.ticketItem}>
             <View style={styles.ticketInfo}>
               <View style={styles.ticketHeader}>
@@ -767,13 +775,15 @@ export default function AdminScreen() {
     </Card>
   );
 
-  const renderVerifications = () => (
+  const renderVerifications = () => {
+    const safeVerifications = verificationRequests ?? [];
+    return (
     <Card style={styles.listCard}>
-      <Text style={styles.cardTitle}>Demandes de vérification ({verificationRequests.length})</Text>
-      {verificationRequests.length === 0 ? (
+      <Text style={styles.cardTitle}>Demandes de vérification ({safeVerifications.length})</Text>
+      {safeVerifications.length === 0 ? (
         <View style={styles.emptyState}><UserCheck size={40} color={Colors.text.muted} /><Text style={styles.emptyText}>Aucune demande</Text></View>
       ) : (
-        verificationRequests.map((req: VerificationRequest) => (
+        safeVerifications.map((req: VerificationRequest) => (
           <View key={req.id} style={styles.verificationItem}>
             <Avatar uri={req.userAvatar} name={req.userName} size="medium" />
             <View style={styles.verificationInfo}>
@@ -966,7 +976,7 @@ export default function AdminScreen() {
           <TouchableOpacity style={styles.dbActionBtn} onPress={async () => {
             try {
               const report = JSON.stringify({ users: stats.totalUsers, teams: stats.totalTeams, matchs: stats.totalMatches, tournois: stats.totalTournaments, exportéLe: new Date().toISOString() }, null, 2);
-              await Share.share(Platform.OS === 'web' ? { title: 'Export Admin VS Sport', text: report } : { message: report, title: 'Export Admin VS Sport' });
+              await Share.share(Platform.OS === 'web' ? { title: 'Export Admin VS Sport', message: report } : { message: report, title: 'Export Admin VS Sport' });
             } catch (e) {
               Alert.alert('Export', (e as Error)?.message ? `Erreur : ${(e as Error).message}` : `Utilisateurs: ${stats.totalUsers}, Équipes: ${stats.totalTeams}, Matchs: ${stats.totalMatches}`);
             }
@@ -1079,9 +1089,9 @@ export default function AdminScreen() {
             </View>
             {selectedTicketForResponse && (
               <>
-                <Text style={styles.modalLabel}>Sujet: {selectedTicketForResponse.subject}</Text>
+                <Text style={styles.modalLabel}>Sujet: {selectedTicketForResponse?.subject || ''}</Text>
                 <Text style={styles.modalLabel}>Message:</Text>
-                <Text style={styles.modalText}>{selectedTicketForResponse.description || selectedTicketForResponse.message}</Text>
+                <Text style={styles.modalText}>{selectedTicketForResponse?.description || selectedTicketForResponse?.message || ''}</Text>
                 <Text style={styles.modalLabel}>Votre réponse:</Text>
                 <TextInput
                   style={styles.modalTextInput}
@@ -1094,7 +1104,7 @@ export default function AdminScreen() {
                 />
                 <View style={styles.modalActions}>
                   <Button title="Annuler" onPress={() => { setSelectedTicketForResponse(null); setTicketResponseText(''); }} variant="outline" style={styles.modalButton} />
-                  <Button title="Envoyer" onPress={handleRespondToTicket} variant="primary" style={styles.modalButton} />
+                  <Button title="Envoyer" onPress={() => selectedTicketForResponse && handleRespondToTicket()} variant="primary" style={styles.modalButton} disabled={!selectedTicketForResponse || !ticketResponseText.trim()} />
                 </View>
               </>
             )}
