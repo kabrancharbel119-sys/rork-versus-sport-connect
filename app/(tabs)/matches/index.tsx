@@ -64,8 +64,22 @@ export default function MatchesScreen() {
       setRefreshing(false);
     }
   };
-  const formatDate = (date: Date) => new Date(date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
-  const formatTime = (date: Date) => new Date(date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const formatDate = (date: Date | string | undefined) => {
+    if (!date) return '-';
+    try {
+      return new Date(date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+    } catch {
+      return '-';
+    }
+  };
+  const formatTime = (date: Date | string | undefined) => {
+    if (!date) return '-';
+    try {
+      return new Date(date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '-';
+    }
+  };
   const getStatusColor = (status: string) => ({ open: Colors.status.success, confirmed: Colors.primary.blue, in_progress: Colors.primary.orange }[status] || Colors.text.muted);
   const getStatusLabel = (status: string) => ({ open: 'Ouvert', confirmed: 'Confirmé', in_progress: 'En cours', completed: 'Terminé' }[status] || status);
 
@@ -102,16 +116,18 @@ export default function MatchesScreen() {
           </View>
         </View>
         {isRanked && <Text style={styles.rankedTagline}>Compte pour le classement et la réputation</Text>}
-        <Text style={styles.matchTitle}>{sportLabels[match.sport]} • {match.format}</Text>
+        <Text style={styles.matchTitle}>{(sportLabels as Record<string, string>)[match.sport] || match.sport} • {match.format}</Text>
         <Text style={styles.matchLevel}>{levelLabels[match.level]} • {ambianceLabels[match.ambiance]}</Text>
         <View style={styles.matchDetails}>
           <View style={styles.matchDetail}><Calendar size={16} color={Colors.text.muted} /><Text style={styles.matchDetailText}>{formatDate(match.dateTime)}</Text></View>
           <View style={styles.matchDetail}><Clock size={16} color={Colors.text.muted} /><Text style={styles.matchDetailText}>{formatTime(match.dateTime)}</Text></View>
         </View>
-        <View style={styles.matchDetail}><MapPin size={16} color={Colors.text.muted} /><Text style={styles.matchDetailText}>{match.venue.name}</Text></View>
+        {match.venue && (
+          <View style={styles.matchDetail}><MapPin size={16} color={Colors.text.muted} /><Text style={styles.matchDetailText}>{match.venue.name}</Text></View>
+        )}
         {creator && <Text style={styles.organizerText}>Organisé par {creator.fullName || creator.username}</Text>}
         <View style={styles.matchFooter}>
-          <View style={styles.playersInfo}><Users size={16} color={Colors.primary.blue} /><Text style={styles.playersText}>{match.registeredPlayers.length}/{match.maxPlayers} joueurs</Text></View>
+          <View style={styles.playersInfo}><Users size={16} color={Colors.primary.blue} /><Text style={styles.playersText}>{(match.registeredPlayers ?? []).length}/{match.maxPlayers} joueurs</Text></View>
           {!isRanked && match.prize && <View style={styles.prizeInfo}><Text style={styles.prizeText}>💰 {match.prize.toLocaleString()} FCFA</Text></View>}
           {isRanked && <View style={styles.rankedFooterBadge}><Text style={styles.rankedFooterText}>Compte pour le classement</Text></View>}
         </View>
@@ -127,7 +143,7 @@ export default function MatchesScreen() {
         <Text style={styles.tournamentInfo}>{sportLabels[tournament.sport]} • {tournament.format} • {levelLabels[tournament.level]}</Text>
         <View style={styles.tournamentMeta}>
           <View style={styles.tournamentMetaItem}><Calendar size={14} color="rgba(255,255,255,0.8)" /><Text style={styles.tournamentMetaText}>{formatDate(tournament.startDate)}</Text></View>
-          <View style={styles.tournamentMetaItem}><Users size={14} color="rgba(255,255,255,0.8)" /><Text style={styles.tournamentMetaText}>{tournament.registeredTeams.length}/{tournament.maxTeams}</Text></View>
+          <View style={styles.tournamentMetaItem}><Users size={14} color="rgba(255,255,255,0.8)" /><Text style={styles.tournamentMetaText}>{(tournament.registeredTeams ?? []).length}/{tournament.maxTeams}</Text></View>
         </View>
         <View style={styles.tournamentFee}><Text style={styles.tournamentFeeText}>Inscription: {tournament.entryFee.toLocaleString()} FCFA</Text></View>
         <View style={styles.teamOnlyBadge}><Users size={12} color="#FFFFFF" /><Text style={styles.teamOnlyText}>Équipes uniquement</Text></View>
@@ -203,11 +219,11 @@ export default function MatchesScreen() {
                 {completedMatches.map((m) => (
                   <TouchableOpacity key={m.id} style={styles.historyRow} onPress={() => router.push(`/match/${m.id}`)} activeOpacity={0.7}>
                     <View style={styles.historyRowLeft}>
-                      <Text style={styles.historyRowSport}>{sportLabels[m.sport]} • {m.format}</Text>
-                      <Text style={styles.historyRowVenue}>{m.venue?.name} • {formatDate(m.dateTime)}</Text>
+                      <Text style={styles.historyRowSport}>{(sportLabels as Record<string, string>)[m.sport] || m.sport} • {m.format}</Text>
+                      <Text style={styles.historyRowVenue}>{m.venue?.name || 'Lieu non spécifié'} • {formatDate(m.dateTime)}</Text>
                     </View>
                     <View style={styles.historyScoreBadge}>
-                      <Text style={styles.historyScoreText}>{m.score ? `${m.score.home} - ${m.score.away}` : '–'}</Text>
+                      <Text style={styles.historyScoreText}>{m.score ? `${m.score.home ?? 0} - ${m.score.away ?? 0}` : '–'}</Text>
                     </View>
                   </TouchableOpacity>
                 ))}

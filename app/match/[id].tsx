@@ -46,9 +46,9 @@ export default function MatchDetailScreen() {
     );
   }
 
-  const isRegistered = match.registeredPlayers.includes(user?.id || '');
+  const isRegistered = (match.registeredPlayers ?? []).includes(user?.id || '');
   const isCreator = match.createdBy === user?.id;
-  const isFull = match.registeredPlayers.length >= match.maxPlayers;
+  const isFull = (match.registeredPlayers ?? []).length >= match.maxPlayers;
 
   const formatDate = (date: Date) => {
     const d = new Date(date);
@@ -110,7 +110,7 @@ export default function MatchDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const registeredIds = [...match.registeredPlayers];
+              const registeredIds = [...(match.registeredPlayers ?? [])];
               await deleteMatch({ matchId: match.id, userId: user!.id });
               await notifyMatchUpdate(match.id, 'cancelled', match.venue?.name, registeredIds.filter((id) => id !== user!.id));
               Alert.alert('Succès', 'Match supprimé');
@@ -215,14 +215,16 @@ export default function MatchDetailScreen() {
                 </View>
               </View>
               <View style={styles.infoDivider} />
-              <View style={styles.infoRow}>
-                <MapPin size={20} color={Colors.primary.blue} />
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>Lieu</Text>
-                  <Text style={styles.infoValue}>{match.venue.name}</Text>
-                  <Text style={styles.infoSubValue}>{match.venue.address}</Text>
+              {match.venue && (
+                <View style={styles.infoRow}>
+                  <MapPin size={20} color={Colors.primary.blue} />
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Lieu</Text>
+                    <Text style={styles.infoValue}>{match.venue.name}</Text>
+                    {match.venue.address && <Text style={styles.infoSubValue}>{match.venue.address}</Text>}
+                  </View>
                 </View>
-              </View>
+              )}
             </Card>
 
             <View style={styles.tagsRow}>
@@ -280,7 +282,7 @@ export default function MatchDetailScreen() {
               <View style={styles.sectionHeader}>
                 <Users size={20} color={Colors.text.primary} />
                 <Text style={styles.sectionTitle}>
-                  Joueurs inscrits ({match.registeredPlayers.length}/{match.maxPlayers})
+                  Joueurs inscrits ({(match.registeredPlayers ?? []).length}/{match.maxPlayers})
                 </Text>
               </View>
 
@@ -288,13 +290,13 @@ export default function MatchDetailScreen() {
                 <View 
                   style={[
                     styles.progressBar, 
-                    { width: `${(match.registeredPlayers.length / match.maxPlayers) * 100}%` }
+                    { width: `${((match.registeredPlayers ?? []).length / match.maxPlayers) * 100}%` }
                   ]} 
                 />
               </View>
 
               <View style={styles.playersList}>
-                {match.registeredPlayers.map((playerId) => {
+                {(match.registeredPlayers ?? []).map((playerId) => {
                   const player = getUserById(playerId);
                   return (
                     <View key={playerId} style={styles.playerItem}>
@@ -310,7 +312,7 @@ export default function MatchDetailScreen() {
                     </View>
                   );
                 })}
-                {[...Array(Math.max(0, match.maxPlayers - match.registeredPlayers.length))].map((_, index) => (
+                {[...Array(Math.max(0, match.maxPlayers - (match.registeredPlayers ?? []).length))].map((_, index) => (
                   <View key={`empty-${index}`} style={styles.playerItem}>
                     <View style={styles.emptyAvatar} />
                     <Text style={styles.emptyPlayerName}>Place disponible</Text>

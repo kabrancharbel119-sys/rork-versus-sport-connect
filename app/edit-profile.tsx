@@ -62,11 +62,12 @@ export default function EditProfileScreen() {
     const newSport: UserSport = { sport: selectedSport, level: selectedLevel, position: selectedPosition || undefined, yearsPlaying: years };
     try {
       await addSport(newSport);
-      setShowSportModal(false);
+      // Don't close modal - allow adding multiple sports
       setSelectedSport(null);
       setSelectedLevel('intermediate');
       setSelectedPosition('');
       setYearsPlaying('1');
+      Alert.alert('Succès', `${sportLabels[selectedSport]} ajouté ! Vous pouvez en ajouter un autre.`);
     } catch { Alert.alert('Erreur', 'Impossible d\'ajouter le sport'); }
   };
 
@@ -197,7 +198,10 @@ export default function EditProfileScreen() {
                   </>
                 )}
               </ScrollView>
-              <Button title="Ajouter" onPress={handleAddSport} variant="primary" disabled={!selectedSport} style={styles.modalButton} />
+              <View style={styles.modalActions}>
+                <Button title="Ajouter" onPress={handleAddSport} variant="primary" disabled={!selectedSport} style={[styles.modalButton, { flex: 1 }]} />
+                <Button title="Terminé" onPress={() => setShowSportModal(false)} variant="outline" style={[styles.modalButton, { flex: 1 }]} />
+              </View>
             </View>
           </View>
         </Modal>
@@ -254,4 +258,5 @@ const styles = StyleSheet.create({
   positionOptionText: { color: Colors.text.secondary, fontSize: 13 },
   positionOptionTextActive: { color: '#FFFFFF', fontWeight: '500' as const },
   modalButton: { marginTop: 20 },
+  modalActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
 });

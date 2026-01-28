@@ -368,12 +368,12 @@ export const teamsApi = {
       throw new Error('Vous êtes déjà membre de cette équipe');
     }
     
-    // Check if already a fan
-    if (team.fans.includes(userId)) {
+    const fansList = team.fans ?? [];
+    if (fansList.includes(userId)) {
       throw new Error('Vous suivez déjà cette équipe');
     }
     
-    const fans = [...team.fans, userId];
+    const fans = [...fansList, userId];
     await this.update(teamId, { fans });
     
     return { success: true };
@@ -384,11 +384,12 @@ export const teamsApi = {
     
     const team = await this.getById(teamId);
     
-    if (!team.fans.includes(userId)) {
+    const fansList = team.fans ?? [];
+    if (!fansList.includes(userId)) {
       throw new Error('Vous ne suivez pas cette équipe');
     }
     
-    const fans = team.fans.filter(id => id !== userId);
+    const fans = fansList.filter(id => id !== userId);
     await this.update(teamId, { fans });
     
     return { success: true };

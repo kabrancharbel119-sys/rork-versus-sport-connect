@@ -42,15 +42,15 @@ export default function TeamsScreen() {
       if (sportFilter !== 'all' && team.sport !== sportFilter) return false;
       if (levelFilter !== 'all' && team.level !== levelFilter) return false;
       if (ambianceFilter !== 'all' && team.ambiance !== ambianceFilter) return false;
-      if (recruitingFilter === 'open' && (!team.isRecruiting || team.members.length >= team.maxMembers)) return false;
-      if (recruitingFilter === 'closed' && team.isRecruiting && team.members.length < team.maxMembers) return false;
+      if (recruitingFilter === 'open' && (!team.isRecruiting || (team.members ?? []).length >= team.maxMembers)) return false;
+      if (recruitingFilter === 'closed' && team.isRecruiting && (team.members ?? []).length < team.maxMembers) return false;
       if (myTeam && team.id === myTeam.id) return false;
       return true;
     });
     const q = searchQuery.trim().toLowerCase();
     if (q) {
       list = list.filter(t =>
-        t.name.toLowerCase().includes(q) ||
+        t.name?.toLowerCase().includes(q) ||
         (t.city && t.city.toLowerCase().includes(q)) ||
         (t.description && t.description.toLowerCase().includes(q))
       );
@@ -83,7 +83,7 @@ export default function TeamsScreen() {
   const focusSearch = () => searchInputRef.current?.focus();
 
   const renderTeamCard = (team: ReturnType<typeof getAllTeams>[0], isMember: boolean = false) => {
-    const memberRole = team.members.find(m => m.userId === user?.id)?.role;
+    const memberRole = (team.members ?? []).find(m => m.userId === user?.id)?.role;
     
     return (
       <Card 

@@ -116,7 +116,7 @@ export default function ProfileScreen() {
               <View style={styles.profileMetaDivider} />
               <View style={styles.profileMetaItem}><Text style={styles.profileMetaValue}>{user?.following || 0}</Text><Text style={styles.profileMetaLabel}>Abonnements</Text></View>
               <View style={styles.profileMetaDivider} />
-              <View style={styles.profileMetaItem}><Text style={styles.profileMetaValue}>{user?.teams?.length || 0}</Text><Text style={styles.profileMetaLabel}>Équipe</Text></View>
+              <View style={styles.profileMetaItem}><Text style={styles.profileMetaValue}>{(user?.teams ?? []).length}</Text><Text style={styles.profileMetaLabel}>Équipe</Text></View>
             </View>
             {(user?.isPremium || isAdmin) && (
               <View style={styles.premiumBadge}>
@@ -157,9 +157,9 @@ export default function ProfileScreen() {
                 <Plus size={16} color={Colors.primary.blue} />
               </TouchableOpacity>
             </View>
-            {user?.sports && user.sports.length > 0 ? (
+            {(user?.sports ?? []).length > 0 ? (
               <View style={styles.sportsBadgesContainer}>
-                {user.sports.map((sport, index) => (
+                {(user.sports ?? []).map((sport, index) => (
                   <View key={index} style={styles.sportBadge}>
                     <Text style={styles.sportBadgeEmoji}>
                       {sport.sport === 'football' ? '⚽' : sport.sport === 'basketball' ? '🏀' : sport.sport === 'volleyball' ? '🏐' : sport.sport === 'tennis' ? '🎾' : '🏃'}

@@ -42,9 +42,10 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
   const parseTeamDates = (teams: Team[]): Team[] => {
     return teams.map(t => ({
       ...t,
+      fans: t.fans ?? [],
       createdAt: t.createdAt ? new Date(t.createdAt) : new Date(),
       members: t.members.map(m => ({ ...m, joinedAt: new Date(m.joinedAt) })),
-      joinRequests: t.joinRequests.map(r => ({
+      joinRequests: (t.joinRequests ?? []).map(r => ({
         ...r,
         createdAt: new Date(r.createdAt),
         respondedAt: r.respondedAt ? new Date(r.respondedAt) : undefined,
@@ -132,6 +133,7 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
           captainId: data.captainId,
           coCaptainIds: [],
           members: [{ userId: data.captainId, role: 'captain', customRole: 'Capitaine', joinedAt: new Date() }],
+          fans: [],
           maxMembers: data.maxMembers,
           stats: { matchesPlayed: 0, wins: 0, losses: 0, draws: 0, goalsFor: 0, goalsAgainst: 0, tournamentWins: 0, totalCashPrize: 0 },
           reputation: 5.0,
@@ -368,9 +370,50 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
     },
   });
 
+  const followTeamMutation = useMutation({
+    mutationFn: async ({ teamId, userId }: { teamId: string; userId: string }) => {
+      try {
+        await teamsApi.followTeam(teamId, userId);
+        queryClient.invalidateQueries({ queryKey: ['teams'] });
+      } catch (err: any) {
+        console.log('[Teams] Supabase error, using local:', err.message);
+        const teamIndex = teams.findIndex(t => t.id === teamId);
+        if (teamIndex === -1) throw new Error('Équipe non trouvée');
+        if (teams[teamIndex].members.some(m => m.userId === userId)) throw new Error('Vous êtes déjà membre');
+        if ((teams[teamIndex].fans ?? []).includes(userId)) throw new Error('Vous suivez déjà cette équipe');
+        const updatedTeams = [...teams];
+        updatedTeams[teamIndex] = {
+          ...updatedTeams[teamIndex],
+          fans: [...(updatedTeams[teamIndex].fans ?? []), userId],
+        };
+        await saveTeams(updatedTeams);
+      }
+    },
+  });
+
+  const unfollowTeamMutation = useMutation({
+    mutationFn: async ({ teamId, userId }: { teamId: string; userId: string }) => {
+      try {
+        await teamsApi.unfollowTeam(teamId, userId);
+        queryClient.invalidateQueries({ queryKey: ['teams'] });
+      } catch (err: any) {
+        console.log('[Teams] Supabase error, using local:', err.message);
+        const teamIndex = teams.findIndex(t => t.id === teamId);
+        if (teamIndex === -1) throw new Error('Équipe non trouvée');
+        if (!(teams[teamIndex].fans ?? []).includes(userId)) throw new Error('Vous ne suivez pas cette équipe');
+        const updatedTeams = [...teams];
+        updatedTeams[teamIndex] = {
+          ...updatedTeams[teamIndex],
+          fans: (updatedTeams[teamIndex].fans ?? []).filter(id => id !== userId),
+        };
+        await saveTeams(updatedTeams);
+      }
+    },
+  });
+
   const getTeamById = useCallback((id: string) => teams.find(t => t.id === id), [teams]);
   const getUserTeams = useCallback((userId: string) => teams.filter(t => t.members.some(m => m.userId === userId)), [teams]);
-  const getFollowedTeams = useCallback((userId: string) => teams.filter(t => t.fans.includes(userId)), [teams]);
+  const getFollowedTeams = useCallback((userId: string) => teams.filter(t => (t.fans ?? []).includes(userId)), [teams]);
   const getRecruitingTeams = useCallback(() => teams.filter(t => t.isRecruiting && t.members.length < t.maxMembers), [teams]);
   /** Toutes les équipes créées (recrutent ou non), pour la découverte */
   const getAllTeams = useCallback(() => teams, [teams]);

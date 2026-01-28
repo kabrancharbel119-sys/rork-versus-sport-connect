@@ -40,12 +40,29 @@ export default function AdminScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isAdmin } = useAuth();
-  const { teams, refetchTeams, deleteTeam } = useTeams();
-  const { matches, refetchMatches, deleteMatch } = useMatches();
-  const { users, banUser, unbanUser, verifyUser } = useUsers();
+  const { teams = [], refetchTeams, deleteTeam } = useTeams();
+  const { matches = [], refetchMatches, deleteMatch } = useMatches();
+  const { users = [], banUser, unbanUser, verifyUser } = useUsers();
   const { addNotification } = useNotifications();
-  const { tickets, verificationRequests, updateTicketStatus, handleVerification, getPendingTickets, getPendingVerifications, respondToTicket } = useSupport();
-  const { tournaments, refetchTournaments } = useTournaments();
+  const { tickets = [], verificationRequests = [], updateTicketStatus, handleVerification, getPendingTickets, getPendingVerifications, respondToTicket } = useSupport();
+  const { tournaments = [], refetchTournaments } = useTournaments();
+
+  // Early return if not admin to prevent crashes
+  if (!user || !isAdmin) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.errorContainer}>
+            <Shield size={64} color={Colors.status.error} />
+            <Text style={styles.errorTitle}>Accès refusé</Text>
+            <Text style={styles.errorText}>Vous n&apos;avez pas les permissions administrateur.</Text>
+            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}><Text style={styles.backBtnText}>Retour</Text></TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'banned' | 'verified'>('all');
@@ -96,23 +113,23 @@ export default function AdminScreen() {
   ], []);
 
   const stats = useMemo(() => {
-    const activeUsers = users.filter(u => !u.isBanned).length;
+    const activeUsers = (users ?? []).filter(u => !u.isBanned).length;
     return {
-      totalUsers: users.length,
-      totalTeams: teams.length,
-      totalMatches: matches.length,
-      totalTournaments: tournaments.length,
+      totalUsers: (users ?? []).length,
+      totalTeams: (teams ?? []).length,
+      totalMatches: (matches ?? []).length,
+      totalTournaments: (tournaments ?? []).length,
       activeUsers,
-      bannedUsers: users.filter(u => u.isBanned).length,
-      verifiedUsers: users.filter(u => u.isVerified).length,
-      premiumUsers: users.filter(u => u.isPremium).length,
-      pendingTickets: pendingTickets.length,
-      pendingVerifications: pendingVerifications.length,
-      openMatches: matches.filter(m => m.status === 'open').length,
-      completedMatches: matches.filter(m => m.status === 'completed').length,
-      matchesInProgress: matches.filter(m => m.status === 'in_progress').length,
-      confirmedMatches: matches.filter(m => m.status === 'confirmed').length,
-      registrationTournaments: tournaments.filter(t => t.status === 'registration').length,
+      bannedUsers: (users ?? []).filter(u => u.isBanned).length,
+      verifiedUsers: (users ?? []).filter(u => u.isVerified).length,
+      premiumUsers: (users ?? []).filter(u => u.isPremium).length,
+      pendingTickets: (pendingTickets ?? []).length,
+      pendingVerifications: (pendingVerifications ?? []).length,
+      openMatches: (matches ?? []).filter(m => m.status === 'open').length,
+      completedMatches: (matches ?? []).filter(m => m.status === 'completed').length,
+      matchesInProgress: (matches ?? []).filter(m => m.status === 'in_progress').length,
+      confirmedMatches: (matches ?? []).filter(m => m.status === 'confirmed').length,
+      registrationTournaments: (tournaments ?? []).filter(t => t.status === 'registration').length,
       dailyActiveUsers: activeUsers,
       weeklyActiveUsers: activeUsers,
     };
@@ -120,12 +137,12 @@ export default function AdminScreen() {
 
   const sportStats = useMemo(() => {
     const sportCounts: Record<string, number> = {};
-    matches.forEach(m => { 
+    (matches ?? []).forEach(m => { 
       if (m.sport) {
         sportCounts[m.sport] = (sportCounts[m.sport] || 0) + 1; 
       }
     });
-    const total = matches.length || 1;
+    const total = (matches ?? []).length || 1;
     return Object.entries(sportCounts).map(([sport, count]) => ({
       sport: (sportLabels as Record<string, string>)[sport] || sport,
       count,
@@ -135,12 +152,12 @@ export default function AdminScreen() {
 
   const cityStats = useMemo(() => {
     const cityCounts: Record<string, number> = {};
-    users.forEach(u => {
+    (users ?? []).forEach(u => {
       if (u.city) {
         cityCounts[u.city] = (cityCounts[u.city] || 0) + 1;
       }
     });
-    const total = users.length || 1;
+    const total = (users ?? []).length || 1;
     return Object.entries(cityCounts).map(([city, count]) => ({
       city,
       count,
@@ -157,18 +174,18 @@ export default function AdminScreen() {
       return t >= start && t < end;
     };
     return {
-      inscriptions: users.filter(u => inRange(u.createdAt)).length,
-      matchs: matches.filter(m => inRange(m.createdAt)).length,
-      equipes: teams.filter(t => inRange(t.createdAt)).length,
+      inscriptions: (users ?? []).filter(u => u.createdAt && inRange(u.createdAt)).length,
+      matchs: (matches ?? []).filter(m => m.createdAt && inRange(m.createdAt)).length,
+      equipes: (teams ?? []).filter(t => t.createdAt && inRange(t.createdAt)).length,
     };
   }, [users, matches, teams]);
 
   const filteredUsers = useMemo(() => {
-    let result = users;
+    let result = users ?? [];
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      const contact = (u: typeof users[0]) => (u.email ?? u.phone ?? '').toLowerCase();
-      result = result.filter(u => u.fullName.toLowerCase().includes(q) || contact(u).includes(q) || (u.username ?? '').toLowerCase().includes(q));
+      const contact = (u: typeof result[0]) => (u.email ?? u.phone ?? '').toLowerCase();
+      result = result.filter(u => u.fullName?.toLowerCase().includes(q) || contact(u).includes(q) || (u.username ?? '').toLowerCase().includes(q));
     }
     if (filterStatus === 'active') result = result.filter(u => !u.isBanned);
     if (filterStatus === 'banned') result = result.filter(u => u.isBanned);
@@ -179,36 +196,20 @@ export default function AdminScreen() {
   const filteredTeams = useMemo(() => {
     if (!searchQuery) return teams;
     const q = searchQuery.toLowerCase();
-    return teams.filter(t => t.name.toLowerCase().includes(q) || t.city.toLowerCase().includes(q));
+    return teams.filter(t => t.name?.toLowerCase().includes(q) || t.city?.toLowerCase().includes(q));
   }, [teams, searchQuery]);
 
   const filteredMatches = useMemo(() => {
     if (!searchQuery) return matches;
     const q = searchQuery.toLowerCase();
-    return matches.filter(m => m.sport.toLowerCase().includes(q) || (m.venue?.name ?? '').toLowerCase().includes(q));
+    return matches.filter(m => m.sport?.toLowerCase().includes(q) || (m.venue?.name ?? '').toLowerCase().includes(q));
   }, [matches, searchQuery]);
 
   const filteredTournaments = useMemo(() => {
     if (!searchQuery) return tournaments;
     const q = searchQuery.toLowerCase();
-    return tournaments.filter(t => t.name.toLowerCase().includes(q) || (t.sport ?? '').toLowerCase().includes(q) || (t.venue?.name ?? '').toLowerCase().includes(q));
+    return tournaments.filter(t => t.name?.toLowerCase().includes(q) || (t.sport ?? '').toLowerCase().includes(q) || (t.venue?.name ?? '').toLowerCase().includes(q));
   }, [tournaments, searchQuery]);
-
-  if (!isAdmin) {
-    return (
-      <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.errorContainer}>
-            <Shield size={64} color={Colors.status.error} />
-            <Text style={styles.errorTitle}>Accès refusé</Text>
-            <Text style={styles.errorText}>Vous n&apos;avez pas les permissions administrateur.</Text>
-            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}><Text style={styles.backBtnText}>Retour</Text></TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </View>
-    );
-  }
 
   const handleBanUser = async (userId: string, userName: string) => {
     if (!userId?.trim()) {
@@ -423,7 +424,7 @@ export default function AdminScreen() {
       return;
     }
     const message = notificationMessage.trim();
-    const userIds = users.filter(u => !u.isBanned).map(u => u.id);
+    const userIds = (users ?? []).filter(u => !u.isBanned).map(u => u.id);
     if (userIds.length === 0) {
       Alert.alert('Info', 'Aucun utilisateur actif à notifier.');
       return;
@@ -469,14 +470,26 @@ export default function AdminScreen() {
     ]);
   };
 
-  const formatDate = (date: Date) => new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
-  const formatTime = (date: Date) => {
-    const diff = Date.now() - new Date(date).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 60) return `Il y a ${mins}min`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `Il y a ${hours}h`;
-    return formatDate(date);
+  const formatDate = (date: Date | string | undefined) => {
+    if (!date) return '-';
+    try {
+      return new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch {
+      return '-';
+    }
+  };
+  const formatTime = (date: Date | string | undefined) => {
+    if (!date) return '-';
+    try {
+      const diff = Date.now() - new Date(date).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 60) return `Il y a ${mins}min`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `Il y a ${hours}h`;
+      return formatDate(date);
+    } catch {
+      return '-';
+    }
   };
 
   const getSeverityColor = (severity: ActivityLog['severity']) => {
@@ -627,7 +640,7 @@ export default function AdminScreen() {
                 {u.isBanned && <Ban size={14} color={Colors.status.error} />}
               </View>
               <Text style={styles.userEmail}>{u.email ?? u.phone ?? '-'}</Text>
-              <Text style={styles.userMeta}>{u.city} • {formatDate(u.createdAt)}</Text>
+              <Text style={styles.userMeta}>{u.city || '-'} • {formatDate(u.createdAt)}</Text>
             </View>
             <View style={styles.userActions}>
               {u.isBanned ? (
@@ -653,7 +666,7 @@ export default function AdminScreen() {
             <View style={styles.teamInfo}>
               <Text style={styles.teamName}>{team.name}</Text>
               <Text style={styles.teamMeta}>{(sportLabels as Record<string, string>)[team.sport] ?? team.sport} • {team.format}</Text>
-              <Text style={styles.teamStatText}>{team.members.length}/{team.maxMembers} membres • {team.city}</Text>
+              <Text style={styles.teamStatText}>{(team.members ?? []).length}/{team.maxMembers} membres • {team.city || '-'}</Text>
             </View>
           </TouchableOpacity>
           <View style={styles.userActions}>

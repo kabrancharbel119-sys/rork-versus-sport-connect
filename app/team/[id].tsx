@@ -68,7 +68,7 @@ export default function TeamDetailScreen() {
   const team = fromContext ?? fetchedTeam;
 
   const isMember = team?.members.some(m => m.userId === user?.id) ?? false;
-  const isFan = team?.fans.includes(user?.id || '') ?? false;
+  const isFan = (team?.fans ?? []).includes(user?.id || '');
   const isCaptain = team?.captainId === user?.id;
   const isCoCaptain = team?.coCaptainIds.includes(user?.id || '') ?? false;
   const canManage = isCaptain || isCoCaptain;
@@ -433,17 +433,17 @@ export default function TeamDetailScreen() {
               ))}
             </View>
 
-            {team.fans && team.fans.length > 0 && (
+            {(team.fans ?? []).length > 0 && (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Communauté ({team.fans.length})</Text>
+                  <Text style={styles.sectionTitle}>Communauté ({(team.fans ?? []).length})</Text>
                 </View>
                 <Card style={styles.fansCard}>
                   <Text style={styles.fansDescription}>
-                    {team.fans.length} {team.fans.length === 1 ? 'fan' : 'fans'} suivent cette équipe
+                    {(team.fans ?? []).length} {(team.fans ?? []).length === 1 ? 'fan' : 'fans'} suivent cette équipe
                   </Text>
                   <View style={styles.fansList}>
-                    {team.fans.slice(0, 10).map((fanId) => {
+                    {(team.fans ?? []).slice(0, 10).map((fanId) => {
                       const fan = getUserById(fanId);
                       return (
                         <View key={fanId} style={styles.fanItem}>
@@ -452,8 +452,8 @@ export default function TeamDetailScreen() {
                         </View>
                       );
                     })}
-                    {team.fans.length > 10 && (
-                      <Text style={styles.fansMore}>+{team.fans.length - 10} autres</Text>
+                    {(team.fans ?? []).length > 10 && (
+                      <Text style={styles.fansMore}>+{(team.fans ?? []).length - 10} autres</Text>
                     )}
                   </View>
                 </Card>
