@@ -773,7 +773,8 @@ export default function AdminScreen() {
         ))
       )}
     </Card>
-  );
+    );
+  };
 
   const renderVerifications = () => {
     const safeVerifications = verificationRequests ?? [];
@@ -807,7 +808,8 @@ export default function AdminScreen() {
         ))
       )}
     </Card>
-  );
+    );
+  };
 
   const renderActivity = () => (
     <>
