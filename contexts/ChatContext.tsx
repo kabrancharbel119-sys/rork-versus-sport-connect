@@ -465,16 +465,18 @@ export const [ChatProvider, useChat] = createContextHook(() => {
         return { success: true };
       }
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      const { requestId, action } = variables;
+      setChatRequests(prev => prev.map(r =>
+        r.id === requestId ? { ...r, status: action === 'accept' ? 'accepted' as const : 'rejected' as const, respondedAt: new Date() } : r
+      ));
       queryClient.invalidateQueries({ queryKey: ['chatRequests'] });
     },
   });
 
   const getPendingChatRequests = useCallback(() => {
     if (!currentUserId) return [];
-    return chatRequests.filter(r => 
-      r.recipientId === currentUserId && r.status === 'pending'
-    );
+    return chatRequests.filter(r => r.status === 'pending' && r.recipientId === currentUserId);
   }, [chatRequests, currentUserId]);
 
   const getSentChatRequests = useCallback(() => {

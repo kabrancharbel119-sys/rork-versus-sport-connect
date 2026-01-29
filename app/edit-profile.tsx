@@ -15,7 +15,7 @@ import { Sport, SkillLevel, UserSport } from '@/types';
 
 export default function EditProfileScreen() {
   const router = useRouter();
-  const { user, updateProfile, isUpdateLoading, pickAvatar, isPickingAvatar, addSport, removeSport } = useAuth();
+  const { user, updateProfile, isUpdateLoading, pickAvatar, isPickingAvatar, addSport, removeSport, refreshUser } = useAuth();
   const [formData, setFormData] = useState({ fullName: '', username: '', phone: '', city: '', country: '', bio: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showSportModal, setShowSportModal] = useState(false);
@@ -117,15 +117,20 @@ export default function EditProfileScreen() {
       };
     });
 
+    const existingSports = user?.sports ?? [];
+    const bySport = new Map(existingSports.map(s => [s.sport, s]));
+    sportsToAdd.forEach(s => bySport.set(s.sport, s));
+    const mergedSports = Array.from(bySport.values());
+
     try {
-      for (const sport of sportsToAdd) {
-        await addSport(sport);
-      }
-      Alert.alert('Succès', `${sportsToAdd.length} sport(s) ajouté(s) !`);
+      await updateProfile({ sports: mergedSports });
+      await refreshUser?.();
+      setShowSportModal(false);
       setSelectedSports(new Set());
       setSportYears({} as Record<Sport, string>);
       setSportLevels({} as Record<Sport, SkillLevel>);
       setSportPositions({} as Record<Sport, string>);
+      Alert.alert('Succès', `${sportsToAdd.length} sport(s) ajouté(s) !`);
     } catch (error: any) {
       Alert.alert('Erreur', error.message || 'Impossible d\'ajouter les sports');
     }

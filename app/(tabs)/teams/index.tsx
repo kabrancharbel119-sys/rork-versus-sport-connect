@@ -142,8 +142,11 @@ export default function TeamsScreen() {
 
   const renderExploreRow = (team: ReturnType<typeof getAllTeams>[0], index: number) => {
     const isMember = (team.members ?? []).some(m => m.userId === user?.id);
+    const isCaptain = team.captainId === user?.id;
     const isFan = (team.fans ?? []).includes(user?.id || '');
     const trulyRecruiting = team.isRecruiting && (team.members ?? []).length < team.maxMembers;
+    if (__DEV__) console.log('Team:', team.id, 'isMember:', isMember, 'isFan:', isFan);
+    const showFollowButton = !isMember && !isCaptain && !!user;
     return (
       <View key={team.id} style={styles.exploreRow}>
         <TouchableOpacity testID={`team-discover-${index}`} style={styles.exploreRowTouch} onPress={() => router.push(`/team/${team.id}`)} activeOpacity={0.7}>
@@ -159,7 +162,7 @@ export default function TeamsScreen() {
             <ChevronRight size={18} color={Colors.text.muted} />
           </View>
         </TouchableOpacity>
-        {!isMember && user && (
+        {showFollowButton && (
           isFan ? (
             <TouchableOpacity
               testID={`btn-follow-team-${team.id}`}

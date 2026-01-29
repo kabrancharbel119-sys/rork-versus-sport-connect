@@ -176,7 +176,7 @@ export default function ProfileScreen() {
                 <Plus size={16} color={Colors.primary.blue} />
               </TouchableOpacity>
             </View>
-            {(user?.sports ?? []).length > 0 ? (
+            {(() => { if (__DEV__) console.log('User sports:', user?.sports); return (user?.sports ?? []).length > 0; })() ? (
               <View style={styles.sportsBadgesContainer}>
                 {(user?.sports ?? []).map((sport, index) => (
                   <View key={index} style={styles.sportBadge}>
