@@ -12,7 +12,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim
 app.use(
   "*",
   cors({
-    origin: allowedOrigins?.length ? allowedOrigins : true,
+    origin: allowedOrigins?.length ? allowedOrigins : "*",
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
   })

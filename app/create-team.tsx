@@ -202,6 +202,7 @@ export default function CreateTeamScreen() {
       </TouchableOpacity>
 
       <Input
+        testID="input-team-name"
         label="Nom de l'équipe *"
         placeholder="Ex: FC Cocody"
         value={formData.name}
@@ -212,7 +213,7 @@ export default function CreateTeamScreen() {
 
       <View style={styles.fieldGroup}>
         <Text style={styles.fieldLabel}>Sport *</Text>
-        <TouchableOpacity style={styles.sportSelector} onPress={() => setShowSportModal(true)}>
+        <TouchableOpacity testID="select-sport" style={styles.sportSelector} onPress={() => setShowSportModal(true)}>
           <Text style={styles.sportIcon}>{sportIcons[formData.sport]}</Text>
           <Text style={styles.sportSelectorText}>{sportLabels[formData.sport]}</Text>
           <ChevronDown size={20} color={Colors.text.muted} />
@@ -283,6 +284,7 @@ export default function CreateTeamScreen() {
       <View style={styles.rowInputs}>
         <View style={styles.halfInput}>
           <Input
+            testID="input-city"
             label="Ville *"
             placeholder="Abidjan"
             value={formData.city}

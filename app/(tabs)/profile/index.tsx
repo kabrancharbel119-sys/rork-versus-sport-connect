@@ -1,9 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Settings, Edit2, Trophy, Star, Users, ChevronRight, Shield, Award, TrendingUp, Zap, MapPin, History, CheckCircle, Plus } from 'lucide-react-native';
+import { Settings, Edit2, Trophy, Star, Users, ChevronRight, Shield, Award, TrendingUp, Zap, MapPin, History, CheckCircle, Plus, Compass } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMatches } from '@/contexts/MatchesContext';
@@ -16,7 +17,7 @@ import { sportLabels, levelLabels } from '@/mocks/data';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, refreshUser } = useAuth();
   const { getUserMatches } = useMatches();
   const { getUserTeams, teams } = useTeams();
   const { getUnlockedCount, getTotalXP, checkAndUnlockTrophies, getUserTrophies } = useTrophies();
@@ -27,6 +28,17 @@ export default function ProfileScreen() {
   const userTrophyList = user ? getUserTrophies(user.id).filter(t => t.progress >= 100).slice(0, 5) : [];
   const totalXP = user ? getTotalXP(user.id) : 0;
   const isCaptain = teams.some(t => t.captainId === user?.id);
+  const lastRefresh = useRef(0);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const now = Date.now();
+      if (user && now - lastRefresh.current > 5000) {
+        refreshUser();
+        lastRefresh.current = now;
+      }
+    }, [user])
+  );
 
   useEffect(() => {
     if (user) {
@@ -54,17 +66,24 @@ export default function ProfileScreen() {
     <View style={styles.container}>
       <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView testID="profile-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Profil</Text>
-            <TouchableOpacity style={styles.settingsButton} onPress={() => router.push('/settings')}>
+            <TouchableOpacity testID="btn-settings" style={styles.settingsButton} onPress={() => router.push('/settings')}>
               <Settings size={22} color={Colors.text.primary} />
             </TouchableOpacity>
           </View>
           <LinearGradient colors={[Colors.primary.blue, Colors.primary.blueDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.profileCard}>
             <View style={styles.profileTop}>
-              <Avatar uri={user?.avatar} name={user?.fullName} size="xlarge" />
-              <TouchableOpacity style={styles.editButton} onPress={() => router.push('/edit-profile')}>
+              <View style={styles.avatarWithBadge}>
+                <Avatar uri={user?.avatar} name={user?.fullName} size="xlarge" />
+                {user?.isVerified && (
+                  <View testID="verified-badge" style={styles.verifiedBadge}>
+                    <CheckCircle size={16} color={Colors.status.success} />
+                  </View>
+                )}
+              </View>
+              <TouchableOpacity testID="btn-edit-profile" style={styles.editButton} onPress={() => router.push('/edit-profile')}>
                 <Edit2 size={16} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
@@ -159,7 +178,7 @@ export default function ProfileScreen() {
             </View>
             {(user?.sports ?? []).length > 0 ? (
               <View style={styles.sportsBadgesContainer}>
-                {(user.sports ?? []).map((sport, index) => (
+                {(user?.sports ?? []).map((sport, index) => (
                   <View key={index} style={styles.sportBadge}>
                     <Text style={styles.sportBadgeEmoji}>
                       {sport.sport === 'football' ? '⚽' : sport.sport === 'basketball' ? '🏀' : sport.sport === 'volleyball' ? '🏐' : sport.sport === 'tennis' ? '🎾' : '🏃'}
@@ -214,6 +233,14 @@ export default function ProfileScreen() {
                 <ChevronRight size={20} color={Colors.text.muted} />
               </TouchableOpacity>
             )}
+            <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/(tabs)/teams')}>
+              <Compass size={20} color={Colors.text.secondary} />
+              <View style={styles.menuTextContainer}>
+                <Text style={styles.menuText}>Communauté • Équipes qui recrutent</Text>
+                <Text style={styles.menuSubtext}>Découvrir et rejoindre des équipes</Text>
+              </View>
+              <ChevronRight size={20} color={Colors.text.muted} />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert('Info', 'Partagez votre lien de profil')}>
               <Users size={20} color={Colors.text.secondary} /><Text style={styles.menuText}>Inviter des amis</Text><ChevronRight size={20} color={Colors.text.muted} />
             </TouchableOpacity>
@@ -224,6 +251,7 @@ export default function ProfileScreen() {
             )}
 
           </View>
+          <Text testID="version-number" style={[styles.menuSubtext, { textAlign: 'center', marginTop: 16 }]}>v1.0.0</Text>
           <View style={styles.bottomSpacer} />
         </ScrollView>
       </SafeAreaView>
@@ -241,6 +269,8 @@ const styles = StyleSheet.create({
   scrollContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 20 },
   profileCard: { borderRadius: 20, padding: 24, alignItems: 'center', marginBottom: 20 },
   profileTop: { position: 'relative', marginBottom: 16 },
+  avatarWithBadge: { position: 'relative' },
+  verifiedBadge: { position: 'absolute', bottom: 0, left: 0, width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.background.dark, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.status.success },
   editButton: { position: 'absolute', bottom: 0, right: 0, width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.primary.orange, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: Colors.primary.blue },
   profileName: { color: '#FFFFFF', fontSize: 24, fontWeight: '700' as const },
   profileUsername: { color: 'rgba(255,255,255,0.7)', fontSize: 14, marginTop: 4 },

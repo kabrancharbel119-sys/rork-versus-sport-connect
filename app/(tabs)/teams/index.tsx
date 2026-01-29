@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Users, Trophy, MapPin, Star, Filter, X, Search, ChevronRight, Compass } from 'lucide-react-native';
+import { Plus, Users, Trophy, MapPin, Star, Filter, X, Search, ChevronRight, Compass, UserPlus } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
@@ -12,13 +12,14 @@ import { useTeams } from '@/contexts/TeamsContext';
 import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
+import { NetworkError } from '@/components/NetworkError';
 import { sportLabels, levelLabels, ambianceLabels, ALL_SPORTS } from '@/mocks/data';
 import { Sport, SkillLevel, PlayStyle } from '@/types';
 
 export default function TeamsScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { getUserTeams, getAllTeams, getPendingRequests, refetchTeams, isLoading, isError } = useTeams();
+  const { getUserTeams, getAllTeams, getPendingRequests, getRecruitingTeams, refetchTeams, followTeam, unfollowTeam, isLoading, isError } = useTeams();
   const [refreshing, setRefreshing] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [sportFilter, setSportFilter] = useState<Sport | 'all'>('all');
@@ -26,6 +27,7 @@ export default function TeamsScreen() {
   const [ambianceFilter, setAmbianceFilter] = useState<PlayStyle | 'all'>('all');
   const [recruitingFilter, setRecruitingFilter] = useState<'all' | 'open' | 'closed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [followingTeamId, setFollowingTeamId] = useState<string | null>(null);
   const searchInputRef = useRef<TextInput>(null);
 
   const myTeam = user ? getUserTeams(user.id)[0] : null;
@@ -57,6 +59,16 @@ export default function TeamsScreen() {
     }
     return list;
   }, [allTeamsForDiscover, user?.city, sportFilter, levelFilter, ambianceFilter, recruitingFilter, searchQuery, myTeam]);
+
+  const recruitingOnly = useMemo(() => {
+    const list = getRecruitingTeams().filter(team => {
+      if (myTeam && team.id === myTeam.id) return false;
+      return true;
+    });
+    const city = user?.city?.trim()?.toLowerCase();
+    if (city) return list.filter(t => t.city?.toLowerCase() === city);
+    return list;
+  }, [getRecruitingTeams, myTeam, user?.city]);
 
   const pendingRequestsCount = myTeam && (myTeam.captainId === user?.id || myTeam.coCaptainIds.includes(user?.id || ''))
     ? getPendingRequests(myTeam.id).length
@@ -111,14 +123,14 @@ export default function TeamsScreen() {
           </View>
         </View>
         <View style={styles.teamStats}>
-          <View style={styles.teamStat}><Users size={14} color={Colors.primary.blue} /><Text style={styles.teamStatText}>{team.members.length}/{team.maxMembers}</Text></View>
+          <View style={styles.teamStat}><Users size={14} color={Colors.primary.blue} /><Text style={styles.teamStatText}>{(team.members ?? []).length}/{team.maxMembers}</Text></View>
           <View style={styles.teamStat}><Trophy size={14} color={Colors.primary.orange} /><Text style={styles.teamStatText}>{team.stats.wins}W - {team.stats.losses}L</Text></View>
           <View style={styles.teamStat}><Star size={14} color="#F59E0B" /><Text style={styles.teamStatText}>{team.reputation.toFixed(1)}</Text></View>
         </View>
         <View style={styles.teamTags}>
           <View style={styles.tag}><Text style={styles.tagText}>{levelLabels[team.level]}</Text></View>
           <View style={styles.tag}><Text style={styles.tagText}>{ambianceLabels[team.ambiance]}</Text></View>
-          {team.isRecruiting && team.members.length < team.maxMembers ? (
+          {team.isRecruiting && (team.members ?? []).length < team.maxMembers ? (
             <View style={[styles.tag, styles.recruitingTag]}><Text style={[styles.tagText, styles.recruitingText]}>Recrute</Text></View>
           ) : (
             <View style={[styles.tag, styles.closedTag]}><Text style={[styles.tagText, styles.closedTagText]}>Complet</Text></View>
@@ -128,21 +140,80 @@ export default function TeamsScreen() {
     );
   };
 
-  const renderExploreRow = (team: ReturnType<typeof getAllTeams>[0]) => (
-    <TouchableOpacity key={team.id} style={styles.exploreRow} onPress={() => router.push(`/team/${team.id}`)} activeOpacity={0.7}>
-      <Avatar uri={team.logo} name={team.name} size="small" />
-      <View style={styles.exploreRowCenter}>
-        <Text style={styles.exploreRowName} numberOfLines={1}>{team.name}</Text>
-        <Text style={styles.exploreRowMeta}>{sportLabels[team.sport]} • {team.city}</Text>
+  const renderExploreRow = (team: ReturnType<typeof getAllTeams>[0], index: number) => {
+    const isMember = (team.members ?? []).some(m => m.userId === user?.id);
+    const isFan = (team.fans ?? []).includes(user?.id || '');
+    const trulyRecruiting = team.isRecruiting && (team.members ?? []).length < team.maxMembers;
+    return (
+      <View key={team.id} style={styles.exploreRow}>
+        <TouchableOpacity testID={`team-discover-${index}`} style={styles.exploreRowTouch} onPress={() => router.push(`/team/${team.id}`)} activeOpacity={0.7}>
+          <Avatar uri={team.logo} name={team.name} size="small" />
+          <View style={styles.exploreRowCenter}>
+            <Text style={styles.exploreRowName} numberOfLines={1}>{team.name}</Text>
+            <Text style={styles.exploreRowMeta}>{sportLabels[team.sport]} • {team.city}</Text>
+          </View>
+          <View style={styles.exploreRowRight}>
+            {trulyRecruiting ? (
+              <View style={styles.recrutePill}><Text style={styles.recrutePillText}>Recrute</Text></View>
+            ) : null}
+            <ChevronRight size={18} color={Colors.text.muted} />
+          </View>
+        </TouchableOpacity>
+        {!isMember && user && (
+          isFan ? (
+            <TouchableOpacity
+              testID={`btn-follow-team-${team.id}`}
+              style={styles.followPill}
+              disabled={followingTeamId === team.id}
+              onPress={async () => {
+                setFollowingTeamId(team.id);
+                try {
+                  await unfollowTeam({ teamId: team.id, userId: user.id });
+                  Alert.alert('Succès', 'Vous ne suivez plus cette équipe');
+                } catch (e: any) {
+                  Alert.alert('Erreur', e?.message ?? 'Impossible');
+                } finally {
+                  setFollowingTeamId(null);
+                }
+              }}
+            >
+              {followingTeamId === team.id ? (
+                <ActivityIndicator testID={`loading-follow-${team.id}`} size="small" color={Colors.primary.blue} />
+              ) : (
+                <Text style={styles.followPillText}>Suivi</Text>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              testID={`btn-follow-team-${team.id}`}
+              style={[styles.followPill, styles.followPillPrimary]}
+              disabled={followingTeamId === team.id}
+              onPress={async () => {
+                setFollowingTeamId(team.id);
+                try {
+                  await followTeam({ teamId: team.id, userId: user.id });
+                  Alert.alert('Succès', 'Vous suivez cette équipe');
+                } catch (e: any) {
+                  Alert.alert('Erreur', e?.message ?? 'Impossible');
+                } finally {
+                  setFollowingTeamId(null);
+                }
+              }}
+            >
+              {followingTeamId === team.id ? (
+                <ActivityIndicator testID={`loading-follow-${team.id}`} size="small" color="#FFF" />
+              ) : (
+                <>
+                  <UserPlus size={14} color="#FFF" />
+                  <Text style={[styles.followPillText, { color: '#FFF' }]}>Suivre</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )
+        )}
       </View>
-      <View style={styles.exploreRowRight}>
-        {team.isRecruiting && team.members.length < team.maxMembers ? (
-          <View style={styles.recrutePill}><Text style={styles.recrutePillText}>Recrute</Text></View>
-        ) : null}
-        <ChevronRight size={18} color={Colors.text.muted} />
-      </View>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -167,13 +238,14 @@ export default function TeamsScreen() {
             <TouchableOpacity style={[styles.iconButton, searchQuery.length > 0 && styles.iconButtonActive]} onPress={focusSearch}>
               <Search size={20} color={searchQuery.length > 0 ? '#FFF' : Colors.text.primary} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.addButton} onPress={() => router.push('/create-team')}>
+            <TouchableOpacity testID="btn-create-team" style={styles.addButton} onPress={() => router.push('/create-team')}>
               <Plus size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
 
         <ScrollView
+          testID="teams-scroll"
           style={styles.scrollView}
           contentContainerStyle={[styles.scrollContent, (isError || isLoading) && !allTeamsForDiscover.length && styles.scrollContentGrow]}
           showsVerticalScrollIndicator={false}
@@ -182,21 +254,21 @@ export default function TeamsScreen() {
           }
         >
           {isError && !allTeamsForDiscover.length ? (
-            <NetworkError onRetry={onRetry} isRetrying={retrying} />
+            <NetworkError onRetry={onRefresh} isRetrying={refreshing} />
           ) : isLoading && !allTeamsForDiscover.length ? (
             <View style={styles.loadingWrap}><ActivityIndicator size="large" color={Colors.primary.orange} /><Text style={styles.loadingText}>Chargement des équipes...</Text></View>
           ) : (
           <>
           <View style={styles.heroWrap}>
             {myTeam ? (
-              <TouchableOpacity style={styles.heroCard} onPress={() => router.push(`/team/${myTeam.id}`)} activeOpacity={0.9}>
+              <TouchableOpacity testID="team-card-0" style={styles.heroCard} onPress={() => router.push(`/team/${myTeam.id}`)} activeOpacity={0.9}>
                 <LinearGradient colors={[Colors.primary.blue, '#1a4d7a']} style={StyleSheet.absoluteFill} />
                 <View style={styles.heroInner}>
                   <Avatar uri={myTeam.logo} name={myTeam.name} size="xlarge" />
                   <View style={styles.heroBody}>
                     <Text style={styles.heroLabel}>Ta team</Text>
                     <Text style={styles.heroName} numberOfLines={1}>{myTeam.name}</Text>
-                    <Text style={styles.heroMeta}>{sportLabels[myTeam.sport]} • {myTeam.members.length}/{myTeam.maxMembers} joueurs</Text>
+                    <Text style={styles.heroMeta}>{sportLabels[myTeam.sport]} • {(myTeam.members ?? []).length}/{myTeam.maxMembers} joueurs</Text>
                     <View style={styles.heroStats}>
                       <Text style={styles.heroStat}>{myTeam.stats.wins}V</Text>
                       <Text style={styles.heroStatDot}>•</Text>
@@ -226,6 +298,19 @@ export default function TeamsScreen() {
             )}
           </View>
 
+          {recruitingOnly.length > 0 && (
+            <View style={styles.exploreSection}>
+              <View style={styles.exploreHeader}>
+                <Users size={20} color={Colors.status.success} />
+                <View style={styles.exploreHeaderText}>
+                  <Text style={styles.exploreTitle}>Équipes qui recrutent</Text>
+                  <Text style={styles.exploreSubtitle}>Uniquement les équipes avec places disponibles</Text>
+                </View>
+              </View>
+              <View style={styles.exploreList}>{recruitingOnly.map((team, index) => renderExploreRow(team, index))}</View>
+            </View>
+          )}
+
           <View style={styles.exploreSection}>
             <View style={styles.exploreHeader}>
               <Compass size={20} color={Colors.primary.orange} />
@@ -242,7 +327,7 @@ export default function TeamsScreen() {
               </View>
             </View>
             {teamsInCity.length > 0 ? (
-              <View style={styles.exploreList}>{teamsInCity.map(renderExploreRow)}</View>
+              <View style={styles.exploreList}>{teamsInCity.map((team, index) => renderExploreRow(team, index))}</View>
             ) : (
               <View style={styles.exploreEmpty}>
                 <Text style={styles.exploreEmptyText}>
@@ -714,6 +799,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 12,
   },
+  exploreRowTouch: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   exploreRowCenter: {
     flex: 1,
     minWidth: 0,
@@ -741,6 +832,25 @@ const styles = StyleSheet.create({
   },
   recrutePillText: {
     color: Colors.status.success,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  followPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.primary.blue,
+  },
+  followPillPrimary: {
+    backgroundColor: Colors.primary.blue,
+    borderColor: Colors.primary.blue,
+  },
+  followPillText: {
+    color: Colors.primary.blue,
     fontSize: 12,
     fontWeight: '600' as const,
   },

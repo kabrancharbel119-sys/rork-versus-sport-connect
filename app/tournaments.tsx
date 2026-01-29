@@ -136,7 +136,7 @@ export default function TournamentsScreen() {
                   onPress={() => router.push('/create-tournament')} 
                   variant="orange" 
                   size="medium" 
-                  style={styles.createButton}
+                  style={styles.emptyCreateButton}
                 />
               </Card>
             )}
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
     color: Colors.text.muted, 
     fontSize: 14 
   },
-  createButton: {
+  emptyCreateButton: {
     marginTop: 16,
   },
 });

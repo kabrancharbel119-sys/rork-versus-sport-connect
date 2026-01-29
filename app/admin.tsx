@@ -1065,7 +1065,7 @@ export default function AdminScreen() {
               </TouchableOpacity>
             ))}
           </ScrollView>
-          <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.blue} />}>
+          <ScrollView testID="admin-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.blue} />}>
             {activeTab === 'overview' && renderOverview()}
             {activeTab === 'users' && renderUsers()}
             {activeTab === 'teams' && renderTeams()}

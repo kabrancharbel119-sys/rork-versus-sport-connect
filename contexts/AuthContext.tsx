@@ -297,24 +297,26 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const addSport = useCallback(async (sport: UserSport) => {
     if (!authState.user) return;
-    const updatedSports = [...authState.user.sports.filter(s => s.sport !== sport.sport), sport];
+    const existing = (authState.user.sports ?? []).filter(s => s.sport !== sport.sport);
+    const updatedSports = [...existing, sport];
     await updateProfile({ sports: updatedSports });
   }, [authState.user, updateProfile]);
 
   const removeSport = useCallback(async (sportType: Sport) => {
     if (!authState.user) return;
-    await updateProfile({ sports: authState.user.sports.filter(s => s.sport !== sportType) });
+    await updateProfile({ sports: (authState.user.sports ?? []).filter(s => s.sport !== sportType) });
   }, [authState.user, updateProfile]);
 
   const refreshUser = useCallback(async () => {
-    if (!authState.user) return;
+    if (!authState.user?.id) return;
     try {
-      const user = await usersApi.getById(authState.user.id);
-      setAuthState(prev => ({ ...prev, user }));
-      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
-    } catch (e) {
-      const userData = await AsyncStorage.getItem(USER_STORAGE_KEY);
-      if (userData) setAuthState(prev => ({ ...prev, user: JSON.parse(userData) }));
+      const updated = await usersApi.getById(authState.user.id);
+      if (updated) {
+        setAuthState(prev => ({ ...prev, user: updated }));
+        await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updated));
+      }
+    } catch (error) {
+      console.error('[AuthContext] refreshUser error:', error);
     }
   }, [authState.user]);
 

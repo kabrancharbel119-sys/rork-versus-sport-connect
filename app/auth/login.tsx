@@ -106,6 +106,7 @@ export default function LoginScreen() {
 
             <View style={styles.form}>
               <PhoneInput
+                testID="input-phone"
                 label="Numéro de téléphone"
                 value={nationalNumber}
                 onChangeText={handlePhoneChange}
@@ -113,6 +114,7 @@ export default function LoginScreen() {
               />
 
               <Input
+                testID="input-password"
                 label="Mot de passe"
                 placeholder="••••••••"
                 value={password}
@@ -122,6 +124,7 @@ export default function LoginScreen() {
               />
 
               <Button
+                testID="btn-login"
                 title="Se connecter"
                 onPress={handleLogin}
                 loading={isLoginLoading}

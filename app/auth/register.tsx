@@ -131,6 +131,7 @@ export default function RegisterScreen() {
 
             <View style={styles.form}>
               <Input
+                testID="input-fullname"
                 label="Prénom"
                 placeholder="Kouamé"
                 value={formData.firstName}
@@ -141,6 +142,7 @@ export default function RegisterScreen() {
               />
 
               <Input
+                testID="input-lastname"
                 label="Nom"
                 placeholder="Yao"
                 value={formData.lastName}
@@ -151,6 +153,7 @@ export default function RegisterScreen() {
               />
 
               <PhoneInput
+                testID="input-phone"
                 label="Numéro de téléphone"
                 value={nationalNumber}
                 onChangeText={handlePhoneChange}
@@ -159,6 +162,7 @@ export default function RegisterScreen() {
               />
 
               <Input
+                testID="input-password"
                 label="Mot de passe"
                 placeholder="••••••••"
                 value={formData.password}
@@ -185,6 +189,7 @@ export default function RegisterScreen() {
               )}
 
               <Button
+                testID="btn-register"
                 title="Créer mon compte"
                 onPress={handleRegister}
                 loading={isRegisterLoading}

@@ -88,12 +88,9 @@ export const chatApi = {
   }) {
     console.log('[ChatAPI] Creating room:', roomData.name);
     
-    const { data: existing } = await (supabase
-      .from('chat_rooms')
-      .select('*')
-      .eq('team_id', roomData.teamId)
-      .eq('name', roomData.name)
-      .single() as any);
+    const q = supabase.from('chat_rooms').select('*').eq('name', roomData.name);
+    const query = roomData.teamId != null ? q.eq('team_id', roomData.teamId) : q.is('team_id', null);
+    const { data: existing } = await query.single();
     
     if (existing) {
       return mapChatRoomRowToRoom(existing as ChatRoomRow);
@@ -238,6 +235,18 @@ export const chatApi = {
     return mapChatMessageRowToMessage(messageData);
   },
 
+  async deleteMessage(messageId: string, userId: string) {
+    const { data: msg, error: fetchErr } = await (supabase
+      .from('chat_messages')
+      .select('id, sender_id')
+      .eq('id', messageId)
+      .single() as any);
+    if (fetchErr || !msg) throw new Error('Message non trouvé');
+    if ((msg as { sender_id: string }).sender_id !== userId) throw new Error('Vous ne pouvez supprimer que vos propres messages');
+    const { error } = await (supabase.from('chat_messages').delete().eq('id', messageId) as any);
+    if (error) throw error;
+  },
+
   async markAsRead(roomId: string, userId: string) {
     console.log('[ChatAPI] Marking messages as read in room:', roomId);
     
@@ -350,15 +359,13 @@ export const chatApi = {
     if (request.status !== 'pending') throw new Error('Demande déjà traitée');
     
     const status = action === 'accept' ? 'accepted' : 'rejected';
-    const { data, error } = await (supabase
+    const updatePayload = { status, responded_at: new Date().toISOString() };
+    const { data, error } = await supabase
       .from('chat_requests')
-      .update({
-        status,
-        responded_at: new Date().toISOString(),
-      } as any)
+      .update(updatePayload as never)
       .eq('id', requestId)
       .select()
-      .single() as any);
+      .single();
     
     if (error) throw error;
     

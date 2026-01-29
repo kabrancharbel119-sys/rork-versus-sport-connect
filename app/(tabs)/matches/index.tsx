@@ -189,7 +189,7 @@ export default function MatchesScreen() {
         </ScrollView>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />}>
           {isError && !matches.length ? (
-            <NetworkError onRetry={onRetry} isRetrying={retrying} />
+            <NetworkError onRetry={onRefresh} isRetrying={refreshing} />
           ) : isLoading && !matches.length ? (
             <View style={styles.loadingWrap}><ActivityIndicator size="large" color={Colors.primary.orange} /><Text style={styles.loadingText}>Chargement des matchs...</Text></View>
           ) : (

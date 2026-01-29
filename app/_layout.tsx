@@ -90,8 +90,7 @@ function RootLayoutNav() {
           headerShown: false, 
           contentStyle: { backgroundColor: Colors.background.dark }, 
           animation: 'fade' 
-        }} 
-        style={{ flex: 1 }}
+        }}
       >
         <Stack.Screen name="splash" />
         <Stack.Screen name="auth" />

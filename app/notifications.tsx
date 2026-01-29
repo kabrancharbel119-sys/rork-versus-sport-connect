@@ -196,6 +196,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16 },
   backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
+  headerTitleWrap: { flex: 1, marginLeft: 8, justifyContent: 'center' },
   headerTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const },
   headerSubtitle: { color: Colors.text.muted, fontSize: 11, marginTop: 2 },
   markAllBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },

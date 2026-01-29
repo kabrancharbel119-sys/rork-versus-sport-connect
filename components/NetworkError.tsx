@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { WifiOff, RefreshCw } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 
@@ -26,8 +26,14 @@ export function NetworkError({ onRetry, message, isRetrying = false }: NetworkEr
           activeOpacity={0.8}
           disabled={isRetrying}
         >
-          <RefreshCw size={18} color="#FFFFFF" />
-          <Text style={styles.retryText}>{isRetrying ? 'Chargement...' : 'Réessayer'}</Text>
+          {isRetrying ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <RefreshCw size={18} color="#FFFFFF" />
+              <Text style={styles.retryText}>Réessayer</Text>
+            </>
+          )}
         </TouchableOpacity>
       )}
     </View>

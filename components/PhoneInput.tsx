@@ -67,6 +67,7 @@ interface PhoneInputProps {
   onChangeText: (fullNumber: string, nationalNumber: string, countryCode: string) => void;
   error?: string;
   defaultCountry?: string;
+  testID?: string;
 }
 
 const DEFAULT_COUNTRY: Country = COUNTRIES[0] || {
@@ -85,6 +86,7 @@ export function PhoneInput({
   onChangeText,
   error,
   defaultCountry = 'CI',
+  testID,
 }: PhoneInputProps) {
   const [selectedCountry, setSelectedCountry] = useState<Country>(() => {
     const found = COUNTRIES.find(c => c.code === defaultCountry);
@@ -163,6 +165,7 @@ export function PhoneInput({
         <View style={styles.separator} />
 
         <TextInput
+          testID={testID ?? 'phone-input'}
           style={styles.input}
           value={displayNumber}
           onChangeText={handlePhoneChange}
@@ -174,7 +177,6 @@ export function PhoneInput({
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           maxLength={selectedCountry?.format?.length || 15}
-          testID="phone-input"
         />
       </View>
 

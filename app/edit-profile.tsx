@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Modal, FlatList } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Modal } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,9 +16,22 @@ import { Sport, SkillLevel, UserSport } from '@/types';
 export default function EditProfileScreen() {
   const router = useRouter();
   const { user, updateProfile, isUpdateLoading, pickAvatar, isPickingAvatar, addSport, removeSport } = useAuth();
-  const [formData, setFormData] = useState({ fullName: user?.fullName || '', username: user?.username || '', phone: user?.phone || '', city: user?.city || '', country: user?.country || '', bio: user?.bio || '' });
+  const [formData, setFormData] = useState({ fullName: '', username: '', phone: '', city: '', country: '', bio: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showSportModal, setShowSportModal] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        fullName: user.fullName || '',
+        username: user.username || '',
+        phone: user.phone || '',
+        city: user.city || '',
+        country: user.country || '',
+        bio: user.bio || '',
+      });
+    }
+  }, [user]);
   const [selectedSports, setSelectedSports] = useState<Set<Sport>>(new Set());
   const [sportYears, setSportYears] = useState<Record<Sport, string>>({} as Record<Sport, string>);
   const [sportLevels, setSportLevels] = useState<Record<Sport, SkillLevel>>({} as Record<Sport, SkillLevel>);
@@ -37,12 +50,18 @@ export default function EditProfileScreen() {
   };
 
   const handleSave = async () => {
+    if (!user) {
+      Alert.alert('Non connecté', 'Veuillez vous connecter pour modifier votre profil.');
+      return;
+    }
     if (!validate()) return;
     try {
       await updateProfile({ fullName: formData.fullName, username: formData.username, phone: formData.phone || undefined, city: formData.city, country: formData.country, bio: formData.bio || undefined });
       Alert.alert('Succès', 'Profil mis à jour');
       router.back();
-    } catch { Alert.alert('Erreur', 'Impossible de mettre à jour le profil'); }
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.message || 'Impossible de mettre à jour le profil');
+    }
   };
 
   const handlePickAvatar = async () => {
@@ -79,6 +98,10 @@ export default function EditProfileScreen() {
   };
 
   const handleAddAllSports = async () => {
+    if (!user) {
+      Alert.alert('Non connecté', 'Veuillez vous connecter pour ajouter des sports.');
+      return;
+    }
     if (selectedSports.size === 0) {
       Alert.alert('Aucun sport', 'Veuillez sélectionner au moins un sport.');
       return;
@@ -115,8 +138,33 @@ export default function EditProfileScreen() {
     ]);
   };
 
-  const positions = selectedSport ? (DEFAULT_POSITIONS[selectedSport] || DEFAULT_POSITIONS.default) : [];
   const levels: SkillLevel[] = ['beginner', 'intermediate', 'advanced', 'expert'];
+
+  if (!user) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.container}>
+          <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+          <SafeAreaView style={styles.safeArea}>
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+                <X size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Modifier le profil</Text>
+              <View style={styles.placeholder} />
+            </View>
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+              <Text style={{ color: Colors.text.muted, fontSize: 16, textAlign: 'center', marginBottom: 16 }}>Non connecté. Veuillez vous connecter pour modifier votre profil.</Text>
+              <TouchableOpacity style={{ backgroundColor: Colors.primary.blue, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }} onPress={() => router.back()}>
+                <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '600' }}>Retour</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
+      </>
+    );
+  }
 
   return (
     <>
@@ -130,7 +178,7 @@ export default function EditProfileScreen() {
             <View style={styles.placeholder} />
           </View>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
-            <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView testID="edit-profile-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
               <View style={styles.avatarSection}>
                 <View style={styles.avatarContainer}>
                   <Avatar uri={user?.avatar} name={user?.fullName} size="xlarge" />
@@ -143,7 +191,7 @@ export default function EditProfileScreen() {
                 </TouchableOpacity>
               </View>
 
-              <Input label="Nom complet" placeholder="Kouamé Yao" value={formData.fullName} onChangeText={(v) => updateField('fullName', v)} autoCapitalize="words" error={errors.fullName} icon={<User size={20} color={Colors.text.muted} />} />
+              <Input testID="input-fullname" label="Nom complet" placeholder="Kouamé Yao" value={formData.fullName} onChangeText={(v) => updateField('fullName', v)} autoCapitalize="words" error={errors.fullName} icon={<User size={20} color={Colors.text.muted} />} />
               <Input label="Nom d'utilisateur" placeholder="kouame_yao" value={formData.username} onChangeText={(v) => updateField('username', v)} autoCapitalize="none" error={errors.username} icon={<User size={20} color={Colors.text.muted} />} />
               <Input label="Email" placeholder={user?.email || 'votre@email.com'} value={user?.email || ''} onChangeText={() => {}} editable={false} icon={<Mail size={20} color={Colors.text.muted} />} />
               <Input label="Téléphone" placeholder="+225 07 00 00 00" value={formData.phone} onChangeText={(v) => updateField('phone', v)} keyboardType="phone-pad" icon={<Phone size={20} color={Colors.text.muted} />} />
@@ -196,6 +244,7 @@ export default function EditProfileScreen() {
                     return (
                       <View key={sport} style={styles.sportCheckboxContainer}>
                         <TouchableOpacity
+                          testID={`checkbox-${sport.toLowerCase()}`}
                           style={[
                             styles.sportCheckboxRow,
                             isSelected && styles.sportCheckboxRowActive,

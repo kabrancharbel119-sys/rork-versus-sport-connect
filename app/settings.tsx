@@ -153,8 +153,8 @@ export default function SettingsScreen() {
   const handleClearNotifications = () => Alert.alert('Effacer les notifications', 'Supprimer toutes vos notifications ?', [{ text: 'Annuler', style: 'cancel' }, { text: 'Effacer', style: 'destructive', onPress: async () => { await clearNotifications(); Alert.alert('Succès', 'Notifications supprimées.'); } }]);
   const handleRefreshTrophies = async () => { if (!user) return; const unlocked = await checkAndUnlockTrophies(user.id, { matchesPlayed: user.stats.matchesPlayed, wins: user.stats.wins, goalsScored: user.stats.goalsScored, assists: user.stats.assists, mvpAwards: user.stats.mvpAwards, tournamentWins: user.stats.tournamentWins, followers: user.followers, isVerified: user.isVerified, isPremium: user.isPremium, isCaptain: false, fairPlayScore: user.stats.fairPlayScore, hasTeam: (user.teams?.length || 0) > 0, profileComplete: !!(user.fullName && user.city && user.sports?.length > 0) }); if (unlocked.length === 0) Alert.alert('Trophées', 'Vos trophées sont à jour!'); };
 
-  const SettingRow = ({ icon, title, value, onPress, toggle, toggleValue, onToggle, danger, badge }: { icon: React.ReactNode; title: string; value?: string; onPress?: () => void; toggle?: boolean; toggleValue?: boolean; onToggle?: (v: boolean) => void; danger?: boolean; badge?: string | number }) => (
-    <TouchableOpacity style={styles.settingRow} onPress={onPress} disabled={toggle} activeOpacity={toggle ? 1 : 0.7} accessibilityRole={toggle ? 'switch' : 'button'} accessibilityLabel={title} accessibilityValue={toggle ? { text: toggleValue ? 'activé' : 'désactivé' } : value ? { text: value } : undefined}>
+  const SettingRow = ({ icon, title, value, onPress, toggle, toggleValue, onToggle, danger, badge, testID }: { icon: React.ReactNode; title: string; value?: string; onPress?: () => void; toggle?: boolean; toggleValue?: boolean; onToggle?: (v: boolean) => void; danger?: boolean; badge?: string | number; testID?: string }) => (
+    <TouchableOpacity testID={testID} style={styles.settingRow} onPress={onPress} disabled={toggle} activeOpacity={toggle ? 1 : 0.7} accessibilityRole={toggle ? 'switch' : 'button'} accessibilityLabel={title} accessibilityValue={toggle ? { text: toggleValue ? 'activé' : 'désactivé' } : value ? { text: value } : undefined}>
       <View style={[styles.settingIcon, danger && styles.dangerIcon]}>{icon}</View>
       <View style={styles.settingContent}><Text style={[styles.settingTitle, danger && styles.dangerText]}>{title}</Text>{value && <Text style={styles.settingValue}>{value}</Text>}</View>
       {badge !== undefined && <View style={styles.badge}><Text style={styles.badgeText}>{badge}</Text></View>}
@@ -246,7 +246,7 @@ export default function SettingsScreen() {
             </Card>
 
             <Card style={[styles.section, { marginTop: 24 }]}>
-              <SettingRow icon={<LogOut size={20} color={Colors.text.secondary} />} title="Se déconnecter" onPress={handleLogout} />
+              <SettingRow testID="btn-logout" icon={<LogOut size={20} color={Colors.text.secondary} />} title="Se déconnecter" onPress={handleLogout} />
             </Card>
 
             

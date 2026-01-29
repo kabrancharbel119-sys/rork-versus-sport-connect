@@ -163,7 +163,7 @@ export default function ChatScreen() {
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Messages</Text>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.headerBtn} onPress={() => setShowNewChatModal(true)}>
+            <TouchableOpacity testID="btn-new-direct-message" style={styles.headerBtn} onPress={() => setShowNewChatModal(true)}>
               <UserPlus size={20} color={Colors.text.primary} />
             </TouchableOpacity>
             {myTeams.length > 0 && (
@@ -194,7 +194,7 @@ export default function ChatScreen() {
           </View>
         )}
 
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScrollView testID="chat-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {(() => {
             const pendingRequests = getPendingChatRequests();
             const sentRequests = getSentChatRequests();

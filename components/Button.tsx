@@ -22,6 +22,7 @@ interface ButtonProps {
   style?: StyleProp<ViewStyle>;
   textStyle?: TextStyle;
   icon?: React.ReactNode;
+  testID?: string;
 }
 
 export function Button({
@@ -34,6 +35,7 @@ export function Button({
   style,
   textStyle,
   icon,
+  testID,
 }: ButtonProps) {
   const handlePress = () => {
     if (!disabled && !loading) {
@@ -72,6 +74,7 @@ export function Button({
   if (isGradient) {
     return (
       <TouchableOpacity
+        testID={testID}
         onPress={handlePress}
         disabled={disabled || loading}
         activeOpacity={0.8}
@@ -98,6 +101,7 @@ export function Button({
 
   return (
     <TouchableOpacity
+      testID={testID}
       onPress={handlePress}
       disabled={disabled || loading}
       activeOpacity={0.7}

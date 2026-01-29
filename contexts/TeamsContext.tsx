@@ -414,7 +414,7 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
   const getTeamById = useCallback((id: string) => teams.find(t => t.id === id), [teams]);
   const getUserTeams = useCallback((userId: string) => teams.filter(t => t.members.some(m => m.userId === userId)), [teams]);
   const getFollowedTeams = useCallback((userId: string) => teams.filter(t => (t.fans ?? []).includes(userId)), [teams]);
-  const getRecruitingTeams = useCallback(() => teams.filter(t => t.isRecruiting && t.members.length < t.maxMembers), [teams]);
+  const getRecruitingTeams = useCallback(() => teams.filter(t => t.isRecruiting && (t.members ?? []).length < t.maxMembers), [teams]);
   /** Toutes les équipes créées (recrutent ou non), pour la découverte */
   const getAllTeams = useCallback(() => teams, [teams]);
   const getPendingRequests = useCallback((teamId: string) => teams.find(t => t.id === teamId)?.joinRequests.filter(r => r.status === 'pending') || [], [teams]);

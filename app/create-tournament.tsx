@@ -71,7 +71,7 @@ export default function CreateTournamentScreen() {
     maxTeams: '8',
     entryFee: '25000',
     prizePool: '200000',
-    venue: venues[0] ?? ({ id: '', name: '—', address: '', city: '', country: 'Côte d\'Ivoire', pricePerHour: 0, surface: 'grass', amenities: [] } as Venue),
+    venue: venues[0] ?? ({ id: '', name: '—', address: '', city: '', country: 'Côte d\'Ivoire', pricePerHour: 0, surface: 'grass', amenities: [] } as unknown as Venue),
     startDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     endDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
     sponsorName: '',

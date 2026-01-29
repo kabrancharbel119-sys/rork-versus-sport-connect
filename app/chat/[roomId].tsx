@@ -21,7 +21,7 @@ export default function ChatRoomScreen() {
   const router = useRouter();
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const { user } = useAuth();
-  const { chatRooms, getRoomMessages, sendMessage, markAsRead, removeParticipant, isSending } = useChat();
+  const { chatRooms, getRoomMessages, sendMessage, markAsRead, removeParticipant, deleteMessage, isSending } = useChat();
   const { getUserById } = useUsers();
   const { getTeamById } = useTeams();
   const [messageText, setMessageText] = useState('');
@@ -323,9 +323,41 @@ export default function ChatRoomScreen() {
               ) : (
               messages.map((message, index) => {
                 const isOwnMessage = message.senderId === user?.id;
+                const canDelete = isOwnMessage && message.senderId !== 'system' && user?.id;
                 const dateLabel = formatDate(message.createdAt);
                 const showDateLabel = dateLabel !== lastDateLabel;
                 lastDateLabel = dateLabel;
+
+                const bubble = (
+                  <View style={[
+                    styles.messageBubble,
+                    isOwnMessage ? styles.ownMessage : styles.otherMessage
+                  ]}>
+                    {!isOwnMessage && (
+                      <Text style={styles.senderName}>{getSenderName(message.senderId)}</Text>
+                    )}
+                    {message.type === 'image' && (message.content.startsWith('http') || message.content.startsWith('file') || message.content.startsWith('content')) ? (
+                      <Image
+                        source={{ uri: message.content }}
+                        style={styles.messageImage}
+                        contentFit="cover"
+                      />
+                    ) : (
+                      <Text style={[
+                        styles.messageText,
+                        isOwnMessage && styles.ownMessageText
+                      ]}>
+                        {message.content}
+                      </Text>
+                    )}
+                    <Text style={[
+                      styles.messageTime,
+                      isOwnMessage && styles.ownMessageTime
+                    ]}>
+                      {formatTime(message.createdAt)}
+                    </Text>
+                  </View>
+                );
 
                 return (
                   <View key={message.id}>
@@ -341,34 +373,30 @@ export default function ChatRoomScreen() {
                       {!isOwnMessage && (
                         <Avatar uri={getUserById(message.senderId)?.avatar} name={getSenderName(message.senderId)} size="small" />
                       )}
-                      <View style={[
-                        styles.messageBubble,
-                        isOwnMessage ? styles.ownMessage : styles.otherMessage
-                      ]}>
-                        {!isOwnMessage && (
-                          <Text style={styles.senderName}>{getSenderName(message.senderId)}</Text>
-                        )}
-                        {message.type === 'image' && (message.content.startsWith('http') || message.content.startsWith('file') || message.content.startsWith('content')) ? (
-                          <Image
-                            source={{ uri: message.content }}
-                            style={styles.messageImage}
-                            contentFit="cover"
-                          />
-                        ) : (
-                          <Text style={[
-                            styles.messageText,
-                            isOwnMessage && styles.ownMessageText
-                          ]}>
-                            {message.content}
-                          </Text>
-                        )}
-                        <Text style={[
-                          styles.messageTime,
-                          isOwnMessage && styles.ownMessageTime
-                        ]}>
-                          {formatTime(message.createdAt)}
-                        </Text>
-                      </View>
+                      {canDelete ? (
+                        <Pressable
+                          onLongPress={() =>
+                            Alert.alert('Supprimer ce message ?', undefined, [
+                              { text: 'Annuler', style: 'cancel' },
+                              {
+                                text: 'Supprimer',
+                                style: 'destructive',
+                                onPress: async () => {
+                                  try {
+                                    await deleteMessage({ messageId: message.id, userId: user!.id });
+                                  } catch (e: any) {
+                                    Alert.alert('Erreur', e?.message ?? 'Impossible de supprimer le message.');
+                                  }
+                                },
+                              },
+                            ])
+                          }
+                        >
+                          {bubble}
+                        </Pressable>
+                      ) : (
+                        bubble
+                      )}
                     </View>
                   </View>
                 );
@@ -381,6 +409,7 @@ export default function ChatRoomScreen() {
                 <ImageIcon size={22} color={Colors.text.muted} />
               </Pressable>
               <TextInput
+                testID="chat-input"
                 style={styles.textInput}
                 placeholder="Écrire un message..."
                 placeholderTextColor={Colors.text.muted}
@@ -391,7 +420,8 @@ export default function ChatRoomScreen() {
                 maxLength={1000}
                 blurOnSubmit={false}
               />
-              <Pressable 
+              <Pressable
+                testID="btn-send-message"
                 style={({ pressed }) => [styles.sendButton, !messageText.trim() && styles.sendButtonDisabled, pressed && styles.sendButtonPressed]}
                 onPress={handleSend}
                 disabled={!messageText.trim() || isSending}

@@ -14,5 +14,11 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "vs-sport-app-backup-20260125-191209",
+    "vs-sport-app-backup-20260125-191403",
+    "vs-sport-app-backup-20260125-191452"
   ]
 }

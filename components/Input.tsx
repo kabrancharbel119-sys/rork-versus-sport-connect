@@ -27,6 +27,7 @@ interface InputProps {
   icon?: React.ReactNode;
   editable?: boolean;
   maxLength?: number;
+  testID?: string;
 }
 
 export function Input({
@@ -46,6 +47,7 @@ export function Input({
   icon,
   editable = true,
   maxLength,
+  testID,
 }: InputProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -63,6 +65,7 @@ export function Input({
       >
         {icon && <View style={styles.iconContainer}>{icon}</View>}
         <TextInput
+          testID={testID}
           style={[
             styles.input,
             multiline && styles.multiline,

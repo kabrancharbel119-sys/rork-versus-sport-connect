@@ -1,32 +1,47 @@
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { ChatRoom, ChatMessage, ChatRequest } from '@/types';
 import { mockChatRooms, mockMessages } from '@/mocks/data';
 import { emitRealtimeEvent } from '@/lib/realtime';
 import { chatApi } from '@/lib/api/chat';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 const CHATS_STORAGE_KEY = 'vs_chats';
 const MESSAGES_STORAGE_KEY = 'vs_messages';
 
 export const [ChatProvider, useChat] = createContextHook(() => {
   const queryClient = useQueryClient();
+  const { user: authUser } = useAuth();
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatRequests, setChatRequests] = useState<ChatRequest[]>([]);
   const [isPollingActive, setIsPollingActive] = useState(true);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
 
   useEffect(() => {
     const getCurrentUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUserId(user?.id || null);
+      setSupabaseUserId(user?.id || null);
     };
     getCurrentUser();
   }, []);
+
+  const currentUserId = useMemo(() => authUser?.id ?? supabaseUserId, [authUser?.id, supabaseUserId]);
+
+  useEffect(() => {
+    if (authUser?.id && supabaseUserId && authUser.id !== supabaseUserId) {
+      console.warn('[ChatContext] ⚠️ User ID mismatch!', {
+        authUser: authUser.id,
+        supabaseUser: supabaseUserId,
+      });
+    } else if (authUser?.id) {
+      console.log('[ChatContext] ✅ User ID matched:', authUser.id);
+    }
+  }, [authUser?.id, supabaseUserId]);
 
   useEffect(() => {
     const handleAppState = (state: AppStateStatus) => {
@@ -265,6 +280,31 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     },
   });
 
+  const deleteMessageMutation = useMutation({
+    mutationFn: async ({ messageId, userId }: { messageId: string; userId: string }) => {
+      if (!currentUserId) throw new Error('Non connecté');
+      try {
+        await chatApi.deleteMessage(messageId, userId);
+      } catch (e) {
+        const msg = messages.find(m => m.id === messageId);
+        if (!msg || msg.senderId !== userId) throw e;
+        const updatedMessages = messages.filter(m => m.id !== messageId);
+        await saveMessages(updatedMessages);
+        queryClient.invalidateQueries({ queryKey: ['chats'] });
+        return;
+      }
+      const updatedMessages = messages.filter(m => m.id !== messageId);
+      await saveMessages(updatedMessages);
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+    },
+    onError: (error) => {
+      console.error('[ChatContext] deleteMessage error:', error);
+    },
+  });
+
   const createTeamChatsMutation = useMutation({
     mutationFn: async ({ teamId, teamName, members }: { teamId: string; teamName: string; members: string[] }) => {
       console.log('[Chat] Creating team chats for:', teamName);
@@ -456,6 +496,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     deleteRoom: deleteRoomMutation.mutateAsync,
     addParticipant: addParticipantMutation.mutateAsync,
     removeParticipant: removeParticipantMutation.mutateAsync,
+    deleteMessage: deleteMessageMutation.mutateAsync,
     createTeamChats: createTeamChatsMutation.mutateAsync,
     createChatRequest: createChatRequestMutation.mutateAsync,
     respondToChatRequest: respondToChatRequestMutation.mutateAsync,
