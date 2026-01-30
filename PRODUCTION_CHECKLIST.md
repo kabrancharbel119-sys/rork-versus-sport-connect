@@ -9,7 +9,7 @@
 | Action | Statut | Détail |
 |--------|--------|--------|
 | Auth backend activée | ⬜ | Mettre `EXPO_PUBLIC_USE_BACKEND_AUTH=true` et déployer le backend avec `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`. L’app utilisera `POST /api/auth/login` et `POST /api/auth/register` (pas de `password_hash` côté client). |
-| URL d’API stable | ⬜ | Remplacer ngrok/tunnel par une URL fixe (ex. `https://api.votredomaine.com`) dans `EXPO_PUBLIC_RORK_API_BASE_URL` pour les builds de production. |
+| URL d’API stable | ✅ | `EXPO_PUBLIC_RORK_API_BASE_URL` est défini en production dans `eas.json` (ex. `https://api.rork.com`). Adapter l’URL si votre backend est hébergé ailleurs, ou utiliser EAS Secrets. |
 | RLS Supabase | ⬜ | Les politiques actuelles sont permissives (`USING (true)`). Voir `supabase-rls-production.sql` et la section « RLS » plus bas. À appliquer quand vous utilisez Supabase Auth ou un backend qui fait toutes les écritures. |
 | CORS | ⬜ | Sur le backend, définir `ALLOWED_ORIGINS` (ex. `https://votredomaine.com,https://app.votredomaine.com`) pour limiter les origines en production. |
 
@@ -19,8 +19,8 @@
 
 | Action | Statut | Détail |
 |--------|--------|--------|
-| URLs web Terms / Privacy | ⬜ | Apple et Google demandent des **URLs web** pour CGU et politique de confidentialité. Héberger des pages (ex. `https://votredomaine.com/terms`, `https://votredomaine.com/privacy`) et les renseigner dans `app.json` → `extra.privacyPolicyUrlWeb` / `termsOfServiceUrlWeb`, ainsi que dans les fiches App Store Connect / Play Console. |
-| Contenu à jour | ⬜ | Vérifier que le contenu des écrans in-app Terms et Privacy correspond aux documents hébergés et à la loi (RGPD, âge minimal, etc.). |
+| URLs web Terms / Privacy | ✅ | `app.json` pointe vers `https://rork.com/privacy` et `https://rork.com/terms`. Les pages HTML sont dans `legal-pages/` (voir `legal-pages/README.md`) : à déployer sur rork.com (Vercel ou autre). |
+| Contenu à jour | ⬜ | Vérifier que le contenu des écrans in-app Terms et Privacy correspond aux documents hébergés et à la loi (RGPD, âge minimal, etc.). Les fichiers `legal-pages/privacy/index.html` et `legal-pages/terms/index.html` sont alignés sur les écrans. |
 
 ---
 
@@ -38,8 +38,8 @@
 | Action | Statut | Détail |
 |--------|--------|--------|
 | `eas.json` | ✅ | Profils `development`, `preview`, `production` déjà présents. Vérifier les env (ex. `EXPO_PUBLIC_USE_BACKEND_AUTH=true` en production). |
-| Variables d’environnement | ⬜ | En production : `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_RORK_API_BASE_URL`, `EXPO_PUBLIC_USE_BACKEND_AUTH`, éventuellement `EXPO_PUBLIC_SENTRY_DSN`. Tout documenté dans `.env.example`. |
-| Backend déployé | ⬜ | Héberger le backend (dans `backend/`) et exposer l’URL utilisée par `EXPO_PUBLIC_RORK_API_BASE_URL`. Sur ce serveur : `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, et optionnellement `RESEND_API_KEY`, `ALLOWED_ORIGINS`. |
+| Variables d’environnement | ✅ | En production dans `eas.json` : `EXPO_PUBLIC_USE_BACKEND_AUTH`, `EXPO_PUBLIC_RORK_API_BASE_URL`, Supabase. Pour plus de sécurité, préférer **EAS Secrets** pour les clés sensibles : `eas secret:create --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "..."`. |
+| Backend déployé | ⬜ | Héberger le backend (dans `backend/`) à l’URL utilisée par `EXPO_PUBLIC_RORK_API_BASE_URL` (ex. `https://api.rork.com`). Sur ce serveur : `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, et optionnellement `RESEND_API_KEY`, `ALLOWED_ORIGINS` (ex. `https://rork.com`). |
 
 ---
 
@@ -76,6 +76,7 @@ Dans les deux cas, **ne pas appliquer** des RLS restrictives tant que l’app ou
 ## Fichiers utiles
 
 - `.env.example` – liste des variables d’environnement.
-- `eas.json` – profils de build EAS.
+- `eas.json` – profils de build EAS (production inclut `EXPO_PUBLIC_RORK_API_BASE_URL`).
+- `legal-pages/` – pages web Privacy et Terms à déployer sur rork.com ; voir `legal-pages/README.md`.
 - `supabase-rls-production.sql` – exemples de politiques RLS pour une future mise en production.
 - `PRODUCTION_CHECKLIST.md` – ce fichier.

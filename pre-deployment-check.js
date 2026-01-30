@@ -146,22 +146,24 @@ function checkAppJson() {
     checkWarning('Version code Android manquant', 'Ajoutez android.versionCode: 1');
   }
 
-  // Privacy & Terms
-  if (expo.privacy && expo.privacy.startsWith('http')) {
-    checkPassed(`Privacy URL: ${expo.privacy}`);
+  // Privacy & Terms (expo.extra pour stores, ou expo root)
+  const privacyUrl = expo.extra?.privacyPolicyUrlWeb || expo.privacy;
+  const termsUrl = expo.extra?.termsOfServiceUrlWeb || expo.termsOfServiceUrl;
+  if (privacyUrl && typeof privacyUrl === 'string' && privacyUrl.startsWith('http')) {
+    checkPassed(`Privacy URL: ${privacyUrl}`);
   } else {
     checkCritical(
       'Privacy URL manquant ou invalide',
-      'Ajoutez une URL HTTPS vers votre page de confidentialité'
+      'Ajoutez extra.privacyPolicyUrlWeb (HTTPS) dans app.json'
     );
   }
 
-  if (expo.termsOfServiceUrl && expo.termsOfServiceUrl.startsWith('http')) {
-    checkPassed(`Terms URL: ${expo.termsOfServiceUrl}`);
+  if (termsUrl && typeof termsUrl === 'string' && termsUrl.startsWith('http')) {
+    checkPassed(`Terms URL: ${termsUrl}`);
   } else {
     checkCritical(
       'Terms URL manquant ou invalide',
-      'Ajoutez une URL HTTPS vers vos CGU'
+      'Ajoutez extra.termsOfServiceUrlWeb (HTTPS) dans app.json'
     );
   }
 

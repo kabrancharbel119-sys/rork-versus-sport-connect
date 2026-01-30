@@ -110,8 +110,8 @@
     "extra": {
       "privacyPolicyUrl": "rork-app://privacy",
       "termsOfServiceUrl": "rork-app://terms",
-      "privacyPolicyUrlWeb": "https://YOUR_DOMAIN.com/privacy",
-      "termsOfServiceUrlWeb": "https://YOUR_DOMAIN.com/terms",
+      "privacyPolicyUrlWeb": "https://rork.com/privacy",
+      "termsOfServiceUrlWeb": "https://rork.com/terms",
       "router": {
         "origin": "https://rork.com/"
       },
