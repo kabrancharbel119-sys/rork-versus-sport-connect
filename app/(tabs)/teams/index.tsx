@@ -38,10 +38,12 @@ export default function TeamsScreen() {
   }, [refetchTeams]));
 
   const teamsInCity = useMemo(() => {
-    const city = user?.city?.trim()?.toLowerCase();
+    // Par défaut, on montre TOUTES les équipes
+    // Le filtre ville sera appliqué seulement si l'utilisateur l'active via le bouton filtre
     const source = allTeamsForDiscover ?? [];
     let list = source.filter(team => {
-      if (city && team.city?.toLowerCase() !== city) return false;
+      // Filtre ville : seulement si activé manuellement (via locationFilter state)
+      // Pour l'instant, on ne filtre PAS automatiquement par ville
       if (sportFilter !== 'all' && team.sport !== sportFilter) return false;
       if (levelFilter !== 'all' && team.level !== levelFilter) return false;
       if (ambianceFilter !== 'all' && team.ambiance !== ambianceFilter) return false;
@@ -59,7 +61,7 @@ export default function TeamsScreen() {
       );
     }
     return list;
-  }, [allTeamsForDiscover, user?.city, sportFilter, levelFilter, ambianceFilter, recruitingFilter, searchQuery, myTeam]);
+  }, [allTeamsForDiscover, sportFilter, levelFilter, ambianceFilter, recruitingFilter, searchQuery, myTeam]);
 
   const recruitingOnly = useMemo(() => {
     const list = (getRecruitingTeams() ?? []).filter(team => {
@@ -320,7 +322,7 @@ export default function TeamsScreen() {
               <Compass size={20} color={Colors.primary.orange} />
               <View style={styles.exploreHeaderText}>
                 <Text style={styles.exploreTitle}>À découvrir</Text>
-                <Text style={styles.exploreSubtitle}>{user?.city ? `Autres équipes à ${user.city}` : 'Autres équipes'}</Text>
+                <Text style={styles.exploreSubtitle}>Toutes les équipes</Text>
               </View>
             </View>
             <View style={styles.searchRow}>
@@ -335,7 +337,7 @@ export default function TeamsScreen() {
             ) : (
               <View style={styles.exploreEmpty}>
                 <Text style={styles.exploreEmptyText}>
-                  {searchQuery.trim() || hasActiveFilters ? 'Aucun résultat' : user?.city ? `Aucune autre équipe à ${user.city}` : 'Aucune équipe'}
+                  {searchQuery.trim() || hasActiveFilters ? 'Aucun résultat' : 'Aucune équipe disponible'}
                 </Text>
                 {(searchQuery.trim() || hasActiveFilters) && (
                   <TouchableOpacity onPress={() => { setSearchQuery(''); clearFilters(); }}><Text style={styles.exploreEmptyLink}>Réinitialiser</Text></TouchableOpacity>
