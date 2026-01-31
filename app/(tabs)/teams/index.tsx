@@ -64,10 +64,8 @@ export default function TeamsScreen() {
   }, [allTeamsForDiscover, sportFilter, levelFilter, ambianceFilter, recruitingFilter, searchQuery, myTeam]);
 
   useEffect(() => {
-    if (__DEV__) {
-      console.log('[Teams] allTeamsForDiscover:', allTeamsForDiscover?.length ?? 0, allTeamsForDiscover);
-      console.log('[Teams] Teams to render (À découvrir):', teamsInCity?.length ?? 0, teamsInCity);
-    }
+    console.log('[Teams] allTeamsForDiscover:', allTeamsForDiscover?.length ?? 0, allTeamsForDiscover);
+    console.log('[Teams] Teams to render (À découvrir):', teamsInCity?.length ?? 0, teamsInCity);
   }, [allTeamsForDiscover, teamsInCity]);
 
   const recruitingOnly = useMemo(() => {
@@ -151,12 +149,12 @@ export default function TeamsScreen() {
   };
 
   const renderExploreRow = (team: ReturnType<typeof getAllTeams>[0], index: number) => {
-    if (__DEV__) console.log('[Teams] Rendering team:', team.id, team.name);
+    console.log('[Teams] Rendering team:', team.id, team.name);
     const isMember = (team.members ?? []).some(m => m.userId === user?.id);
     const isCaptain = team.captainId === user?.id;
     const isFan = (team.fans ?? []).includes(user?.id || '');
     const trulyRecruiting = team.isRecruiting && (team.members ?? []).length < team.maxMembers;
-    if (__DEV__) console.log('[Teams] Team:', team.id, 'isMember:', isMember, 'isFan:', isFan);
+    console.log('[Teams] Team:', team.id, 'isMember:', isMember, 'isFan:', isFan);
     const showFollowButton = !isMember && !isCaptain && !!user;
     return (
       <View key={team.id} style={styles.exploreRow}>
