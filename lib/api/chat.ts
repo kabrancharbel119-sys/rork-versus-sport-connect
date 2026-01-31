@@ -361,7 +361,7 @@ export const chatApi = {
     const status = action === 'accept' ? 'accepted' : 'rejected';
     const updatePayload = {
       status,
-      responded_at: new Date().toISOString(),
+      // responded_at n'existe pas dans la DB, on ne l'envoie pas
     };
 
     console.log('[ChatAPI] Updating request in DB:', requestId, 'payload:', updatePayload);
