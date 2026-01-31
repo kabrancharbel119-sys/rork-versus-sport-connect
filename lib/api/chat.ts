@@ -359,16 +359,32 @@ export const chatApi = {
     if (request.status !== 'pending') throw new Error('Demande déjà traitée');
     
     const status = action === 'accept' ? 'accepted' : 'rejected';
-    const updatePayload = { status, responded_at: new Date().toISOString() };
+    const updatePayload = {
+      status,
+      responded_at: new Date().toISOString(),
+    };
+
+    console.log('[ChatAPI] Updating request in DB:', requestId, 'payload:', updatePayload);
+
     const { data, error } = await supabase
       .from('chat_requests')
-      .update(updatePayload as never)
+      .update(updatePayload)
       .eq('id', requestId)
       .select()
       .single();
-    if (__DEV__) console.log('[ChatAPI] Request updated in DB:', requestId, 'new status:', status, 'data:', data);
-    
-    if (error) throw error;
+
+    console.log('[ChatAPI] Update result - data:', data, 'error:', error);
+
+    if (error) {
+      console.error('[ChatAPI] Supabase update error:', error.message, error);
+      throw new Error(`Failed to update chat request: ${error.message}`);
+    }
+
+    if (!data) {
+      throw new Error('No data returned after update');
+    }
+
+    console.log('[ChatAPI] Request successfully updated:', requestId, 'new status:', status);
     
     // If accepted, create a direct chat room
     if (action === 'accept') {
