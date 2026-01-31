@@ -1,10 +1,11 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { Home, Users, Swords, MessageCircle, User } from 'lucide-react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Colors } from '@/constants/colors';
 import { useChat } from '@/contexts/ChatContext';
 import { useI18n } from '@/contexts/I18nContext';
-import { View, Text, StyleSheet } from 'react-native';
 
 function TabBarBadge({ count }: { count: number }) {
   if (count === 0) return null;
@@ -21,6 +22,7 @@ export default function TabLayout() {
   const unreadCount = getTotalUnread();
 
   return (
+    <ErrorBoundary>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -81,6 +83,7 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </ErrorBoundary>
   );
 }
 

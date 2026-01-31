@@ -70,14 +70,16 @@ export const mapTeamRowToTeam = (row: TeamRow): Team => ({
 
 export const teamsApi = {
   async getAll() {
-    console.log('[TeamsAPI] Getting all teams');
+    console.log('[TeamsAPI] Getting all teams (no filter by userId)');
     const { data, error } = await (supabase
       .from('teams')
       .select('*')
       .order('created_at', { ascending: false }) as any);
     
     if (error) throw error;
-    return ((data || []) as TeamRow[]).map(row => mapTeamRowToTeam(row));
+    const teams = ((data || []) as TeamRow[]).map(row => mapTeamRowToTeam(row));
+    console.log('All teams from DB:', teams.length);
+    return teams;
   },
 
   async getById(id: string) {

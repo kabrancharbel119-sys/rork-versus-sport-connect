@@ -36,7 +36,7 @@ export default function ChatScreen() {
   const filteredUsers = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase();
-    return users.filter(u =>
+    return (users ?? []).filter(u =>
       (u.username.toLowerCase().includes(q) || u.fullName.toLowerCase().includes(q))
     ).slice(0, 10);
   }, [users, searchQuery]);
@@ -141,8 +141,8 @@ export default function ChatScreen() {
   };
 
   const userRooms = useMemo(() => {
-    return [...chatRooms]
-      .filter(r => r.participants.includes(user?.id || ''))
+    return [...(chatRooms ?? [])]
+      .filter(r => (r.participants ?? []).includes(user?.id || ''))
       .sort((a, b) => {
         const aT = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : new Date(a.createdAt).getTime();
         const bT = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : new Date(b.createdAt).getTime();
@@ -196,8 +196,8 @@ export default function ChatScreen() {
 
         <ScrollView testID="chat-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {(() => {
-            const pendingRequests = getPendingChatRequests();
-            const sentRequests = getSentChatRequests();
+            const pendingRequests = getPendingChatRequests() ?? [];
+            const sentRequests = getSentChatRequests() ?? [];
             
             return (
               <>
@@ -340,11 +340,11 @@ export default function ChatScreen() {
                 <MessageCircle size={48} color={Colors.text.muted} />
                 <Text style={styles.noChatsTitle}>Pas de discussions</Text>
                 <Text style={styles.noChatsText}>Créez des discussions pour vos équipes</Text>
-                {myTeams.slice(0, 3).map((team) => (
+                {(myTeams ?? []).slice(0, 3).map((team) => (
                   <TouchableOpacity
                     key={team.id}
                     style={styles.teamQuickStart}
-                    onPress={() => handleCreateTeamChats(team.id, team.name, team.members.map(m => m.userId))}
+                    onPress={() => handleCreateTeamChats(team.id, team.name, (team.members ?? []).map(m => m.userId))}
                   >
                     <Avatar uri={team.logo} name={team.name} size="small" />
                     <Text style={styles.teamQuickStartText}>{team.name}</Text>

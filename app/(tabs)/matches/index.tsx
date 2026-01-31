@@ -33,16 +33,16 @@ export default function MatchesScreen() {
   const { matches, getUpcomingMatches, getUserMatches, getCompletedUserMatches, getMatchesNeedingPlayers, refetchMatches, isLoading, isError } = useMatches();
   const { getOpenTournaments, refetchTournaments } = useTournaments();
   const { getUserById } = useUsers();
-  const openTournaments = getOpenTournaments();
+  const openTournaments = getOpenTournaments() ?? [];
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [filters, setFilters] = useState<Filters>({ sport: 'all', level: 'all', ambiance: 'all', maxDistance: 50, matchType: 'all' });
 
-  const allMatches = getUpcomingMatches();
-  const myMatches = user ? getUserMatches(user.id) : [];
-  const completedMatches = user ? getCompletedUserMatches(user.id) : [];
-  const matchesNeedingPlayers = getMatchesNeedingPlayers(user?.location, filters.maxDistance);
+  const allMatches = getUpcomingMatches() ?? [];
+  const myMatches = user ? (getUserMatches(user.id) ?? []) : [];
+  const completedMatches = user ? (getCompletedUserMatches(user.id) ?? []) : [];
+  const matchesNeedingPlayers = getMatchesNeedingPlayers(user?.location, filters.maxDistance) ?? [];
 
   const filteredMatches = useMemo(() => {
     let result = activeTab === 'all' ? allMatches : activeTab === 'my-matches' ? myMatches : activeTab === 'need-players' ? matchesNeedingPlayers : activeTab === 'history' ? [] : [];
@@ -85,7 +85,8 @@ export default function MatchesScreen() {
 
   const hasActiveFilters = filters.sport !== 'all' || filters.level !== 'all' || filters.ambiance !== 'all' || filters.matchType !== 'all';
 
-  const renderMatchCard = (match: typeof matches[0], showNeedsPlayers = false) => {
+  const matchesList = matches ?? [];
+  const renderMatchCard = (match: typeof matchesList[0], showNeedsPlayers = false) => {
     const creator = getUserById(match.createdBy);
     const isRanked = match.type === 'ranked';
     return (
@@ -188,9 +189,9 @@ export default function MatchesScreen() {
           ))}
         </ScrollView>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />}>
-          {isError && !matches.length ? (
+          {isError && !matchesList.length ? (
             <NetworkError onRetry={onRefresh} isRetrying={refreshing} />
-          ) : isLoading && !matches.length ? (
+          ) : isLoading && !matchesList.length ? (
             <View style={styles.loadingWrap}><ActivityIndicator size="large" color={Colors.primary.orange} /><Text style={styles.loadingText}>Chargement des matchs...</Text></View>
           ) : (
           <>

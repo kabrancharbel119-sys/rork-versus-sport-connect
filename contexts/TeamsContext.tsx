@@ -66,7 +66,7 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
         const localOnly = localTeams.filter(lt => !serverParsed.some(st => st.id === lt.id));
         const merged = [...serverParsed, ...localOnly];
         await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(merged));
-        if (__DEV__) console.log('[Teams] Merged teams - server:', serverParsed.length, 'local only:', localOnly.length);
+        if (__DEV__) console.log('[Teams] All teams from DB:', serverParsed.length, '| Merged (À découvrir):', merged.length, '| local only:', localOnly.length);
         return merged;
       } catch {
         if (__DEV__) console.log('[Teams] Server fetch failed, using local storage');

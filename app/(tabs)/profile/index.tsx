@@ -22,12 +22,12 @@ export default function ProfileScreen() {
   const { getUserTeams, teams } = useTeams();
   const { getUnlockedCount, getTotalXP, checkAndUnlockTrophies, getUserTrophies } = useTrophies();
 
-  const userMatches = user ? getUserMatches(user.id) : [];
-  const userTeams = user ? getUserTeams(user.id) : [];
+  const userMatches = user ? (getUserMatches(user.id) ?? []) : [];
+  const userTeams = user ? (getUserTeams(user.id) ?? []) : [];
   const unlockedTrophiesCount = user ? getUnlockedCount(user.id) : 0;
-  const userTrophyList = user ? getUserTrophies(user.id).filter(t => t.progress >= 100).slice(0, 5) : [];
+  const userTrophyList = user ? (getUserTrophies(user.id) ?? []).filter(t => t.progress >= 100).slice(0, 5) : [];
   const totalXP = user ? getTotalXP(user.id) : 0;
-  const isCaptain = teams.some(t => t.captainId === user?.id);
+  const isCaptain = (teams ?? []).some(t => t.captainId === user?.id);
   const lastRefresh = useRef(0);
 
   useFocusEffect(
@@ -153,7 +153,7 @@ export default function ProfileScreen() {
                 <ChevronRight size={16} color={Colors.text.muted} />
               </View>
               <View style={styles.trophiesBadges}>
-                {userTrophyList.map((ut) => (
+                {(userTrophyList ?? []).map((ut) => (
                   <View key={ut.trophyId} style={[styles.trophyBadge, { borderColor: RARITY_COLORS[ut.trophy?.rarity || 'common'] }]}>
                     <Text style={styles.trophyBadgeIcon}>{ut.trophy?.icon}</Text>
                   </View>

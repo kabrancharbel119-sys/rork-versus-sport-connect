@@ -30,8 +30,8 @@ export default function TeamsScreen() {
   const [followingTeamId, setFollowingTeamId] = useState<string | null>(null);
   const searchInputRef = useRef<TextInput>(null);
 
-  const myTeam = user ? getUserTeams(user.id)[0] : null;
-  const allTeamsForDiscover = getAllTeams();
+  const myTeam = user ? (getUserTeams(user.id) ?? [])[0] : null;
+  const allTeamsForDiscover = getAllTeams() ?? [];
 
   useFocusEffect(useCallback(() => {
     refetchTeams();
@@ -39,7 +39,8 @@ export default function TeamsScreen() {
 
   const teamsInCity = useMemo(() => {
     const city = user?.city?.trim()?.toLowerCase();
-    let list = allTeamsForDiscover.filter(team => {
+    const source = allTeamsForDiscover ?? [];
+    let list = source.filter(team => {
       if (city && team.city?.toLowerCase() !== city) return false;
       if (sportFilter !== 'all' && team.sport !== sportFilter) return false;
       if (levelFilter !== 'all' && team.level !== levelFilter) return false;
@@ -61,7 +62,7 @@ export default function TeamsScreen() {
   }, [allTeamsForDiscover, user?.city, sportFilter, levelFilter, ambianceFilter, recruitingFilter, searchQuery, myTeam]);
 
   const recruitingOnly = useMemo(() => {
-    const list = getRecruitingTeams().filter(team => {
+    const list = (getRecruitingTeams() ?? []).filter(team => {
       if (myTeam && team.id === myTeam.id) return false;
       return true;
     });
@@ -250,15 +251,15 @@ export default function TeamsScreen() {
         <ScrollView
           testID="teams-scroll"
           style={styles.scrollView}
-          contentContainerStyle={[styles.scrollContent, (isError || isLoading) && !allTeamsForDiscover.length && styles.scrollContentGrow]}
+          contentContainerStyle={[styles.scrollContent, (isError || isLoading) && !(allTeamsForDiscover ?? []).length && styles.scrollContentGrow]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />
           }
         >
-          {isError && !allTeamsForDiscover.length ? (
+          {isError && !(allTeamsForDiscover ?? []).length ? (
             <NetworkError onRetry={onRefresh} isRetrying={refreshing} />
-          ) : isLoading && !allTeamsForDiscover.length ? (
+          ) : isLoading && !(allTeamsForDiscover ?? []).length ? (
             <View style={styles.loadingWrap}><ActivityIndicator size="large" color={Colors.primary.orange} /><Text style={styles.loadingText}>Chargement des équipes...</Text></View>
           ) : (
           <>
@@ -301,7 +302,7 @@ export default function TeamsScreen() {
             )}
           </View>
 
-          {recruitingOnly.length > 0 && (
+          {(recruitingOnly ?? []).length > 0 && (
             <View style={styles.exploreSection}>
               <View style={styles.exploreHeader}>
                 <Users size={20} color={Colors.status.success} />
@@ -310,7 +311,7 @@ export default function TeamsScreen() {
                   <Text style={styles.exploreSubtitle}>Uniquement les équipes avec places disponibles</Text>
                 </View>
               </View>
-              <View style={styles.exploreList}>{recruitingOnly.map((team, index) => renderExploreRow(team, index))}</View>
+              <View style={styles.exploreList}>{(recruitingOnly ?? []).map((team, index) => renderExploreRow(team, index))}</View>
             </View>
           )}
 
@@ -329,8 +330,8 @@ export default function TeamsScreen() {
                 {searchQuery.length > 0 && <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={12}><X size={18} color={Colors.text.muted} /></TouchableOpacity>}
               </View>
             </View>
-            {teamsInCity.length > 0 ? (
-              <View style={styles.exploreList}>{teamsInCity.map((team, index) => renderExploreRow(team, index))}</View>
+            {(teamsInCity ?? []).length > 0 ? (
+              <View style={styles.exploreList}>{(teamsInCity ?? []).map((team, index) => renderExploreRow(team, index))}</View>
             ) : (
               <View style={styles.exploreEmpty}>
                 <Text style={styles.exploreEmptyText}>

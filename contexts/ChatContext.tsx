@@ -420,7 +420,6 @@ export const [ChatProvider, useChat] = createContextHook(() => {
       try {
         const result = await chatApi.respondToChatRequest(requestId, currentUserId, action);
         
-        // If accepted, create direct chat room locally
         if (action === 'accept') {
           const directRoom: ChatRoom = {
             id: `direct-${Date.now()}`,
@@ -430,24 +429,21 @@ export const [ChatProvider, useChat] = createContextHook(() => {
             unreadCount: 0,
             createdAt: new Date(),
           };
-          
           const updatedRooms = [...chatRooms, directRoom];
           await saveRooms(updatedRooms);
           queryClient.invalidateQueries({ queryKey: ['chats'] });
+          setChatRequests(prev => {
+            const next = prev.filter(r => r.id !== requestId);
+            if (__DEV__) console.log('Request accepted, removing:', requestId, '| remaining:', next.length);
+            return next;
+          });
+          queryClient.invalidateQueries({ queryKey: ['chatRequests'] });
         }
         
         return result;
       } catch (e) {
         console.log('[Chat] Supabase error, using local');
-        // Update request status locally
-        const updatedRequests = chatRequests.map(r => 
-          r.id === requestId 
-            ? { ...r, status: action === 'accept' ? 'accepted' as const : 'rejected' as const, respondedAt: new Date() }
-            : r
-        );
-        setChatRequests(updatedRequests);
-        
-        // If accepted, create direct chat room locally
+        setChatRequests(prev => prev.filter(r => r.id !== requestId));
         if (action === 'accept') {
           const directRoom: ChatRoom = {
             id: `direct-${Date.now()}`,
@@ -457,19 +453,20 @@ export const [ChatProvider, useChat] = createContextHook(() => {
             unreadCount: 0,
             createdAt: new Date(),
           };
-          
           const updatedRooms = [...chatRooms, directRoom];
           await saveRooms(updatedRooms);
         }
-        
+        queryClient.invalidateQueries({ queryKey: ['chatRequests'] });
         return { success: true };
       }
     },
     onSuccess: (_, variables) => {
       const { requestId, action } = variables;
-      setChatRequests(prev => prev.map(r =>
-        r.id === requestId ? { ...r, status: action === 'accept' ? 'accepted' as const : 'rejected' as const, respondedAt: new Date() } : r
-      ));
+      setChatRequests(prev => {
+        const next = prev.filter(r => r.id !== requestId);
+        if (action === 'accept' && __DEV__) console.log('Request accepted, removing:', requestId);
+        return next;
+      });
       queryClient.invalidateQueries({ queryKey: ['chatRequests'] });
     },
   });

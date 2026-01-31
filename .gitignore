@@ -42,3 +42,5 @@ yarn-error.*
 
 .env
 rork-eslint.config.js
+# Local Netlify folder
+.netlify
