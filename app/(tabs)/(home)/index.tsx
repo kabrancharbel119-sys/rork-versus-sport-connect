@@ -105,11 +105,13 @@ export default function HomeScreen() {
   const userTournaments = user ? getUserTournaments(user.id).slice(0, 5) : [];
 
   useEffect(() => {
-    console.log('[Home] allTeams:', allTeams?.length ?? 0);
-    console.log('[Home] otherTeamsInCity:', otherTeamsInCity?.length ?? 0);
-    console.log('[Home] matches:', matches?.length ?? 0);
-    console.log('[Home] upcomingMatches:', upcomingMatches?.length ?? 0);
-    console.log('[Home] displayMatches (à afficher):', displayMatches?.length ?? 0, displayMatches);
+    if (__DEV__) {
+      console.log('[Home] allTeams:', allTeams?.length ?? 0);
+      console.log('[Home] otherTeamsInCity:', otherTeamsInCity?.length ?? 0);
+      console.log('[Home] matches:', matches?.length ?? 0);
+      console.log('[Home] upcomingMatches:', upcomingMatches?.length ?? 0);
+      console.log('[Home] displayMatches (à afficher):', displayMatches?.length ?? 0, displayMatches);
+    }
   }, [allTeams, otherTeamsInCity, matches, upcomingMatches, displayMatches]);
 
   const onRefresh = async () => {

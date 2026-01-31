@@ -57,9 +57,11 @@ export default function MatchesScreen() {
   }, [activeTab, allMatches, myMatches, matchesNeedingPlayers, filters]);
 
   useEffect(() => {
-    console.log('[Matches] matches (raw):', matches?.length ?? 0, matches);
-    console.log('[Matches] allMatches:', allMatches?.length ?? 0);
-    console.log('[Matches] filteredMatches to render:', filteredMatches?.length ?? 0, filteredMatches);
+    if (__DEV__) {
+      console.log('[Matches] matches (raw):', matches?.length ?? 0, matches);
+      console.log('[Matches] allMatches:', allMatches?.length ?? 0);
+      console.log('[Matches] filteredMatches to render:', filteredMatches?.length ?? 0, filteredMatches);
+    }
   }, [matches, allMatches, filteredMatches]);
 
   const onRefresh = async () => {
@@ -93,7 +95,7 @@ export default function MatchesScreen() {
 
   const matchesList = matches ?? [];
   const renderMatchCard = (match: typeof matchesList[0], showNeedsPlayers = false) => {
-    console.log('[Matches] Rendering match:', match.id, match.sport, match.format);
+    if (__DEV__) console.log('[Matches] Rendering match:', match.id, match.sport, match.format);
     const creator = getUserById(match.createdBy);
     const isRanked = match.type === 'ranked';
     return (
