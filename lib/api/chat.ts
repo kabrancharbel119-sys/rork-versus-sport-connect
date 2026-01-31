@@ -366,6 +366,7 @@ export const chatApi = {
       .eq('id', requestId)
       .select()
       .single();
+    if (__DEV__) console.log('[ChatAPI] Request updated in DB:', requestId, 'new status:', status, 'data:', data);
     
     if (error) throw error;
     

@@ -392,6 +392,9 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     },
     enabled: !!currentUserId,
     refetchInterval: isPollingActive ? 10000 : false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    staleTime: 30000, // 30 secondes
   });
 
   useEffect(() => {
@@ -437,7 +440,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
             if (__DEV__) console.log('Request accepted, removing:', requestId, '| remaining:', next.length);
             return next;
           });
-          queryClient.invalidateQueries({ queryKey: ['chatRequests'] });
+          // Ne pas invalider ici : onSuccess le fera après 1 s
         }
         
         return result;
@@ -462,12 +465,26 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     },
     onSuccess: (_, variables) => {
       const { requestId, action } = variables;
-      setChatRequests(prev => {
-        const next = prev.filter(r => r.id !== requestId);
-        if (action === 'accept' && __DEV__) console.log('Request accepted, removing:', requestId);
-        return next;
-      });
-      queryClient.invalidateQueries({ queryKey: ['chatRequests'] });
+      if (action === 'accept') {
+        if (__DEV__) console.log('[Chat] Request accepted, removing from state:', requestId);
+        
+        // Retire immédiatement de l'état local
+        setChatRequests(prev => {
+          const filtered = prev.filter(r => r.id !== requestId);
+          if (__DEV__) console.log('[Chat] Remaining requests:', filtered.length);
+          return filtered;
+        });
+        
+        // Attends 1 seconde avant d'invalider le cache
+        // pour laisser le temps à Supabase de mettre à jour
+        setTimeout(() => {
+          if (__DEV__) console.log('[Chat] Invalidating cache after delay');
+          queryClient.invalidateQueries({ queryKey: ['chatRequests'] });
+        }, 1000);
+      } else {
+        // Pour reject, invalide immédiatement
+        queryClient.invalidateQueries({ queryKey: ['chatRequests'] });
+      }
     },
   });
 
