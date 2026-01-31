@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -103,6 +103,16 @@ export default function HomeScreen() {
     .slice(0, 3);
   const activeTournaments = getActiveTournaments().filter((t) => t.status === 'registration').slice(0, 5);
   const userTournaments = user ? getUserTournaments(user.id).slice(0, 5) : [];
+
+  useEffect(() => {
+    if (__DEV__) {
+      console.log('[Home] allTeams:', allTeams?.length ?? 0);
+      console.log('[Home] otherTeamsInCity:', otherTeamsInCity?.length ?? 0);
+      console.log('[Home] matches:', matches?.length ?? 0);
+      console.log('[Home] upcomingMatches:', upcomingMatches?.length ?? 0);
+      console.log('[Home] displayMatches (à afficher):', displayMatches?.length ?? 0, displayMatches);
+    }
+  }, [allTeams, otherTeamsInCity, matches, upcomingMatches, displayMatches]);
 
   const onRefresh = async () => {
     setRefreshing(true);

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, Modal, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -56,6 +56,14 @@ export default function MatchesScreen() {
     return result;
   }, [activeTab, allMatches, myMatches, matchesNeedingPlayers, filters]);
 
+  useEffect(() => {
+    if (__DEV__) {
+      console.log('[Matches] matches (raw):', matches?.length ?? 0, matches);
+      console.log('[Matches] allMatches:', allMatches?.length ?? 0);
+      console.log('[Matches] filteredMatches to render:', filteredMatches?.length ?? 0, filteredMatches);
+    }
+  }, [matches, allMatches, filteredMatches]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     try {
@@ -87,6 +95,7 @@ export default function MatchesScreen() {
 
   const matchesList = matches ?? [];
   const renderMatchCard = (match: typeof matchesList[0], showNeedsPlayers = false) => {
+    if (__DEV__) console.log('[Matches] Rendering match:', match.id, match.sport, match.format);
     const creator = getUserById(match.createdBy);
     const isRanked = match.type === 'ranked';
     return (

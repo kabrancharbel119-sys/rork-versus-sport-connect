@@ -126,30 +126,10 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
         queryClient.invalidateQueries({ queryKey: ['matches'] });
         return result;
       } catch (err: any) {
-        console.log('[Matches] Supabase error, using local:', err.message);
-        const newMatch: Match = {
-          id: `match-${Date.now()}`,
-          sport: data.sport,
-          format: data.format,
-          type: data.type,
-          status: 'open',
-          venue: data.venue,
-          dateTime: data.dateTime,
-          duration: data.duration,
-          level: data.level,
-          ambiance: data.ambiance,
-          maxPlayers: data.maxPlayers,
-          registeredPlayers: [data.createdBy],
-          createdBy: data.createdBy,
-          homeTeamId: data.homeTeamId,
-          entryFee: data.entryFee,
-          prize: data.prize,
-          needsPlayers: data.needsPlayers ?? true,
-          location: data.location,
-          createdAt: new Date(),
-        };
-        await saveMatches([...matches, newMatch]);
-        return newMatch;
+        console.error('[Matches] Création échouée (Supabase) – le match ne sera pas visible pour les autres:', err?.message ?? err);
+        // Ne pas sauver en local : sinon le match n'existe que pour cet utilisateur.
+        // On propage l'erreur pour que l'UI affiche un message et que l'utilisateur puisse réessayer.
+        throw err;
       }
     },
   });

@@ -24,6 +24,9 @@ Dès que l’app est en arrière-plan ou fermée, le rafraîchissement s’arrê
 - Vérifier la **connexion internet** du testeur.
 - Sur les listes qui le permettent, utiliser le **tirer pour rafraîchir** (pull-to-refresh) s’il est en place.
 
+- **RLS Supabase** : vérifier que les tables `teams` et `matches` ont une politique SELECT pour tout le monde (voir `supabase-schema.sql`).
+- **Données de test** : exécuter `supabase-cleanup-test-data.sql` dans le SQL Editor Supabase, puis tirer pour actualiser dans l'app.
+
 ---
 
 ## ERR_NGROK_3200: Ngrok Tunnel Offline
