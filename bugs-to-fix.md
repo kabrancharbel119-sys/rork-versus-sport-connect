@@ -14,32 +14,7 @@
 ---
 
 
-## 1. ✅ Connexion valide → token peut être utilisé pour requêtes authentifiées
-
-**Fichier:** `01-auth.test.ts`
-**Sévérité:** 🟡 MEDIUM
-
-### 🔍 Cause
-Erreur non identifiée
-
-### 💡 Correction
-```
-Vérifier les logs pour plus de détails
-```
-
-### ❌ Erreur
-```
-Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeNull[2m()[22m
-
-Received: [31m{"hint": "Double check your Supabase `anon` or `service_role` API key.", "message": "Invalid API key"}[39m
-    at Object.<anonymous> (C:\Users\kabra\rork-versus-sport-connect\__tests__\e2e\01-auth.test.ts:88:19)
-    at processTicksAndRejections (node:internal/process/task_queues:103:5)
-```
-
----
-
-
-## 2. ✅ Supprimer un user → user retiré de la BDD
+## 1. ✅ Supprimer un user → user retiré de la BDD
 
 **Fichier:** `11-admin.test.ts`
 **Sévérité:** 🟡 MEDIUM
@@ -59,6 +34,31 @@ Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected
 Expected: [32m0[39m
 Received: [31m1[39m
     at Object.<anonymous> (C:\Users\kabra\rork-versus-sport-connect\__tests__\e2e\11-admin.test.ts:126:26)
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+```
+
+---
+
+
+## 2. ✅ Connexion valide → token peut être utilisé pour requêtes authentifiées
+
+**Fichier:** `01-auth.test.ts`
+**Sévérité:** 🟡 MEDIUM
+
+### 🔍 Cause
+Erreur non identifiée
+
+### 💡 Correction
+```
+Vérifier les logs pour plus de détails
+```
+
+### ❌ Erreur
+```
+Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeNull[2m()[22m
+
+Received: [31m{"hint": "Double check your Supabase `anon` or `service_role` API key.", "message": "Invalid API key"}[39m
+    at Object.<anonymous> (C:\Users\kabra\rork-versus-sport-connect\__tests__\e2e\01-auth.test.ts:88:19)
     at processTicksAndRejections (node:internal/process/task_queues:103:5)
 ```
 

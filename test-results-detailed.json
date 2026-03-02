@@ -5,20 +5,20 @@
   "skipped": 0,
   "bugs": [
     {
-      "file": "01-auth.test.ts",
-      "test": "✅ Connexion valide → token peut être utilisé pour requêtes authentifiées",
-      "severity": "medium",
-      "cause": "Erreur non identifiée",
-      "fix": "Vérifier les logs pour plus de détails",
-      "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeNull\u001b[2m()\u001b[22m\n\nReceived: \u001b[31m{\"hint\": \"Double check your Supabase `anon` or `service_role` API key.\", \"message\": \"Invalid API key\"}\u001b[39m\n    at Object.<anonymous> (C:\\Users\\kabra\\rork-versus-sport-connect\\__tests__\\e2e\\01-auth.test.ts:88:19)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"
-    },
-    {
       "file": "11-admin.test.ts",
       "test": "✅ Supprimer un user → user retiré de la BDD",
       "severity": "medium",
       "cause": "Erreur non identifiée",
       "fix": "Vérifier les logs pour plus de détails",
       "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n    at Object.<anonymous> (C:\\Users\\kabra\\rork-versus-sport-connect\\__tests__\\e2e\\11-admin.test.ts:126:26)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"
+    },
+    {
+      "file": "01-auth.test.ts",
+      "test": "✅ Connexion valide → token peut être utilisé pour requêtes authentifiées",
+      "severity": "medium",
+      "cause": "Erreur non identifiée",
+      "fix": "Vérifier les logs pour plus de détails",
+      "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeNull\u001b[2m()\u001b[22m\n\nReceived: \u001b[31m{\"hint\": \"Double check your Supabase `anon` or `service_role` API key.\", \"message\": \"Invalid API key\"}\u001b[39m\n    at Object.<anonymous> (C:\\Users\\kabra\\rork-versus-sport-connect\\__tests__\\e2e\\01-auth.test.ts:88:19)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"
     },
     {
       "file": "12-rls-security.test.ts",
@@ -38,77 +38,284 @@
     }
   ],
   "testsByFile": {
+    "11-admin.test.ts": {
+      "total": 11,
+      "passed": 10,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 10226,
+      "tests": [
+        {
+          "name": "✅ Requête avec role=\"admin\" → accès autorisé",
+          "status": "passed",
+          "duration": 941,
+          "error": ""
+        },
+        {
+          "name": "❌ Requête avec role=\"user\" → accès limité",
+          "status": "passed",
+          "duration": 440,
+          "error": ""
+        },
+        {
+          "name": "✅ Lister tous les users → retourne la liste complète",
+          "status": "passed",
+          "duration": 1048,
+          "error": ""
+        },
+        {
+          "name": "✅ Vérifier un user → is_verified passe à true",
+          "status": "passed",
+          "duration": 683,
+          "error": ""
+        },
+        {
+          "name": "✅ Attribuer premium → is_premium passe à true",
+          "status": "passed",
+          "duration": 757,
+          "error": ""
+        },
+        {
+          "name": "✅ Révoquer premium → is_premium repasse à false",
+          "status": "passed",
+          "duration": 809,
+          "error": ""
+        },
+        {
+          "name": "✅ Supprimer un user → user retiré de la BDD",
+          "status": "failed",
+          "duration": 731,
+          "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n    at Object.<anonymous> (C:\\Users\\kabra\\rork-versus-sport-connect\\__tests__\\e2e\\11-admin.test.ts:126:26)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"
+        },
+        {
+          "name": "✅ Admin supprime n'importe quel match → OK",
+          "status": "passed",
+          "duration": 778,
+          "error": ""
+        },
+        {
+          "name": "✅ Admin modifie n'importe quel match → OK",
+          "status": "passed",
+          "duration": 836,
+          "error": ""
+        },
+        {
+          "name": "✅ Count users → chiffre correct",
+          "status": "passed",
+          "duration": 904,
+          "error": ""
+        },
+        {
+          "name": "✅ Count matchs créés → chiffre correct",
+          "status": "passed",
+          "duration": 1058,
+          "error": ""
+        }
+      ]
+    },
+    "01-auth.test.ts": {
+      "total": 12,
+      "passed": 11,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 8023,
+      "tests": [
+        {
+          "name": "✅ Inscription valide → user créé en BDD avec tous les champs",
+          "status": "passed",
+          "duration": 401,
+          "error": ""
+        },
+        {
+          "name": "✅ Inscription → referral_code auto-généré et unique",
+          "status": "passed",
+          "duration": 874,
+          "error": ""
+        },
+        {
+          "name": "✅ Inscription → stats JSONB initialisé",
+          "status": "passed",
+          "duration": 405,
+          "error": ""
+        },
+        {
+          "name": "❌ Inscription numéro déjà utilisé → erreur unique constraint",
+          "status": "passed",
+          "duration": 686,
+          "error": ""
+        },
+        {
+          "name": "❌ Inscription username déjà utilisé → erreur unique constraint",
+          "status": "passed",
+          "duration": 710,
+          "error": ""
+        },
+        {
+          "name": "✅ Connexion valide → retourne JWT token valide",
+          "status": "passed",
+          "duration": 425,
+          "error": ""
+        },
+        {
+          "name": "✅ Connexion valide → token peut être utilisé pour requêtes authentifiées",
+          "status": "failed",
+          "duration": 487,
+          "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeNull\u001b[2m()\u001b[22m\n\nReceived: \u001b[31m{\"hint\": \"Double check your Supabase `anon` or `service_role` API key.\", \"message\": \"Invalid API key\"}\u001b[39m\n    at Object.<anonymous> (C:\\Users\\kabra\\rork-versus-sport-connect\\__tests__\\e2e\\01-auth.test.ts:88:19)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"
+        },
+        {
+          "name": "✅ Mise à jour first_name, last_name → persiste en BDD",
+          "status": "passed",
+          "duration": 629,
+          "error": ""
+        },
+        {
+          "name": "✅ Mise à jour favorite_sports JSONB → structure correcte persistée",
+          "status": "passed",
+          "duration": 631,
+          "error": ""
+        },
+        {
+          "name": "❌ Modifier role via API directe → bloqué",
+          "status": "passed",
+          "duration": 436,
+          "error": ""
+        },
+        {
+          "name": "✅ Inscription avec referral_code valide → referred_by = UUID du parrain",
+          "status": "passed",
+          "duration": 856,
+          "error": ""
+        },
+        {
+          "name": "✅ Deux users ont des referral_code différents",
+          "status": "passed",
+          "duration": 976,
+          "error": ""
+        }
+      ]
+    },
+    "12-rls-security.test.ts": {
+      "total": 7,
+      "passed": 5,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 4087,
+      "tests": [
+        {
+          "name": "❌ Lire les users → refusé ou limité",
+          "status": "passed",
+          "duration": 26,
+          "error": ""
+        },
+        {
+          "name": "❌ Créer quoi que ce soit → refusé",
+          "status": "passed",
+          "duration": 24,
+          "error": ""
+        },
+        {
+          "name": "❌ UserA lit les notifications de UserB → refusé",
+          "status": "failed",
+          "duration": 1008,
+          "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeNull\u001b[2m()\u001b[22m\n\nReceived: \u001b[31m{\"hint\": \"Double check your Supabase `anon` or `service_role` API key.\", \"message\": \"Invalid API key\"}\u001b[39m\n    at Object.<anonymous> (C:\\Users\\kabra\\rork-versus-sport-connect\\__tests__\\e2e\\12-rls-security.test.ts:61:19)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"
+        },
+        {
+          "name": "❌ UserA modifie le profil de UserB → refusé",
+          "status": "passed",
+          "duration": 872,
+          "error": ""
+        },
+        {
+          "name": "❌ Injection SQL dans search query → neutralisée",
+          "status": "failed",
+          "duration": 455,
+          "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeNull\u001b[2m()\u001b[22m\n\nReceived: \u001b[31m{\"hint\": \"Double check your Supabase `anon` or `service_role` API key.\", \"message\": \"Invalid API key\"}\u001b[39m\n    at Object.<anonymous> (C:\\Users\\kabra\\rork-versus-sport-connect\\__tests__\\e2e\\12-rls-security.test.ts:99:19)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"
+        },
+        {
+          "name": "❌ S'attribuer le rôle admin via API → bloqué",
+          "status": "passed",
+          "duration": 497,
+          "error": ""
+        },
+        {
+          "name": "✅ User banni → ses données existantes restent en BDD",
+          "status": "passed",
+          "duration": 651,
+          "error": ""
+        }
+      ]
+    },
     "02-matches-creation.test.ts": {
       "total": 17,
       "passed": 17,
       "failed": 0,
       "skipped": 0,
-      "duration": 14747,
+      "duration": 13617,
       "tests": [
         {
           "name": "✅ Créer match complet → tous les champs insérés correctement",
-          "status": "passed",
-          "duration": 924,
-          "error": ""
-        },
-        {
-          "name": "✅ title est auto-généré si absent → title != null en BDD",
           "status": "passed",
           "duration": 625,
           "error": ""
         },
         {
+          "name": "✅ title est auto-généré si absent → title != null en BDD",
+          "status": "passed",
+          "duration": 620,
+          "error": ""
+        },
+        {
           "name": "✅ match_type = \"friendly\" correctement stocké",
           "status": "passed",
-          "duration": 659,
+          "duration": 628,
           "error": ""
         },
         {
           "name": "✅ match_type = \"ranked\" correctement stocké",
           "status": "passed",
-          "duration": 630,
+          "duration": 599,
           "error": ""
         },
         {
           "name": "✅ start_time mappé depuis dateTime → non null en BDD",
           "status": "passed",
-          "duration": 619,
+          "duration": 636,
           "error": ""
         },
         {
           "name": "✅ registered_players = JSONB tableau vide par défaut",
           "status": "passed",
-          "duration": 776,
+          "duration": 592,
           "error": ""
         },
         {
           "name": "✅ player_stats = JSONB objet vide par défaut",
           "status": "passed",
-          "duration": 780,
+          "duration": 630,
           "error": ""
         },
         {
           "name": "✅ venue_data JSONB correctement sérialisé",
           "status": "passed",
-          "duration": 709,
+          "duration": 599,
           "error": ""
         },
         {
           "name": "✅ status = \"open\" par défaut",
           "status": "passed",
-          "duration": 654,
+          "duration": 600,
           "error": ""
         },
         {
           "name": "✅ needs_players = true/false correctement stocké",
           "status": "passed",
-          "duration": 758,
+          "duration": 709,
           "error": ""
         },
         {
           "name": "❌ entry_fee négatif → refusé",
           "status": "passed",
-          "duration": 527,
+          "duration": 515,
           "error": ""
         },
         {
@@ -120,31 +327,31 @@
         {
           "name": "✅ Rejoindre un match open → joueur ajouté dans registered_players JSONB",
           "status": "passed",
-          "duration": 1261,
+          "duration": 1333,
           "error": ""
         },
         {
           "name": "✅ Se désinscrire → joueur retiré du JSONB",
           "status": "passed",
-          "duration": 1337,
+          "duration": 1238,
           "error": ""
         },
         {
           "name": "✅ Filtrer par sport → uniquement les matchs du sport retournés",
           "status": "passed",
-          "duration": 835,
+          "duration": 844,
           "error": ""
         },
         {
           "name": "✅ Filtrer par statut → uniquement ce statut",
           "status": "passed",
-          "duration": 848,
+          "duration": 830,
           "error": ""
         },
         {
           "name": "✅ Filtrer needs_players = true → uniquement les matchs cherchant joueurs",
           "status": "passed",
-          "duration": 856,
+          "duration": 940,
           "error": ""
         }
       ]
@@ -154,588 +361,108 @@
       "passed": 17,
       "failed": 0,
       "skipped": 0,
-      "duration": 10796,
+      "duration": 10589,
       "tests": [
         {
           "name": "✅ matches.registered_players est un tableau",
           "status": "passed",
-          "duration": 684,
+          "duration": 705,
           "error": ""
         },
         {
           "name": "✅ matches.player_stats est un objet",
           "status": "passed",
-          "duration": 690,
+          "duration": 644,
           "error": ""
         },
         {
           "name": "✅ matches.venue_data est un objet non null",
           "status": "passed",
-          "duration": 641,
+          "duration": 600,
           "error": ""
         },
         {
           "name": "✅ teams.members est un tableau",
           "status": "passed",
-          "duration": 518,
+          "duration": 508,
           "error": ""
         },
         {
           "name": "✅ teams.join_requests est un tableau",
           "status": "passed",
-          "duration": 558,
+          "duration": 498,
           "error": ""
         },
         {
           "name": "✅ teams.co_captain_ids est un tableau de strings",
           "status": "passed",
-          "duration": 543,
+          "duration": 524,
           "error": ""
         },
         {
           "name": "✅ tournaments.registered_teams est un tableau",
           "status": "passed",
-          "duration": 539,
+          "duration": 505,
           "error": ""
         },
         {
           "name": "✅ tournaments.prizes est un objet avec first, second, third",
           "status": "passed",
-          "duration": 527,
+          "duration": 532,
           "error": ""
         },
         {
           "name": "✅ tournaments.managers est un tableau de strings",
           "status": "passed",
-          "duration": 520,
+          "duration": 524,
           "error": ""
         },
         {
           "name": "✅ tournaments.match_ids est un tableau de strings",
           "status": "passed",
-          "duration": 536,
+          "duration": 547,
           "error": ""
         },
         {
           "name": "✅ users.role : uniquement \"user\" | \"admin\" | \"premium\"",
           "status": "passed",
-          "duration": 436,
+          "duration": 411,
           "error": ""
         },
         {
           "name": "✅ matches.status : uniquement \"open\"|\"confirmed\"|\"in_progress\"|\"completed\"|\"cancelled\"",
           "status": "passed",
-          "duration": 679,
+          "duration": 618,
           "error": ""
         },
         {
           "name": "✅ matches.match_type : uniquement \"friendly\"|\"ranked\"|\"tournament\"",
           "status": "passed",
-          "duration": 637,
+          "duration": 651,
           "error": ""
         },
         {
           "name": "✅ tournaments.type : uniquement \"knockout\"|\"round_robin\"|\"mixed\"",
           "status": "passed",
-          "duration": 504,
+          "duration": 549,
           "error": ""
         },
         {
           "name": "✅ tournaments.status : uniquement \"draft\"|\"registration\"|\"in_progress\"|\"completed\"|\"cancelled\"",
           "status": "passed",
-          "duration": 512,
+          "duration": 547,
           "error": ""
         },
         {
           "name": "✅ Appel avec paramètres valides → retourne le type attendu",
           "status": "passed",
-          "duration": 633,
+          "duration": 648,
           "error": ""
         },
         {
           "name": "✅ Appel avec ID inexistant → retourne null ou tableau vide",
           "status": "passed",
-          "duration": 126,
-          "error": ""
-        }
-      ]
-    },
-    "01-auth.test.ts": {
-      "total": 12,
-      "passed": 11,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 8168,
-      "tests": [
-        {
-          "name": "✅ Inscription valide → user créé en BDD avec tous les champs",
-          "status": "passed",
-          "duration": 417,
-          "error": ""
-        },
-        {
-          "name": "✅ Inscription → referral_code auto-généré et unique",
-          "status": "passed",
-          "duration": 939,
-          "error": ""
-        },
-        {
-          "name": "✅ Inscription → stats JSONB initialisé",
-          "status": "passed",
-          "duration": 418,
-          "error": ""
-        },
-        {
-          "name": "❌ Inscription numéro déjà utilisé → erreur unique constraint",
-          "status": "passed",
-          "duration": 710,
-          "error": ""
-        },
-        {
-          "name": "❌ Inscription username déjà utilisé → erreur unique constraint",
-          "status": "passed",
-          "duration": 720,
-          "error": ""
-        },
-        {
-          "name": "✅ Connexion valide → retourne JWT token valide",
-          "status": "passed",
-          "duration": 432,
-          "error": ""
-        },
-        {
-          "name": "✅ Connexion valide → token peut être utilisé pour requêtes authentifiées",
-          "status": "failed",
-          "duration": 442,
-          "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeNull\u001b[2m()\u001b[22m\n\nReceived: \u001b[31m{\"hint\": \"Double check your Supabase `anon` or `service_role` API key.\", \"message\": \"Invalid API key\"}\u001b[39m\n    at Object.<anonymous> (C:\\Users\\kabra\\rork-versus-sport-connect\\__tests__\\e2e\\01-auth.test.ts:88:19)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"
-        },
-        {
-          "name": "✅ Mise à jour first_name, last_name → persiste en BDD",
-          "status": "passed",
-          "duration": 640,
-          "error": ""
-        },
-        {
-          "name": "✅ Mise à jour favorite_sports JSONB → structure correcte persistée",
-          "status": "passed",
-          "duration": 680,
-          "error": ""
-        },
-        {
-          "name": "❌ Modifier role via API directe → bloqué",
-          "status": "passed",
-          "duration": 506,
-          "error": ""
-        },
-        {
-          "name": "✅ Inscription avec referral_code valide → referred_by = UUID du parrain",
-          "status": "passed",
-          "duration": 859,
-          "error": ""
-        },
-        {
-          "name": "✅ Deux users ont des referral_code différents",
-          "status": "passed",
-          "duration": 861,
-          "error": ""
-        }
-      ]
-    },
-    "05-tournaments.test.ts": {
-      "total": 13,
-      "passed": 13,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 9725,
-      "tests": [
-        {
-          "name": "✅ Knockout → status=\"draft\", type=\"knockout\"",
-          "status": "passed",
-          "duration": 511,
-          "error": ""
-        },
-        {
-          "name": "✅ Round Robin → status=\"draft\", type=\"round_robin\"",
-          "status": "passed",
-          "duration": 518,
-          "error": ""
-        },
-        {
-          "name": "✅ prizes JSONB : {first:X, second:Y, third:Z} correctement stocké",
-          "status": "passed",
-          "duration": 504,
-          "error": ""
-        },
-        {
-          "name": "✅ managers JSONB = [] par défaut",
-          "status": "passed",
-          "duration": 521,
-          "error": ""
-        },
-        {
-          "name": "✅ registered_teams JSONB = [] par défaut",
-          "status": "passed",
-          "duration": 531,
-          "error": ""
-        },
-        {
-          "name": "✅ match_ids JSONB = [] par défaut",
-          "status": "passed",
-          "duration": 562,
-          "error": ""
-        },
-        {
-          "name": "✅ Inscrire une équipe → apparaît dans registered_teams JSONB",
-          "status": "passed",
-          "duration": 1033,
-          "error": ""
-        },
-        {
-          "name": "✅ Valider l'inscription → status passe à \"confirmed\"",
-          "status": "passed",
-          "duration": 914,
-          "error": ""
-        },
-        {
-          "name": "✅ Tournoi passe à status=\"registration\" quand ouvert",
-          "status": "passed",
-          "duration": 808,
-          "error": ""
-        },
-        {
-          "name": "✅ Knockout 4 équipes → 3 matchs créés (demis×2 + finale×1)",
-          "status": "passed",
-          "duration": 662,
-          "error": ""
-        },
-        {
-          "name": "✅ Round Robin 4 équipes → 6 matchs créés",
-          "status": "passed",
-          "duration": 654,
-          "error": ""
-        },
-        {
-          "name": "✅ Tournoi completed → winner_id non null",
-          "status": "passed",
-          "duration": 601,
-          "error": ""
-        },
-        {
-          "name": "✅ Distribution des prix → prize_pool correspond à prizes.first + second + third",
-          "status": "passed",
-          "duration": 531,
-          "error": ""
-        }
-      ]
-    },
-    "14-performance-edge-cases.test.ts": {
-      "total": 14,
-      "passed": 14,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 8659,
-      "tests": [
-        {
-          "name": "✅ Récupérer 100 matchs → temps < 2s",
-          "status": "passed",
-          "duration": 104,
-          "error": ""
-        },
-        {
-          "name": "✅ Recherche géographique sur tous les terrains → temps < 1s",
-          "status": "passed",
-          "duration": 150,
-          "error": ""
-        },
-        {
-          "name": "✅ Top 100 ranking → temps < 1s",
-          "status": "passed",
-          "duration": 102,
-          "error": ""
-        },
-        {
-          "name": "✅ Charger le profil complet d'un user → < 1s",
-          "status": "passed",
-          "duration": 507,
-          "error": ""
-        },
-        {
-          "name": "✅ Match avec 0 joueur inscrit → finalisable sans erreur",
-          "status": "passed",
-          "duration": 630,
-          "error": ""
-        },
-        {
-          "name": "✅ Match avec 1 seul joueur → MVP peut être assigné",
-          "status": "passed",
-          "duration": 630,
-          "error": ""
-        },
-        {
-          "name": "✅ Équipe avec 1 seul membre (le capitaine) → peut jouer un match",
-          "status": "passed",
-          "duration": 498,
-          "error": ""
-        },
-        {
-          "name": "✅ User sans player_rankings → appel au ranking retourne null/vide",
-          "status": "passed",
-          "duration": 531,
-          "error": ""
-        },
-        {
-          "name": "✅ Score match très élevé (50-0) → accepté",
-          "status": "passed",
-          "duration": 636,
-          "error": ""
-        },
-        {
-          "name": "✅ ELO à 0 → ne peut pas descendre sous 0",
-          "status": "passed",
-          "duration": 497,
-          "error": ""
-        },
-        {
-          "name": "✅ ELO à 9999 → fonctionne sans overflow",
-          "status": "passed",
-          "duration": 662,
-          "error": ""
-        },
-        {
-          "name": "✅ Nom d'équipe avec caractères spéciaux → accepté",
-          "status": "passed",
-          "duration": 531,
-          "error": ""
-        },
-        {
-          "name": "✅ Bio vide string \"\" → acceptée",
-          "status": "passed",
-          "duration": 401,
-          "error": ""
-        },
-        {
-          "name": "✅ Deux users rejoignent le même match simultanément",
-          "status": "passed",
-          "duration": 1733,
-          "error": ""
-        }
-      ]
-    },
-    "11-admin.test.ts": {
-      "total": 11,
-      "passed": 10,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 9359,
-      "tests": [
-        {
-          "name": "✅ Requête avec role=\"admin\" → accès autorisé",
-          "status": "passed",
-          "duration": 542,
-          "error": ""
-        },
-        {
-          "name": "❌ Requête avec role=\"user\" → accès limité",
-          "status": "passed",
-          "duration": 412,
-          "error": ""
-        },
-        {
-          "name": "✅ Lister tous les users → retourne la liste complète",
-          "status": "passed",
-          "duration": 962,
-          "error": ""
-        },
-        {
-          "name": "✅ Vérifier un user → is_verified passe à true",
-          "status": "passed",
-          "duration": 662,
-          "error": ""
-        },
-        {
-          "name": "✅ Attribuer premium → is_premium passe à true",
-          "status": "passed",
-          "duration": 644,
-          "error": ""
-        },
-        {
-          "name": "✅ Révoquer premium → is_premium repasse à false",
-          "status": "passed",
-          "duration": 677,
-          "error": ""
-        },
-        {
-          "name": "✅ Supprimer un user → user retiré de la BDD",
-          "status": "failed",
-          "duration": 691,
-          "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n    at Object.<anonymous> (C:\\Users\\kabra\\rork-versus-sport-connect\\__tests__\\e2e\\11-admin.test.ts:126:26)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"
-        },
-        {
-          "name": "✅ Admin supprime n'importe quel match → OK",
-          "status": "passed",
-          "duration": 866,
-          "error": ""
-        },
-        {
-          "name": "✅ Admin modifie n'importe quel match → OK",
-          "status": "passed",
-          "duration": 945,
-          "error": ""
-        },
-        {
-          "name": "✅ Count users → chiffre correct",
-          "status": "passed",
-          "duration": 971,
-          "error": ""
-        },
-        {
-          "name": "✅ Count matchs créés → chiffre correct",
-          "status": "passed",
-          "duration": 1041,
-          "error": ""
-        }
-      ]
-    },
-    "04-teams.test.ts": {
-      "total": 11,
-      "passed": 11,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 9966,
-      "tests": [
-        {
-          "name": "✅ Créer une équipe → captain_id = créateur",
-          "status": "passed",
-          "duration": 551,
-          "error": ""
-        },
-        {
-          "name": "✅ Créer → members JSONB contient déjà le capitaine",
-          "status": "passed",
-          "duration": 566,
-          "error": ""
-        },
-        {
-          "name": "✅ Créer → co_captain_ids JSONB = [] par défaut",
-          "status": "passed",
-          "duration": 561,
-          "error": ""
-        },
-        {
-          "name": "✅ Créer → join_requests JSONB = [] par défaut",
-          "status": "passed",
-          "duration": 530,
-          "error": ""
-        },
-        {
-          "name": "✅ Créer → stats JSONB initialisé",
-          "status": "passed",
-          "duration": 566,
-          "error": ""
-        },
-        {
-          "name": "✅ Créer avec is_recruiting = true → persisté",
-          "status": "passed",
-          "duration": 525,
-          "error": ""
-        },
-        {
-          "name": "✅ Envoyer demande → apparaît dans join_requests JSONB",
-          "status": "passed",
-          "duration": 1234,
-          "error": ""
-        },
-        {
-          "name": "✅ Accepter demande → user ajouté dans members JSONB",
-          "status": "passed",
-          "duration": 1151,
-          "error": ""
-        },
-        {
-          "name": "✅ Capitaine peut nommer un co-capitaine → co_captain_ids mis à jour",
-          "status": "passed",
-          "duration": 1216,
-          "error": ""
-        },
-        {
-          "name": "✅ Capitaine peut exclure un membre → retiré de members JSONB",
-          "status": "passed",
-          "duration": 1286,
-          "error": ""
-        },
-        {
-          "name": "✅ Après un match gagné → stats.wins +1, stats.matchesPlayed +1",
-          "status": "passed",
-          "duration": 844,
-          "error": ""
-        }
-      ]
-    },
-    "07-notifications.test.ts": {
-      "total": 10,
-      "passed": 10,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 7463,
-      "tests": [
-        {
-          "name": "✅ Notification type=\"match\" créée correctement",
-          "status": "passed",
-          "duration": 623,
-          "error": ""
-        },
-        {
-          "name": "✅ Notification type=\"team\" créée correctement",
-          "status": "passed",
-          "duration": 574,
-          "error": ""
-        },
-        {
-          "name": "✅ Notification type=\"tournament\" créée correctement",
-          "status": "passed",
-          "duration": 548,
-          "error": ""
-        },
-        {
-          "name": "✅ Notification type=\"ranking\" créée correctement",
-          "status": "passed",
-          "duration": 613,
-          "error": ""
-        },
-        {
-          "name": "✅ Chaque notification a tous les champs requis",
-          "status": "passed",
-          "duration": 548,
-          "error": ""
-        },
-        {
-          "name": "✅ data JSONB contient les métadonnées utiles",
-          "status": "passed",
-          "duration": 537,
-          "error": ""
-        },
-        {
-          "name": "✅ Marquer une notification comme lue → read = true",
-          "status": "passed",
-          "duration": 777,
-          "error": ""
-        },
-        {
-          "name": "✅ Supprimer une notification → retirée de la BDD",
-          "status": "passed",
-          "duration": 772,
-          "error": ""
-        },
-        {
-          "name": "✅ Récupérer uniquement non lues → filtre read=false fonctionnel",
-          "status": "passed",
-          "duration": 878,
-          "error": ""
-        },
-        {
-          "name": "✅ Notifications triées par created_at DESC",
-          "status": "passed",
-          "duration": 909,
+          "duration": 110,
           "error": ""
         }
       ]
@@ -745,24 +472,24 @@
       "passed": 17,
       "failed": 0,
       "skipped": 0,
-      "duration": 10029,
+      "duration": 9375,
       "tests": [
         {
           "name": "✅ PlayerA bat PlayerB → playerA gagne ~8 pts, playerB perd ~8 pts",
           "status": "passed",
-          "duration": 1104,
+          "duration": 1030,
           "error": ""
         },
         {
           "name": "✅ ELO ne peut pas descendre sous 0",
           "status": "passed",
-          "duration": 797,
+          "duration": 782,
           "error": ""
         },
         {
           "name": "✅ K-factor = 40 si matches_played < 10",
           "status": "passed",
-          "duration": 0,
+          "duration": 1,
           "error": ""
         },
         {
@@ -774,61 +501,61 @@
         {
           "name": "✅ K-factor = 16 si matches_played > 20",
           "status": "passed",
-          "duration": 0,
+          "duration": 1,
           "error": ""
         },
         {
           "name": "✅ Premier match ranked → player_rankings créé avec ELO=1000",
           "status": "passed",
-          "duration": 522,
+          "duration": 502,
           "error": ""
         },
         {
           "name": "✅ Un user peut avoir plusieurs player_rankings (un par sport)",
           "status": "passed",
-          "duration": 660,
+          "duration": 609,
           "error": ""
         },
         {
           "name": "✅ Top 100 par sport → trié par elo_rating DESC",
           "status": "passed",
-          "duration": 1811,
+          "duration": 1644,
           "error": ""
         },
         {
           "name": "✅ rank = position dans le classement global",
           "status": "passed",
-          "duration": 844,
+          "duration": 788,
           "error": ""
         },
         {
           "name": "✅ Après victoire → \"W\" ajouté en tête de recent_form",
           "status": "passed",
-          "duration": 769,
+          "duration": 752,
           "error": ""
         },
         {
           "name": "✅ recent_form max 5 caractères",
           "status": "passed",
-          "duration": 758,
+          "duration": 772,
           "error": ""
         },
         {
           "name": "✅ ELO 0-999 → badge \"Bronze\"",
           "status": "passed",
-          "duration": 0,
+          "duration": 1,
           "error": ""
         },
         {
           "name": "✅ ELO 1000-1199 → badge \"Silver\"",
           "status": "passed",
-          "duration": 1,
+          "duration": 0,
           "error": ""
         },
         {
           "name": "✅ ELO 1200-1399 → badge \"Gold\"",
           "status": "passed",
-          "duration": 0,
+          "duration": 1,
           "error": ""
         },
         {
@@ -840,190 +567,175 @@
         {
           "name": "✅ peak_rating = valeur maximale jamais atteinte",
           "status": "passed",
-          "duration": 647,
+          "duration": 535,
           "error": ""
         },
         {
           "name": "✅ peak_rating ne diminue JAMAIS",
           "status": "passed",
-          "duration": 773,
+          "duration": 791,
           "error": ""
         }
       ]
     },
-    "10-trophies.test.ts": {
-      "total": 10,
-      "passed": 10,
+    "04-teams.test.ts": {
+      "total": 11,
+      "passed": 11,
       "failed": 0,
       "skipped": 0,
-      "duration": 6880,
+      "duration": 9838,
       "tests": [
         {
-          "name": "✅ 1er match joué → \"first_match\" débloqué (rarity=common)",
+          "name": "✅ Créer une équipe → captain_id = créateur",
           "status": "passed",
-          "duration": 546,
+          "duration": 516,
           "error": ""
         },
         {
-          "name": "✅ 1ère victoire → \"first_win\" débloqué",
+          "name": "✅ Créer → members JSONB contient déjà le capitaine",
           "status": "passed",
-          "duration": 540,
+          "duration": 515,
           "error": ""
         },
         {
-          "name": "✅ Hat-trick (3 buts dans 1 match) → \"hat_trick\" débloqué (rarity=rare)",
+          "name": "✅ Créer → co_captain_ids JSONB = [] par défaut",
           "status": "passed",
-          "duration": 635,
+          "duration": 526,
           "error": ""
         },
         {
-          "name": "✅ 1er tournoi gagné → \"champion\" débloqué (rarity=legendary)",
+          "name": "✅ Créer → join_requests JSONB = [] par défaut",
           "status": "passed",
-          "duration": 803,
+          "duration": 567,
           "error": ""
         },
         {
-          "name": "✅ Créer une équipe → \"team_creator\" débloqué",
+          "name": "✅ Créer → stats JSONB initialisé",
           "status": "passed",
-          "duration": 907,
+          "duration": 592,
           "error": ""
         },
         {
-          "name": "✅ Atteindre ELO Silver (1000) → trophée débloqué",
+          "name": "✅ Créer avec is_recruiting = true → persisté",
           "status": "passed",
-          "duration": 956,
+          "duration": 532,
           "error": ""
         },
         {
-          "name": "✅ Atteindre ELO Grandmaster (2000) → trophée légendaire débloqué",
+          "name": "✅ Envoyer demande → apparaît dans join_requests JSONB",
           "status": "passed",
-          "duration": 661,
+          "duration": 1225,
           "error": ""
         },
         {
-          "name": "✅ unlocked_at = timestamp du moment exact du déblocage",
+          "name": "✅ Accepter demande → user ajouté dans members JSONB",
           "status": "passed",
-          "duration": 554,
+          "duration": 1220,
           "error": ""
         },
         {
-          "name": "✅ Trophée apparaît dans le profil user",
+          "name": "✅ Capitaine peut nommer un co-capitaine → co_captain_ids mis à jour",
           "status": "passed",
-          "duration": 731,
+          "duration": 1200,
           "error": ""
         },
         {
-          "name": "✅ Rareté correcte : common < rare < epic < legendary",
+          "name": "✅ Capitaine peut exclure un membre → retiré de members JSONB",
           "status": "passed",
-          "duration": 0,
+          "duration": 1198,
+          "error": ""
+        },
+        {
+          "name": "✅ Après un match gagné → stats.wins +1, stats.matchesPlayed +1",
+          "status": "passed",
+          "duration": 782,
           "error": ""
         }
       ]
     },
-    "08-chat.test.ts": {
-      "total": 8,
-      "passed": 8,
+    "05-tournaments.test.ts": {
+      "total": 13,
+      "passed": 13,
       "failed": 0,
       "skipped": 0,
-      "duration": 8350,
+      "duration": 9872,
       "tests": [
         {
-          "name": "✅ Envoyer un message → créé en BDD avec tous les champs",
+          "name": "✅ Knockout → status=\"draft\", type=\"knockout\"",
           "status": "passed",
-          "duration": 701,
+          "duration": 525,
           "error": ""
         },
         {
-          "name": "✅ Récupérer historique → trié par created_at ASC",
+          "name": "✅ Round Robin → status=\"draft\", type=\"round_robin\"",
           "status": "passed",
-          "duration": 1024,
+          "duration": 603,
           "error": ""
         },
         {
-          "name": "✅ Marquer messages lus → read = true",
+          "name": "✅ prizes JSONB : {first:X, second:Y, third:Z} correctement stocké",
           "status": "passed",
-          "duration": 943,
+          "duration": 535,
           "error": ""
         },
         {
-          "name": "✅ Message avec émojis → correctement stocké",
+          "name": "✅ managers JSONB = [] par défaut",
           "status": "passed",
-          "duration": 712,
+          "duration": 515,
           "error": ""
         },
         {
-          "name": "✅ Message long (1000 caractères) → accepté",
+          "name": "✅ registered_teams JSONB = [] par défaut",
           "status": "passed",
-          "duration": 686,
+          "duration": 516,
           "error": ""
         },
         {
-          "name": "✅ Premier message → conversation créée",
+          "name": "✅ match_ids JSONB = [] par défaut",
           "status": "passed",
-          "duration": 945,
+          "duration": 519,
           "error": ""
         },
         {
-          "name": "✅ conversation_id cohérent entre les 2 participants",
+          "name": "✅ Inscrire une équipe → apparaît dans registered_teams JSONB",
           "status": "passed",
-          "duration": 1011,
+          "duration": 868,
           "error": ""
         },
         {
-          "name": "✅ Supprimer conversation → tous les messages supprimés",
+          "name": "✅ Valider l'inscription → status passe à \"confirmed\"",
           "status": "passed",
-          "duration": 1557,
-          "error": ""
-        }
-      ]
-    },
-    "12-rls-security.test.ts": {
-      "total": 7,
-      "passed": 5,
-      "failed": 2,
-      "skipped": 0,
-      "duration": 4058,
-      "tests": [
-        {
-          "name": "❌ Lire les users → refusé ou limité",
-          "status": "passed",
-          "duration": 33,
+          "duration": 954,
           "error": ""
         },
         {
-          "name": "❌ Créer quoi que ce soit → refusé",
+          "name": "✅ Tournoi passe à status=\"registration\" quand ouvert",
           "status": "passed",
-          "duration": 44,
+          "duration": 764,
           "error": ""
         },
         {
-          "name": "❌ UserA lit les notifications de UserB → refusé",
-          "status": "failed",
-          "duration": 1027,
-          "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeNull\u001b[2m()\u001b[22m\n\nReceived: \u001b[31m{\"hint\": \"Double check your Supabase `anon` or `service_role` API key.\", \"message\": \"Invalid API key\"}\u001b[39m\n    at Object.<anonymous> (C:\\Users\\kabra\\rork-versus-sport-connect\\__tests__\\e2e\\12-rls-security.test.ts:61:19)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"
-        },
-        {
-          "name": "❌ UserA modifie le profil de UserB → refusé",
+          "name": "✅ Knockout 4 équipes → 3 matchs créés (demis×2 + finale×1)",
           "status": "passed",
-          "duration": 881,
+          "duration": 817,
           "error": ""
         },
         {
-          "name": "❌ Injection SQL dans search query → neutralisée",
-          "status": "failed",
-          "duration": 446,
-          "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeNull\u001b[2m()\u001b[22m\n\nReceived: \u001b[31m{\"hint\": \"Double check your Supabase `anon` or `service_role` API key.\", \"message\": \"Invalid API key\"}\u001b[39m\n    at Object.<anonymous> (C:\\Users\\kabra\\rork-versus-sport-connect\\__tests__\\e2e\\12-rls-security.test.ts:99:19)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"
-        },
-        {
-          "name": "❌ S'attribuer le rôle admin via API → bloqué",
+          "name": "✅ Round Robin 4 équipes → 6 matchs créés",
           "status": "passed",
-          "duration": 429,
+          "duration": 663,
           "error": ""
         },
         {
-          "name": "✅ User banni → ses données existantes restent en BDD",
+          "name": "✅ Tournoi completed → winner_id non null",
           "status": "passed",
-          "duration": 661,
+          "duration": 656,
+          "error": ""
+        },
+        {
+          "name": "✅ Distribution des prix → prize_pool correspond à prizes.first + second + third",
+          "status": "passed",
+          "duration": 565,
           "error": ""
         }
       ]
@@ -1033,42 +745,330 @@
       "passed": 6,
       "failed": 0,
       "skipped": 0,
-      "duration": 8666,
+      "duration": 8632,
       "tests": [
         {
           "name": "✅ Inscription → profil complété → rejoindre un match → match joué → ELO mis à jour",
           "status": "passed",
-          "duration": 1521,
+          "duration": 1370,
           "error": ""
         },
         {
           "name": "✅ Créer tournoi → inscrire équipes → valider → générer bracket → déclarer vainqueur",
           "status": "passed",
-          "duration": 1096,
+          "duration": 1150,
           "error": ""
         },
         {
           "name": "✅ Créer équipe → accepter membres → participer à matchs → stats correctes",
           "status": "passed",
-          "duration": 2053,
+          "duration": 1904,
           "error": ""
         },
         {
           "name": "✅ AuthContext : login → user disponible",
           "status": "passed",
-          "duration": 402,
+          "duration": 446,
           "error": ""
         },
         {
           "name": "✅ MatchesContext : créer match → apparaît dans la liste",
           "status": "passed",
-          "duration": 737,
+          "duration": 749,
           "error": ""
         },
         {
           "name": "✅ TeamsContext : rejoindre équipe → apparaît dans mes équipes",
           "status": "passed",
-          "duration": 1159,
+          "duration": 1283,
+          "error": ""
+        }
+      ]
+    },
+    "14-performance-edge-cases.test.ts": {
+      "total": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 9022,
+      "tests": [
+        {
+          "name": "✅ Récupérer 100 matchs → temps < 2s",
+          "status": "passed",
+          "duration": 120,
+          "error": ""
+        },
+        {
+          "name": "✅ Recherche géographique sur tous les terrains → temps < 1s",
+          "status": "passed",
+          "duration": 117,
+          "error": ""
+        },
+        {
+          "name": "✅ Top 100 ranking → temps < 1s",
+          "status": "passed",
+          "duration": 106,
+          "error": ""
+        },
+        {
+          "name": "✅ Charger le profil complet d'un user → < 1s",
+          "status": "passed",
+          "duration": 563,
+          "error": ""
+        },
+        {
+          "name": "✅ Match avec 0 joueur inscrit → finalisable sans erreur",
+          "status": "passed",
+          "duration": 672,
+          "error": ""
+        },
+        {
+          "name": "✅ Match avec 1 seul joueur → MVP peut être assigné",
+          "status": "passed",
+          "duration": 659,
+          "error": ""
+        },
+        {
+          "name": "✅ Équipe avec 1 seul membre (le capitaine) → peut jouer un match",
+          "status": "passed",
+          "duration": 581,
+          "error": ""
+        },
+        {
+          "name": "✅ User sans player_rankings → appel au ranking retourne null/vide",
+          "status": "passed",
+          "duration": 539,
+          "error": ""
+        },
+        {
+          "name": "✅ Score match très élevé (50-0) → accepté",
+          "status": "passed",
+          "duration": 659,
+          "error": ""
+        },
+        {
+          "name": "✅ ELO à 0 → ne peut pas descendre sous 0",
+          "status": "passed",
+          "duration": 518,
+          "error": ""
+        },
+        {
+          "name": "✅ ELO à 9999 → fonctionne sans overflow",
+          "status": "passed",
+          "duration": 539,
+          "error": ""
+        },
+        {
+          "name": "✅ Nom d'équipe avec caractères spéciaux → accepté",
+          "status": "passed",
+          "duration": 538,
+          "error": ""
+        },
+        {
+          "name": "✅ Bio vide string \"\" → acceptée",
+          "status": "passed",
+          "duration": 482,
+          "error": ""
+        },
+        {
+          "name": "✅ Deux users rejoignent le même match simultanément",
+          "status": "passed",
+          "duration": 1798,
+          "error": ""
+        }
+      ]
+    },
+    "08-chat.test.ts": {
+      "total": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 7631,
+      "tests": [
+        {
+          "name": "✅ Envoyer un message → créé en BDD avec tous les champs",
+          "status": "passed",
+          "duration": 651,
+          "error": ""
+        },
+        {
+          "name": "✅ Récupérer historique → trié par created_at ASC",
+          "status": "passed",
+          "duration": 997,
+          "error": ""
+        },
+        {
+          "name": "✅ Marquer messages lus → read = true",
+          "status": "passed",
+          "duration": 886,
+          "error": ""
+        },
+        {
+          "name": "✅ Message avec émojis → correctement stocké",
+          "status": "passed",
+          "duration": 658,
+          "error": ""
+        },
+        {
+          "name": "✅ Message long (1000 caractères) → accepté",
+          "status": "passed",
+          "duration": 641,
+          "error": ""
+        },
+        {
+          "name": "✅ Premier message → conversation créée",
+          "status": "passed",
+          "duration": 969,
+          "error": ""
+        },
+        {
+          "name": "✅ conversation_id cohérent entre les 2 participants",
+          "status": "passed",
+          "duration": 840,
+          "error": ""
+        },
+        {
+          "name": "✅ Supprimer conversation → tous les messages supprimés",
+          "status": "passed",
+          "duration": 1371,
+          "error": ""
+        }
+      ]
+    },
+    "07-notifications.test.ts": {
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 7076,
+      "tests": [
+        {
+          "name": "✅ Notification type=\"match\" créée correctement",
+          "status": "passed",
+          "duration": 527,
+          "error": ""
+        },
+        {
+          "name": "✅ Notification type=\"team\" créée correctement",
+          "status": "passed",
+          "duration": 553,
+          "error": ""
+        },
+        {
+          "name": "✅ Notification type=\"tournament\" créée correctement",
+          "status": "passed",
+          "duration": 524,
+          "error": ""
+        },
+        {
+          "name": "✅ Notification type=\"ranking\" créée correctement",
+          "status": "passed",
+          "duration": 541,
+          "error": ""
+        },
+        {
+          "name": "✅ Chaque notification a tous les champs requis",
+          "status": "passed",
+          "duration": 574,
+          "error": ""
+        },
+        {
+          "name": "✅ data JSONB contient les métadonnées utiles",
+          "status": "passed",
+          "duration": 506,
+          "error": ""
+        },
+        {
+          "name": "✅ Marquer une notification comme lue → read = true",
+          "status": "passed",
+          "duration": 746,
+          "error": ""
+        },
+        {
+          "name": "✅ Supprimer une notification → retirée de la BDD",
+          "status": "passed",
+          "duration": 788,
+          "error": ""
+        },
+        {
+          "name": "✅ Récupérer uniquement non lues → filtre read=false fonctionnel",
+          "status": "passed",
+          "duration": 724,
+          "error": ""
+        },
+        {
+          "name": "✅ Notifications triées par created_at DESC",
+          "status": "passed",
+          "duration": 883,
+          "error": ""
+        }
+      ]
+    },
+    "10-trophies.test.ts": {
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 5419,
+      "tests": [
+        {
+          "name": "✅ 1er match joué → \"first_match\" débloqué (rarity=common)",
+          "status": "passed",
+          "duration": 515,
+          "error": ""
+        },
+        {
+          "name": "✅ 1ère victoire → \"first_win\" débloqué",
+          "status": "passed",
+          "duration": 578,
+          "error": ""
+        },
+        {
+          "name": "✅ Hat-trick (3 buts dans 1 match) → \"hat_trick\" débloqué (rarity=rare)",
+          "status": "passed",
+          "duration": 551,
+          "error": ""
+        },
+        {
+          "name": "✅ 1er tournoi gagné → \"champion\" débloqué (rarity=legendary)",
+          "status": "passed",
+          "duration": 528,
+          "error": ""
+        },
+        {
+          "name": "✅ Créer une équipe → \"team_creator\" débloqué",
+          "status": "passed",
+          "duration": 538,
+          "error": ""
+        },
+        {
+          "name": "✅ Atteindre ELO Silver (1000) → trophée débloqué",
+          "status": "passed",
+          "duration": 513,
+          "error": ""
+        },
+        {
+          "name": "✅ Atteindre ELO Grandmaster (2000) → trophée légendaire débloqué",
+          "status": "passed",
+          "duration": 503,
+          "error": ""
+        },
+        {
+          "name": "✅ unlocked_at = timestamp du moment exact du déblocage",
+          "status": "passed",
+          "duration": 508,
+          "error": ""
+        },
+        {
+          "name": "✅ Trophée apparaît dans le profil user",
+          "status": "passed",
+          "duration": 681,
+          "error": ""
+        },
+        {
+          "name": "✅ Rareté correcte : common < rare < epic < legendary",
+          "status": "passed",
+          "duration": 1,
           "error": ""
         }
       ]
@@ -1078,36 +1078,36 @@
       "passed": 5,
       "failed": 0,
       "skipped": 0,
-      "duration": 6623,
+      "duration": 6890,
       "tests": [
         {
           "name": "✅ Passer match à in_progress → live_match_stats créé en BDD",
           "status": "passed",
-          "duration": 837,
+          "duration": 1057,
           "error": ""
         },
         {
           "name": "✅ Goal home → score_home +1 dans live_match_stats",
           "status": "passed",
-          "duration": 1014,
+          "duration": 998,
           "error": ""
         },
         {
           "name": "✅ Goal home → match_event créé : type=\"goal\", team_side=\"home\"",
           "status": "passed",
-          "duration": 806,
+          "duration": 789,
           "error": ""
         },
         {
           "name": "✅ Carton jaune → match_event créé : type=\"card\", data contient {color:\"yellow\"}",
           "status": "passed",
-          "duration": 809,
+          "duration": 763,
           "error": ""
         },
         {
           "name": "✅ Finaliser match ranked → player_rankings mis à jour",
           "status": "passed",
-          "duration": 1624,
+          "duration": 1691,
           "error": ""
         }
       ]
@@ -1117,66 +1117,66 @@
       "passed": 10,
       "failed": 0,
       "skipped": 0,
-      "duration": 1295,
+      "duration": 1315,
       "tests": [
         {
           "name": "✅ Récupérer tous les terrains → au moins 1 résultat",
-          "status": "passed",
-          "duration": 113,
-          "error": ""
-        },
-        {
-          "name": "✅ amenities est TEXT[] → pas de JSONB",
-          "status": "passed",
-          "duration": 103,
-          "error": ""
-        },
-        {
-          "name": "✅ images est TEXT[] → pas de JSONB",
-          "status": "passed",
-          "duration": 104,
-          "error": ""
-        },
-        {
-          "name": "✅ sport est JSONB → peut contenir plusieurs sports",
           "status": "passed",
           "duration": 109,
           "error": ""
         },
         {
-          "name": "✅ latitude et longitude non null et valides",
+          "name": "✅ amenities est TEXT[] → pas de JSONB",
           "status": "passed",
-          "duration": 106,
+          "duration": 115,
           "error": ""
         },
         {
-          "name": "✅ Filtrer par ville → insensible à la casse",
+          "name": "✅ images est TEXT[] → pas de JSONB",
           "status": "passed",
-          "duration": 255,
+          "duration": 114,
           "error": ""
         },
         {
-          "name": "✅ Trier par price_per_hour ASC → prix croissant",
-          "status": "passed",
-          "duration": 111,
-          "error": ""
-        },
-        {
-          "name": "✅ Trier par rating DESC → mieux notés en premier",
-          "status": "passed",
-          "duration": 123,
-          "error": ""
-        },
-        {
-          "name": "❌ Sport inexistant → tableau vide, pas d'erreur",
+          "name": "✅ sport est JSONB → peut contenir plusieurs sports",
           "status": "passed",
           "duration": 113,
           "error": ""
         },
         {
+          "name": "✅ latitude et longitude non null et valides",
+          "status": "passed",
+          "duration": 109,
+          "error": ""
+        },
+        {
+          "name": "✅ Filtrer par ville → insensible à la casse",
+          "status": "passed",
+          "duration": 230,
+          "error": ""
+        },
+        {
+          "name": "✅ Trier par price_per_hour ASC → prix croissant",
+          "status": "passed",
+          "duration": 116,
+          "error": ""
+        },
+        {
+          "name": "✅ Trier par rating DESC → mieux notés en premier",
+          "status": "passed",
+          "duration": 128,
+          "error": ""
+        },
+        {
+          "name": "❌ Sport inexistant → tableau vide, pas d'erreur",
+          "status": "passed",
+          "duration": 115,
+          "error": ""
+        },
+        {
           "name": "❌ Ville inexistante → tableau vide, pas d'erreur",
           "status": "passed",
-          "duration": 105,
+          "duration": 109,
           "error": ""
         }
       ]
