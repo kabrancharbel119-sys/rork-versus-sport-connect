@@ -1,0 +1,1248 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VS Sport - Rapport de Tests E2E</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px; border-radius: 12px 12px 0 0; }
+    .header h1 { font-size: 32px; margin-bottom: 10px; }
+    .header p { opacity: 0.9; font-size: 16px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; padding: 30px; }
+    .stat-card { background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #667eea; }
+    .stat-card h3 { font-size: 14px; color: #666; margin-bottom: 8px; text-transform: uppercase; }
+    .stat-card .value { font-size: 36px; font-weight: bold; color: #333; }
+    .stat-card .percentage { font-size: 14px; color: #999; margin-top: 4px; }
+    .section { padding: 30px; border-top: 1px solid #eee; }
+    .section h2 { font-size: 24px; margin-bottom: 20px; color: #333; }
+    .file-result { margin-bottom: 20px; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
+    .file-header { background: #f8f9fa; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+    .file-header:hover { background: #e9ecef; }
+    .file-name { font-weight: 600; color: #333; }
+    .file-stats { display: flex; gap: 15px; font-size: 14px; }
+    .file-stats span { padding: 4px 12px; border-radius: 12px; background: white; }
+    .passed { color: #28a745; }
+    .failed { color: #dc3545; }
+    .skipped { color: #ffc107; }
+    .progress-bar { height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; margin-top: 10px; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #28a745, #20c997); transition: width 0.3s; }
+    .test-list { padding: 20px; background: white; }
+    .test-item { padding: 12px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+    .test-item:last-child { border-bottom: none; }
+    .test-name { flex: 1; }
+    .test-status { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .status-passed { background: #d4edda; color: #155724; }
+    .status-failed { background: #f8d7da; color: #721c24; }
+    .status-skipped { background: #fff3cd; color: #856404; }
+    .bugs-section { padding: 30px; background: #fff8f8; }
+    .bug-card { background: white; border-left: 4px solid #dc3545; padding: 20px; margin-bottom: 15px; border-radius: 4px; }
+    .bug-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; }
+    .bug-title { font-weight: 600; color: #333; flex: 1; }
+    .severity { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+    .severity-critical { background: #dc3545; color: white; }
+    .severity-high { background: #fd7e14; color: white; }
+    .severity-medium { background: #ffc107; color: #333; }
+    .severity-low { background: #28a745; color: white; }
+    .bug-details { font-size: 14px; color: #666; margin-bottom: 8px; }
+    .bug-fix { background: #e7f3ff; padding: 12px; border-radius: 4px; font-size: 14px; color: #004085; margin-top: 12px; }
+    .bug-fix strong { display: block; margin-bottom: 4px; }
+    .score-badge { display: inline-block; padding: 8px 20px; background: #28a745; color: white; border-radius: 20px; font-size: 24px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🏆 VS Sport - Rapport de Tests E2E</h1>
+      <p>Suite de tests exhaustive pour détecter 100% des bugs</p>
+      <div style="margin-top: 20px;">
+        <span class="score-badge">Score: 98/100</span>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat-card">
+        <h3>Total Tests</h3>
+        <div class="value">168</div>
+      </div>
+      <div class="stat-card">
+        <h3>✅ Passés</h3>
+        <div class="value passed">164</div>
+        <div class="percentage">98%</div>
+      </div>
+      <div class="stat-card">
+        <h3>❌ Échoués</h3>
+        <div class="value failed">4</div>
+        <div class="percentage">2%</div>
+      </div>
+      <div class="stat-card">
+        <h3>⏭ Skippés</h3>
+        <div class="value skipped">0</div>
+        <div class="percentage">0%</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>📊 Résultats par Fichier</h2>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">02-matches-creation.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 17</span>
+              <span class="failed">❌ 0</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ Créer match complet → tous les champs insérés correctement</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ title est auto-généré si absent → title != null en BDD</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ match_type = "friendly" correctement stocké</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ match_type = "ranked" correctement stocké</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ start_time mappé depuis dateTime → non null en BDD</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ registered_players = JSONB tableau vide par défaut</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ player_stats = JSONB objet vide par défaut</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ venue_data JSONB correctement sérialisé</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ status = "open" par défaut</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ needs_players = true/false correctement stocké</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">❌ entry_fee négatif → refusé</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">❌ max_players = 0 → refusé</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Rejoindre un match open → joueur ajouté dans registered_players JSONB</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Se désinscrire → joueur retiré du JSONB</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Filtrer par sport → uniquement les matchs du sport retournés</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Filtrer par statut → uniquement ce statut</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Filtrer needs_players = true → uniquement les matchs cherchant joueurs</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">13-api-types.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 17</span>
+              <span class="failed">❌ 0</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ matches.registered_players est un tableau</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ matches.player_stats est un objet</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ matches.venue_data est un objet non null</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ teams.members est un tableau</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ teams.join_requests est un tableau</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ teams.co_captain_ids est un tableau de strings</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ tournaments.registered_teams est un tableau</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ tournaments.prizes est un objet avec first, second, third</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ tournaments.managers est un tableau de strings</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ tournaments.match_ids est un tableau de strings</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ users.role : uniquement "user" | "admin" | "premium"</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ matches.status : uniquement "open"|"confirmed"|"in_progress"|"completed"|"cancelled"</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ matches.match_type : uniquement "friendly"|"ranked"|"tournament"</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ tournaments.type : uniquement "knockout"|"round_robin"|"mixed"</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ tournaments.status : uniquement "draft"|"registration"|"in_progress"|"completed"|"cancelled"</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Appel avec paramètres valides → retourne le type attendu</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Appel avec ID inexistant → retourne null ou tableau vide</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">01-auth.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 11</span>
+              <span class="failed">❌ 1</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 91.66666666666666%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ Inscription valide → user créé en BDD avec tous les champs</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Inscription → referral_code auto-généré et unique</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Inscription → stats JSONB initialisé</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">❌ Inscription numéro déjà utilisé → erreur unique constraint</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">❌ Inscription username déjà utilisé → erreur unique constraint</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Connexion valide → retourne JWT token valide</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Connexion valide → token peut être utilisé pour requêtes authentifiées</div>
+                <span class="test-status status-failed">failed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Mise à jour first_name, last_name → persiste en BDD</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Mise à jour favorite_sports JSONB → structure correcte persistée</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">❌ Modifier role via API directe → bloqué</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Inscription avec referral_code valide → referred_by = UUID du parrain</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Deux users ont des referral_code différents</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">05-tournaments.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 13</span>
+              <span class="failed">❌ 0</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ Knockout → status="draft", type="knockout"</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Round Robin → status="draft", type="round_robin"</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ prizes JSONB : {first:X, second:Y, third:Z} correctement stocké</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ managers JSONB = [] par défaut</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ registered_teams JSONB = [] par défaut</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ match_ids JSONB = [] par défaut</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Inscrire une équipe → apparaît dans registered_teams JSONB</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Valider l'inscription → status passe à "confirmed"</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Tournoi passe à status="registration" quand ouvert</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Knockout 4 équipes → 3 matchs créés (demis×2 + finale×1)</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Round Robin 4 équipes → 6 matchs créés</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Tournoi completed → winner_id non null</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Distribution des prix → prize_pool correspond à prizes.first + second + third</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">14-performance-edge-cases.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 14</span>
+              <span class="failed">❌ 0</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ Récupérer 100 matchs → temps < 2s</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Recherche géographique sur tous les terrains → temps < 1s</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Top 100 ranking → temps < 1s</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Charger le profil complet d'un user → < 1s</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Match avec 0 joueur inscrit → finalisable sans erreur</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Match avec 1 seul joueur → MVP peut être assigné</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Équipe avec 1 seul membre (le capitaine) → peut jouer un match</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ User sans player_rankings → appel au ranking retourne null/vide</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Score match très élevé (50-0) → accepté</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ ELO à 0 → ne peut pas descendre sous 0</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ ELO à 9999 → fonctionne sans overflow</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Nom d'équipe avec caractères spéciaux → accepté</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Bio vide string "" → acceptée</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Deux users rejoignent le même match simultanément</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">11-admin.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 10</span>
+              <span class="failed">❌ 1</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 90.9090909090909%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ Requête avec role="admin" → accès autorisé</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">❌ Requête avec role="user" → accès limité</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Lister tous les users → retourne la liste complète</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Vérifier un user → is_verified passe à true</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Attribuer premium → is_premium passe à true</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Révoquer premium → is_premium repasse à false</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Supprimer un user → user retiré de la BDD</div>
+                <span class="test-status status-failed">failed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Admin supprime n'importe quel match → OK</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Admin modifie n'importe quel match → OK</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Count users → chiffre correct</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Count matchs créés → chiffre correct</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">04-teams.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 11</span>
+              <span class="failed">❌ 0</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ Créer une équipe → captain_id = créateur</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Créer → members JSONB contient déjà le capitaine</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Créer → co_captain_ids JSONB = [] par défaut</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Créer → join_requests JSONB = [] par défaut</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Créer → stats JSONB initialisé</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Créer avec is_recruiting = true → persisté</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Envoyer demande → apparaît dans join_requests JSONB</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Accepter demande → user ajouté dans members JSONB</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Capitaine peut nommer un co-capitaine → co_captain_ids mis à jour</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Capitaine peut exclure un membre → retiré de members JSONB</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Après un match gagné → stats.wins +1, stats.matchesPlayed +1</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">07-notifications.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 10</span>
+              <span class="failed">❌ 0</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ Notification type="match" créée correctement</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Notification type="team" créée correctement</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Notification type="tournament" créée correctement</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Notification type="ranking" créée correctement</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Chaque notification a tous les champs requis</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ data JSONB contient les métadonnées utiles</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Marquer une notification comme lue → read = true</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Supprimer une notification → retirée de la BDD</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Récupérer uniquement non lues → filtre read=false fonctionnel</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Notifications triées par created_at DESC</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">06-ranking-elo.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 17</span>
+              <span class="failed">❌ 0</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ PlayerA bat PlayerB → playerA gagne ~8 pts, playerB perd ~8 pts</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ ELO ne peut pas descendre sous 0</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ K-factor = 40 si matches_played < 10</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ K-factor = 20 si matches_played entre 10 et 20</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ K-factor = 16 si matches_played > 20</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Premier match ranked → player_rankings créé avec ELO=1000</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Un user peut avoir plusieurs player_rankings (un par sport)</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Top 100 par sport → trié par elo_rating DESC</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ rank = position dans le classement global</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Après victoire → "W" ajouté en tête de recent_form</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ recent_form max 5 caractères</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ ELO 0-999 → badge "Bronze"</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ ELO 1000-1199 → badge "Silver"</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ ELO 1200-1399 → badge "Gold"</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ ELO 2000+ → badge "Grandmaster"</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ peak_rating = valeur maximale jamais atteinte</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ peak_rating ne diminue JAMAIS</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">10-trophies.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 10</span>
+              <span class="failed">❌ 0</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ 1er match joué → "first_match" débloqué (rarity=common)</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ 1ère victoire → "first_win" débloqué</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Hat-trick (3 buts dans 1 match) → "hat_trick" débloqué (rarity=rare)</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ 1er tournoi gagné → "champion" débloqué (rarity=legendary)</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Créer une équipe → "team_creator" débloqué</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Atteindre ELO Silver (1000) → trophée débloqué</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Atteindre ELO Grandmaster (2000) → trophée légendaire débloqué</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ unlocked_at = timestamp du moment exact du déblocage</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Trophée apparaît dans le profil user</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Rareté correcte : common < rare < epic < legendary</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">08-chat.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 8</span>
+              <span class="failed">❌ 0</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ Envoyer un message → créé en BDD avec tous les champs</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Récupérer historique → trié par created_at ASC</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Marquer messages lus → read = true</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Message avec émojis → correctement stocké</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Message long (1000 caractères) → accepté</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Premier message → conversation créée</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ conversation_id cohérent entre les 2 participants</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Supprimer conversation → tous les messages supprimés</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">12-rls-security.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 5</span>
+              <span class="failed">❌ 2</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 71.42857142857143%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">❌ Lire les users → refusé ou limité</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">❌ Créer quoi que ce soit → refusé</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">❌ UserA lit les notifications de UserB → refusé</div>
+                <span class="test-status status-failed">failed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">❌ UserA modifie le profil de UserB → refusé</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">❌ Injection SQL dans search query → neutralisée</div>
+                <span class="test-status status-failed">failed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">❌ S'attribuer le rôle admin via API → bloqué</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ User banni → ses données existantes restent en BDD</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">15-integration-flows.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 6</span>
+              <span class="failed">❌ 0</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ Inscription → profil complété → rejoindre un match → match joué → ELO mis à jour</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Créer tournoi → inscrire équipes → valider → générer bracket → déclarer vainqueur</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Créer équipe → accepter membres → participer à matchs → stats correctes</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ AuthContext : login → user disponible</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ MatchesContext : créer match → apparaît dans la liste</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ TeamsContext : rejoindre équipe → apparaît dans mes équipes</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">03-live-scoring.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 5</span>
+              <span class="failed">❌ 0</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ Passer match à in_progress → live_match_stats créé en BDD</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Goal home → score_home +1 dans live_match_stats</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Goal home → match_event créé : type="goal", team_side="home"</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Carton jaune → match_event créé : type="card", data contient {color:"yellow"}</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Finaliser match ranked → player_rankings mis à jour</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+        <div class="file-result">
+          <div class="file-header">
+            <div class="file-name">09-venues.test.ts</div>
+            <div class="file-stats">
+              <span class="passed">✅ 10</span>
+              <span class="failed">❌ 0</span>
+              <span class="skipped">⏭ 0</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+          <div class="test-list">
+            
+              <div class="test-item">
+                <div class="test-name">✅ Récupérer tous les terrains → au moins 1 résultat</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ amenities est TEXT[] → pas de JSONB</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ images est TEXT[] → pas de JSONB</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ sport est JSONB → peut contenir plusieurs sports</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ latitude et longitude non null et valides</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Filtrer par ville → insensible à la casse</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Trier par price_per_hour ASC → prix croissant</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">✅ Trier par rating DESC → mieux notés en premier</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">❌ Sport inexistant → tableau vide, pas d'erreur</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+              <div class="test-item">
+                <div class="test-name">❌ Ville inexistante → tableau vide, pas d'erreur</div>
+                <span class="test-status status-passed">passed</span>
+              </div>
+            
+          </div>
+        </div>
+      
+    </div>
+
+    
+    <div class="bugs-section">
+      <h2>🐛 Bugs Détectés (4)</h2>
+      
+        <div class="bug-card">
+          <div class="bug-header">
+            <div class="bug-title">✅ Connexion valide → token peut être utilisé pour requêtes authentifiées</div>
+            <span class="severity severity-medium">medium</span>
+          </div>
+          <div class="bug-details">📁 01-auth.test.ts</div>
+          <div class="bug-details">🔍 Cause: Erreur non identifiée</div>
+          <div class="bug-fix">
+            <strong>💡 Correction suggérée:</strong>
+            Vérifier les logs pour plus de détails
+          </div>
+        </div>
+      
+        <div class="bug-card">
+          <div class="bug-header">
+            <div class="bug-title">✅ Supprimer un user → user retiré de la BDD</div>
+            <span class="severity severity-medium">medium</span>
+          </div>
+          <div class="bug-details">📁 11-admin.test.ts</div>
+          <div class="bug-details">🔍 Cause: Erreur non identifiée</div>
+          <div class="bug-fix">
+            <strong>💡 Correction suggérée:</strong>
+            Vérifier les logs pour plus de détails
+          </div>
+        </div>
+      
+        <div class="bug-card">
+          <div class="bug-header">
+            <div class="bug-title">❌ UserA lit les notifications de UserB → refusé</div>
+            <span class="severity severity-critical">critical</span>
+          </div>
+          <div class="bug-details">📁 12-rls-security.test.ts</div>
+          <div class="bug-details">🔍 Cause: Violation de sécurité RLS</div>
+          <div class="bug-fix">
+            <strong>💡 Correction suggérée:</strong>
+            Vérifier les politiques RLS dans Supabase et s'assurer que les permissions sont correctement configurées
+          </div>
+        </div>
+      
+        <div class="bug-card">
+          <div class="bug-header">
+            <div class="bug-title">❌ Injection SQL dans search query → neutralisée</div>
+            <span class="severity severity-critical">critical</span>
+          </div>
+          <div class="bug-details">📁 12-rls-security.test.ts</div>
+          <div class="bug-details">🔍 Cause: Violation de sécurité RLS</div>
+          <div class="bug-fix">
+            <strong>💡 Correction suggérée:</strong>
+            Vérifier les politiques RLS dans Supabase et s'assurer que les permissions sont correctement configurées
+          </div>
+        </div>
+      
+    </div>
+    
+  </div>
+</body>
+</html>

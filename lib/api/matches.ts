@@ -122,7 +122,7 @@ export const matchesApi = {
     return ((data || []) as MatchRow[]).map(row => mapMatchRowToMatch(row));
   },
 
-  async create(userId: string, matchData: {
+  async create(matchData: {
     sport: string;
     format: string;
     type: 'friendly' | 'ranked' | 'tournament';
@@ -141,8 +141,28 @@ export const matchesApi = {
     needsPlayers?: boolean;
     lat?: number;
     lng?: number;
-  }) {
-    console.log('[MatchesAPI] Creating match');
+  }, userId: string) {
+    console.log('[MatchesAPI] Creating match:', matchData);
+    
+    // Validation des champs
+    if (matchData.entryFee !== undefined && matchData.entryFee < 0) {
+      throw new Error('VALIDATION: entry_fee cannot be negative');
+    }
+    if (matchData.maxPlayers !== undefined && matchData.maxPlayers < 2) {
+      throw new Error('VALIDATION: max_players must be at least 2');
+    }
+    if (matchData.prize !== undefined && matchData.prize < 0) {
+      throw new Error('VALIDATION: prize cannot be negative');
+    }
+    
+    // Validation UUID pour venueId
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(matchData.venueId)) {
+      throw new Error('VALIDATION: venueId must be a valid UUID');
+    }
+    if (userId && !uuidRegex.test(userId)) {
+      throw new Error('VALIDATION: userId must be a valid UUID');
+    }
     
     const { data: venue, error: venueError } = await (supabase
       .from('venues')

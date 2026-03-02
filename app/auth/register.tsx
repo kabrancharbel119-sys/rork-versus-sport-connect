@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export default function RegisterScreen() {
   const router = useRouter();
+  const scrollViewRef = useRef<ScrollView>(null);
   
   const { register, isRegisterLoading, registerError } = useAuth();
   const [nationalNumber, setNationalNumber] = useState('');

@@ -217,6 +217,19 @@ export const usersApi = {
       city: userData.city || 'Non spécifié',
       country: userData.country || 'Non spécifié',
       referral_code: referralCode,
+      stats: {
+        matchesPlayed: 0,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        goalsScored: 0,
+        assists: 0,
+        mvpCount: 0,
+        fairPlayScore: 0,
+        tournamentsWon: 0,
+        cashPrizesTotal: 0
+      },
+      bio: '',
     };
     
     const { data, error } = await (supabase
@@ -300,6 +313,39 @@ export const usersApi = {
     return mapUserRowToUser(user);
   },
 
+  async updateProfile(id: string, updates: Partial<{
+    fullName: string;
+    username: string;
+    phone: string;
+    city: string;
+    country: string;
+    bio: string;
+    avatar: string;
+    sports: UserSport[];
+  }>) {
+    logger.debug('UsersAPI', 'Updating user profile:', id);
+    // Champs autorisés pour un user normal (pas admin)
+    const dbUpdates: Record<string, unknown> = {};
+    
+    if (updates.fullName !== undefined) dbUpdates.full_name = updates.fullName;
+    if (updates.username !== undefined) dbUpdates.username = updates.username;
+    if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
+    if (updates.city !== undefined) dbUpdates.city = updates.city;
+    if (updates.country !== undefined) dbUpdates.country = updates.country;
+    if (updates.bio !== undefined) dbUpdates.bio = updates.bio;
+    if (updates.avatar !== undefined) dbUpdates.avatar = updates.avatar;
+    if (updates.sports !== undefined) dbUpdates.sports = updates.sports;
+    
+    const { data, error } = await ((supabase.from('users') as any)
+      .update(dbUpdates)
+      .eq('id', id)
+      .select(USER_PUBLIC_COLUMNS)
+      .single());
+    
+    if (error) throw error;
+    return mapUserRowToUser(data as UserRow);
+  },
+
   async update(id: string, updates: Partial<{
     fullName: string;
     username: string;
@@ -315,7 +361,7 @@ export const usersApi = {
     isPremium: boolean;
     role: string;
   }>) {
-    logger.debug('UsersAPI', 'Updating user:', id);
+    logger.debug('UsersAPI', 'Updating user (admin):', id);
     const dbUpdates: Record<string, unknown> = {};
     
     if (updates.fullName !== undefined) dbUpdates.full_name = updates.fullName;
