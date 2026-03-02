@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,6 +18,7 @@ export default function LoginScreen() {
   const [nationalNumber, setNationalNumber] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const handlePhoneChange = (fullNumber: string, national: string) => {
     setPhone(fullNumber);
@@ -80,10 +81,13 @@ export default function LoginScreen() {
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 30}
         >
           <ScrollView
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: 280 }]}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
           >
             <TouchableOpacity
               style={styles.backButton}
@@ -114,6 +118,7 @@ export default function LoginScreen() {
               />
 
               <Input
+                scrollViewRef={scrollViewRef}
                 testID="input-password"
                 label="Mot de passe"
                 placeholder="••••••••"

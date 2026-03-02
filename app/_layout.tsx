@@ -117,6 +117,7 @@ function RootLayoutNav() {
         <Stack.Screen name="create-tournament" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="tournaments" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="tournament/[id]" />
+        <Stack.Screen name="edit-tournament/[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       </Stack>
     </View>
   );

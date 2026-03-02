@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useRouter, Stack, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,6 +18,7 @@ export default function VerifyEmailScreen() {
   const [countdown, setCountdown] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isResending, setIsResending] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     if (countdown > 0) {
@@ -117,8 +118,8 @@ export default function VerifyEmailScreen() {
       <View style={styles.container}>
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 30}>
+            <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: 280 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
               <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
                 <ArrowLeft size={24} color={Colors.text.primary} />
               </TouchableOpacity>
@@ -145,6 +146,7 @@ export default function VerifyEmailScreen() {
 
               <View style={styles.form}>
                 <Input
+                  scrollViewRef={scrollViewRef}
                   label="Code de vérification"
                   placeholder="000000"
                   value={code}

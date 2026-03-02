@@ -7,8 +7,10 @@ import { Notification } from '@/types';
 import { sendLocalNotification, addNotificationReceivedListener, addNotificationResponseReceivedListener, setBadgeCount } from '@/lib/push-notifications';
 import { emitRealtimeEvent, useRealtime } from '@/lib/realtime';
 import { notificationsApi } from '@/lib/api/notifications';
+import { rankingApi } from '@/lib/api/ranking';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { PlayerRanking } from '@/types/ranking';
 
 const NOTIFICATIONS_STORAGE_KEY_PREFIX = 'vs_notifications';
 const getNotificationsStorageKey = (userId: string | null) =>
@@ -17,9 +19,16 @@ const getNotificationsStorageKey = (userId: string | null) =>
 export const [NotificationsProvider, useNotifications] = createContextHook(() => {
   const queryClient = useQueryClient();
   const { user: authUser } = useAuth();
+  
+  // Tous les useState doivent être au début pour respecter l'ordre des hooks
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isPollingActive, setIsPollingActive] = useState(true);
   const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
+  const [rankingNotification, setRankingNotification] = useState<PlayerRanking | null>(null);
+  const [previousRanking, setPreviousRanking] = useState<PlayerRanking | null>(null);
+  const [showRankingNotification, setShowRankingNotification] = useState(false);
+  
+  // useRef après les useState
   const notificationListenerRef = useRef<any>(null);
   const responseListenerRef = useRef<any>(null);
 
@@ -294,6 +303,64 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
     });
   }, [addNotificationAsync]);
 
+  // Fonctions pour les notifications de classement
+  const checkRankingChanges = useCallback(async (userId: string) => {
+    try {
+      const currentRanking = await rankingApi.getPlayerRanking(userId);
+      
+      if (rankingNotification) {
+        setPreviousRanking(rankingNotification);
+      }
+      
+      setRankingNotification(currentRanking);
+      
+      // Vérifier s'il y a eu des changements significatifs
+      if (previousRanking && currentRanking) {
+        const rankChange = previousRanking.rank - currentRanking.rank;
+        const eloChange = currentRanking.eloRating - previousRanking.eloRating;
+        
+        // Afficher la notification si changement significatif
+        if (Math.abs(rankChange) >= 5 || Math.abs(eloChange) >= 30 || 
+            currentRanking.rank <= 3 || previousRanking.rank <= 3) {
+          setShowRankingNotification(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking ranking changes:', error);
+    }
+  }, [previousRanking, rankingNotification]);
+
+  const notifyRankingUpdate = useCallback(async (userId: string, ranking: PlayerRanking, previousRanking?: PlayerRanking) => {
+    const rankChange = previousRanking ? previousRanking.rank - ranking.rank : 0;
+    const eloChange = previousRanking ? ranking.eloRating - previousRanking.eloRating : 0;
+    
+    let title = '📊 Classement mis à jour';
+    let message = `ELO: ${ranking.eloRating} • Rang: #${ranking.rank}`;
+    
+    if (ranking.rank <= 3 && (!previousRanking || previousRanking.rank > 3)) {
+      title = '🎉 Nouveau record !';
+      message = `Vous êtes maintenant #${ranking.rank} au classement mondial !`;
+    } else if (rankChange > 0) {
+      title = '🚀 Progression !';
+      message = `Vous avez gagné ${rankChange} place${rankChange > 1 ? 's' : ''} au classement !`;
+    } else if (eloChange > 20) {
+      title = '⚡ Performance exceptionnelle !';
+      message = `+${eloChange} points ELO !`;
+    }
+    
+    await addNotificationAsync({
+      userId,
+      type: 'system', // Utiliser 'system' au lieu de 'ranking' pour éviter l'erreur de type
+      title,
+      message,
+      data: { route: '/rankings' }, // Corriger le format du data
+    });
+  }, [addNotificationAsync]);
+
+  const closeRankingNotification = useCallback(() => {
+    setShowRankingNotification(false);
+  }, []);
+
   const getUnreadCount = useCallback(() => notifications.filter(n => !n.isRead).length, [notifications]);
   const getUserNotifications = useCallback((userId: string) => notifications.filter(n => n.userId === userId || n.userId === 'all'), [notifications]);
   const refetchNotifications = useCallback(async () => {
@@ -314,7 +381,13 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
     notifyMatchUpdate,
     notifyTrophyUnlocked,
     notifyNewMessage,
+    notifyRankingUpdate,
+    checkRankingChanges,
+    closeRankingNotification,
     getUnreadCount,
     getUserNotifications,
+    rankingNotification,
+    previousRanking,
+    showRankingNotification,
   };
 });

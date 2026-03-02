@@ -6,7 +6,7 @@ import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Users, Swords, Shield, Ban, Search, ChevronRight, TrendingUp, Settings, BarChart3, Calendar, MapPin, Star, CheckCircle, XCircle, Eye, RefreshCw, Globe, Database, DollarSign, Ticket, UserCheck, Activity, Clock, AlertTriangle, Zap, Server, HardDrive, Send, Lock, Trash2, FileText, Download, MessageSquare, Award, Target, PieChart, Bell, X } from 'lucide-react-native';
+import { ArrowLeft, Users, Swords, Shield, Ban, Search, ChevronRight, TrendingUp, Settings, BarChart3, Calendar, MapPin, Star, CheckCircle, XCircle, Eye, RefreshCw, Globe, Database, DollarSign, Ticket, UserCheck, Activity, Clock, AlertTriangle, Zap, Server, HardDrive, Send, Lock, Trash2, FileText, Download, MessageSquare, Award, Target, PieChart, Bell, X, Plus } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
@@ -708,9 +708,19 @@ export default function AdminScreen() {
 
   const renderTournaments = () => (
     <Card style={styles.listCard}>
-      <Text style={styles.cardTitle}>Tournois ({filteredTournaments.length})</Text>
+      <View style={styles.cardTitleRow}>
+        <Text style={styles.cardTitle}>Tournois ({filteredTournaments.length})</Text>
+        <TouchableOpacity style={styles.adminCreateBtn} onPress={() => router.navigate('/create-tournament' as any)}>
+          <Plus size={18} color="#FFFFFF" />
+          <Text style={styles.adminCreateBtnText}>Créer</Text>
+        </TouchableOpacity>
+      </View>
       {filteredTournaments.length === 0 ? (
-        <View style={styles.emptyState}><Award size={40} color={Colors.text.muted} /><Text style={styles.emptyText}>Aucun tournoi</Text></View>
+        <View style={styles.emptyState}>
+          <Award size={40} color={Colors.text.muted} />
+          <Text style={styles.emptyText}>Aucun tournoi</Text>
+          <Button title="Créer un tournoi" onPress={() => router.navigate('/create-tournament' as any)} variant="orange" size="medium" style={{ marginTop: 12 }} />
+        </View>
       ) : (
         filteredTournaments.map((t) => (
           <TouchableOpacity key={t.id} style={styles.teamItem} onPress={() => router.push(`/tournament/${t.id}`)}>
@@ -720,7 +730,7 @@ export default function AdminScreen() {
               <Text style={styles.teamMeta}>{(sportLabels as Record<string, string>)[t.sport] ?? t.sport} • {t.format} • {(t.registeredTeams?.length ?? 0)}/{t.maxTeams} équipes</Text>
               <Text style={styles.teamStatText}>{t.venue?.name ?? '-'} • {formatDate(t.startDate)}</Text>
             </View>
-            <TouchableOpacity style={styles.actionBtnBlue} onPress={() => router.push(`/tournament/${t.id}`)}><Eye size={16} color={Colors.primary.blue} /></TouchableOpacity>
+            <TouchableOpacity style={styles.actionBtnBlue} onPress={(e) => { e.stopPropagation(); router.push(`/tournament/${t.id}`); }}><Eye size={16} color={Colors.primary.blue} /></TouchableOpacity>
           </TouchableOpacity>
         ))
       )}
@@ -1181,6 +1191,9 @@ const styles = StyleSheet.create({
   filterChipTextActive: { color: '#FFFFFF' },
   listCard: { marginBottom: 16 },
   listHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 },
+  adminCreateBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primary.orange, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
+  adminCreateBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' as const },
   userItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderTopWidth: 1, borderTopColor: Colors.border.light, gap: 12 },
   userInfo: { flex: 1 },
   userNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },

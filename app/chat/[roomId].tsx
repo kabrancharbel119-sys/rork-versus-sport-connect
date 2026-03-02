@@ -284,7 +284,7 @@ export default function ChatRoomScreen() {
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.keyboardView}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 30}
           >
             <ScrollView
               ref={scrollViewRef}

@@ -240,6 +240,27 @@ Integrate with backend services:
 - **Firebase** - Google's mobile development platform
 - **Custom API** - Connect to your own backend
 
+### **Compte administrateur par défaut (VS Sport)**
+
+Un compte admin par défaut peut être créé en base pour disposer de tous les droits (création de tournois, matchs classés, vérification, panneau admin, etc.) dès le déploiement.
+
+1. **Créer le compte en base**  
+   Dans le **Dashboard Supabase** → **SQL Editor**, exécuter le fichier `supabase-seed-default-admin.sql` (à la racine du projet).
+
+2. **Identifiants de connexion par défaut**
+   - **Téléphone :** `+1 438 508 9540`
+   - **Mot de passe :** (défini dans `supabase-seed-default-admin.sql`)
+
+3. **Se connecter dans l’app**  
+   Utiliser ces identifiants sur l’écran de connexion. Le compte a `role=admin`, `is_verified=true` et `is_premium=true` ; toutes les options admin sont accessibles (Panneau admin, création de tournois, matchs classés, etc.).
+
+4. **Changer le mot de passe (recommandé en production)**  
+   Pour générer le hash d’un nouveau mot de passe (même algorithme que l’app) :
+   ```bash
+   node scripts/seed-default-admin.js VotreNouveauMotDePasse
+   ```
+   Puis mettre à jour la ligne `password_hash` dans `supabase-seed-default-admin.sql` avec le hash affiché et ré-exécuter l’`UPDATE` correspondant en SQL, ou mettre à jour directement la ligne de l’utilisateur en base.
+
 ### **Add Authentication**
 
 Implement user authentication:

@@ -241,7 +241,7 @@ export default function MatchesScreen() {
             ) : renderEmptyState(<History size={64} color={Colors.text.muted} />, 'Aucun match joué', 'Vos matchs terminés avec résultat apparaîtront ici.')
           )}
           {activeTab !== 'tournaments' && activeTab !== 'history' && (filteredMatches.length > 0 ? filteredMatches.map(m => renderMatchCard(m, activeTab === 'need-players')) : renderEmptyState(<Swords size={64} color={Colors.text.muted} />, hasActiveFilters ? 'Aucun match trouvé' : 'Aucun match', hasActiveFilters ? 'Essayez de modifier vos filtres' : activeTab === 'need-players' ? 'Aucun match ne cherche de joueurs dans votre zone' : 'Soyez le premier à créer un match !', { title: hasActiveFilters ? 'Effacer les filtres' : 'Créer un match', onPress: hasActiveFilters ? () => setFilters({ sport: 'all', level: 'all', ambiance: 'all', maxDistance: 50, matchType: 'all' }) : () => router.push('/create-match') }))}
-          {activeTab === 'tournaments' && (openTournaments.length > 0 ? openTournaments.map(renderTournamentCard) : renderEmptyState(<Trophy size={64} color={Colors.text.muted} />, 'Aucun tournoi', 'Tirez pour actualiser ou créez un tournoi'))}
+          {activeTab === 'tournaments' && (openTournaments.length > 0 ? openTournaments.map(renderTournamentCard) : renderEmptyState(<Trophy size={64} color={Colors.text.muted} />, 'Aucun tournoi', 'Tirez pour actualiser ou créez un tournoi.', { title: 'Créer un tournoi', onPress: () => router.navigate('/create-tournament' as any) }))}
           </>
           )}
         </ScrollView>

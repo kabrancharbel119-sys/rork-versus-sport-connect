@@ -1,5 +1,7 @@
 import { supabase } from '@/lib/supabase';
+import { matchesApi } from '@/lib/api/matches';
 import type { Tournament, TournamentPrize, Venue, Sport, SkillLevel } from '@/types';
+import type { Match } from '@/types';
 
 export interface TournamentRow {
   id: string;
@@ -22,6 +24,7 @@ export interface TournamentRow {
   winner_id: string | null;
   sponsor_name: string | null;
   sponsor_logo: string | null;
+  managers: string[] | null;
   created_by: string | null;
   created_at: string;
 }
@@ -75,6 +78,7 @@ export function mapTournamentRowToTournament(row: TournamentRow): Tournament {
     winnerId: row.winner_id ?? undefined,
     sponsorName: row.sponsor_name ?? undefined,
     sponsorLogo: row.sponsor_logo ?? undefined,
+    managers: (row.managers as string[]) || [],
     createdBy: row.created_by ?? '',
     createdAt: new Date(row.created_at),
   };
@@ -158,5 +162,153 @@ export const tournamentsApi = {
 
     if (error) throw error;
     return mapTournamentRowToTournament(row as TournamentRow);
+  },
+
+  async update(id: string, data: {
+    name?: string;
+    description?: string;
+    startDate?: string;
+    endDate?: string;
+    entryFee?: number;
+    prizePool?: number;
+    prizes?: TournamentPrize[];
+    status?: 'registration' | 'in_progress' | 'completed';
+    sponsorName?: string;
+    sponsorLogo?: string;
+    matchIds?: string[];
+    winnerId?: string | null;
+    managers?: string[];
+  }) {
+    console.log('[TournamentsAPI] Updating tournament:', id);
+    const payload: Record<string, unknown> = {};
+    if (data.name != null) payload.name = data.name;
+    if (data.description != null) payload.description = data.description;
+    if (data.startDate != null) payload.start_date = data.startDate;
+    if (data.endDate != null) payload.end_date = data.endDate;
+    if (data.entryFee != null) payload.entry_fee = data.entryFee;
+    if (data.prizePool != null) payload.prize_pool = data.prizePool;
+    if (data.prizes != null) payload.prizes = data.prizes;
+    if (data.status != null) payload.status = data.status;
+    if (data.sponsorName != null) payload.sponsor_name = data.sponsorName;
+    if (data.sponsorLogo != null) payload.sponsor_logo = data.sponsorLogo;
+    if (data.matchIds != null) payload.match_ids = data.matchIds;
+    if (data.winnerId !== undefined) payload.winner_id = data.winnerId;
+    if (data.managers != null) payload.managers = data.managers;
+    const { data: row, error } = await (supabase
+      .from('tournaments')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single() as any);
+    if (error) throw error;
+    return mapTournamentRowToTournament(row as TournamentRow);
+  },
+
+  async delete(id: string) {
+    console.log('[TournamentsAPI] Deleting tournament:', id);
+    const { error } = await (supabase.from('tournaments').delete().eq('id', id) as any);
+    if (error) throw error;
+    return { success: true };
+  },
+
+  async registerTeam(tournamentId: string, teamId: string) {
+    if (!tournamentId?.trim() || !teamId?.trim()) throw new Error('Données invalides');
+    const { data: row, error } = await (supabase
+      .from('tournaments')
+      .select('registered_teams, max_teams, status')
+      .eq('id', tournamentId)
+      .single() as any);
+    if (error || !row) throw new Error('Tournoi non trouvé');
+    const status = (row as { status?: string }).status;
+    if (status && status !== 'registration') throw new Error('Inscriptions fermées');
+    const current = (row.registered_teams as string[]) || [];
+    if (current.includes(teamId)) throw new Error('Équipe déjà inscrite');
+    const maxTeams = (row as { max_teams?: number }).max_teams ?? 16;
+    if (current.length >= maxTeams) throw new Error('Tournoi complet');
+    const updated = [...current, teamId];
+    const { error: updateError } = await (supabase
+      .from('tournaments')
+      .update({ registered_teams: updated })
+      .eq('id', tournamentId) as any);
+    if (updateError) throw updateError;
+    return { success: true };
+  },
+
+  async unregisterTeam(tournamentId: string, teamId: string) {
+    if (!tournamentId?.trim() || !teamId?.trim()) throw new Error('Données invalides');
+    const { data: row, error } = await (supabase
+      .from('tournaments')
+      .select('registered_teams, status')
+      .eq('id', tournamentId)
+      .single() as any);
+    if (error || !row) throw new Error('Tournoi non trouvé');
+    const status = (row as { status?: string }).status;
+    if (status && status !== 'registration') throw new Error('Impossible de se désinscrire : inscriptions fermées');
+    const current = (row.registered_teams as string[]) || [];
+    const updated = current.filter((id) => id !== teamId);
+    if (updated.length === current.length) throw new Error('Équipe non inscrite');
+    const { error: updateError } = await (supabase
+      .from('tournaments')
+      .update({ registered_teams: updated })
+      .eq('id', tournamentId) as any);
+    if (updateError) throw updateError;
+    return { success: true };
+  },
+
+  async getMatches(tournamentId: string): Promise<Match[]> {
+    const { data: row, error } = await (supabase
+      .from('tournaments')
+      .select('match_ids')
+      .eq('id', tournamentId)
+      .single() as any);
+    if (error || !row) return [];
+    const matchIds = (row.match_ids as string[]) || [];
+    if (matchIds.length === 0) return [];
+    return matchesApi.getByIds(matchIds);
+  },
+
+  async addMatchToTournament(tournamentId: string, matchId: string) {
+    const { data: row, error } = await (supabase
+      .from('tournaments')
+      .select('match_ids')
+      .eq('id', tournamentId)
+      .single() as any);
+    if (error || !row) throw new Error('Tournoi non trouvé');
+    const current = (row.match_ids as string[]) || [];
+    if (current.includes(matchId)) return { success: true };
+    const updated = [...current, matchId];
+    const { error: updateError } = await (supabase
+      .from('tournaments')
+      .update({ match_ids: updated })
+      .eq('id', tournamentId) as any);
+    if (updateError) throw updateError;
+    return { success: true };
+  },
+
+  async setWinner(tournamentId: string, winnerTeamId: string) {
+    const { error } = await (supabase
+      .from('tournaments')
+      .update({ winner_id: winnerTeamId, status: 'completed' })
+      .eq('id', tournamentId) as any);
+    if (error) throw error;
+    return { success: true };
+  },
+
+  async removeMatchFromTournament(tournamentId: string, matchId: string) {
+    const { data: row, error } = await (supabase
+      .from('tournaments')
+      .select('match_ids')
+      .eq('id', tournamentId)
+      .single() as any);
+    if (error || !row) throw new Error('Tournoi non trouvé');
+    const current = (row.match_ids as string[]) || [];
+    const updated = current.filter((id) => id !== matchId);
+    if (updated.length === current.length) throw new Error('Match non lié à ce tournoi');
+    const { error: updateError } = await (supabase
+      .from('tournaments')
+      .update({ match_ids: updated })
+      .eq('id', tournamentId) as any);
+    if (updateError) throw updateError;
+    return { success: true };
   },
 };

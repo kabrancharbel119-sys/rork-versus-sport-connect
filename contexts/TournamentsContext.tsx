@@ -110,10 +110,11 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
           sponsorName: data.sponsorName,
           sponsorLogo: data.sponsorLogo,
         });
-        queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+        await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
         return result;
       } catch (err: unknown) {
         console.log('[Tournaments] API error, creating locally:', (err as Error)?.message);
+        const current = (queryClient.getQueryData(['tournaments']) as Tournament[] | undefined) ?? [];
         const newTournament: Tournament = {
           id: `tournament-${Date.now()}`,
           name: data.name,
@@ -137,7 +138,7 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
           sponsorLogo: data.sponsorLogo,
           createdAt: new Date(),
         };
-        await saveTournaments([...tournaments, newTournament]);
+        await saveTournaments([...current, newTournament]);
         return newTournament;
       }
     },
@@ -146,67 +147,114 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
   const registerTeamMutation = useMutation({
     mutationFn: async ({ tournamentId, teamId }: { tournamentId: string; teamId: string }) => {
       console.log('[Tournaments] Registering team:', teamId, 'to tournament:', tournamentId);
-      const tournamentIndex = tournaments.findIndex(t => t.id === tournamentId);
+      const current = (queryClient.getQueryData(['tournaments']) as Tournament[] | undefined) ?? [];
+      const tournamentIndex = current.findIndex(t => t.id === tournamentId);
       if (tournamentIndex === -1) throw new Error('Tournoi non trouvé');
-      
-      const tournament = tournaments[tournamentIndex];
+      const tournament = current[tournamentIndex];
       if (tournament.registeredTeams.includes(teamId)) throw new Error('Équipe déjà inscrite');
       if (tournament.registeredTeams.length >= tournament.maxTeams) throw new Error('Tournoi complet');
       if (tournament.status !== 'registration') throw new Error('Inscriptions fermées');
-      
-      const updatedTournaments = [...tournaments];
-      updatedTournaments[tournamentIndex] = {
-        ...tournament,
-        registeredTeams: [...tournament.registeredTeams, teamId],
-      };
-      await saveTournaments(updatedTournaments);
+      try {
+        await tournamentsApi.registerTeam(tournamentId, teamId);
+        await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+      } catch (err) {
+        const updated = [...current];
+        updated[tournamentIndex] = { ...tournament, registeredTeams: [...tournament.registeredTeams, teamId] };
+        await saveTournaments(updated);
+      }
     },
   });
 
   const unregisterTeamMutation = useMutation({
     mutationFn: async ({ tournamentId, teamId }: { tournamentId: string; teamId: string }) => {
       console.log('[Tournaments] Unregistering team:', teamId, 'from tournament:', tournamentId);
-      const tournamentIndex = tournaments.findIndex(t => t.id === tournamentId);
+      const current = (queryClient.getQueryData(['tournaments']) as Tournament[] | undefined) ?? [];
+      const tournamentIndex = current.findIndex(t => t.id === tournamentId);
       if (tournamentIndex === -1) throw new Error('Tournoi non trouvé');
-      
-      const tournament = tournaments[tournamentIndex];
+      const tournament = current[tournamentIndex];
       if (tournament.status !== 'registration') throw new Error('Impossible de se désinscrire');
-      
-      const updatedTournaments = [...tournaments];
-      updatedTournaments[tournamentIndex] = {
-        ...tournament,
-        registeredTeams: tournament.registeredTeams.filter(id => id !== teamId),
-      };
-      await saveTournaments(updatedTournaments);
+      try {
+        await tournamentsApi.unregisterTeam(tournamentId, teamId);
+        await queryClient.refetchQueries({ queryKey: ['tournaments'] });
+      } catch (err) {
+        if (isBusinessError(err)) throw err;
+        const updated = [...current];
+        updated[tournamentIndex] = { ...tournament, registeredTeams: tournament.registeredTeams.filter(id => id !== teamId) };
+        await saveTournaments(updated);
+      }
     },
   });
 
   const updateTournamentMutation = useMutation({
-    mutationFn: async ({ tournamentId, updates }: { tournamentId: string; updates: Partial<Pick<Tournament, 'name' | 'description' | 'startDate' | 'endDate' | 'entryFee' | 'prizePool' | 'prizes' | 'status'>> }) => {
+    mutationFn: async ({ tournamentId, updates }: { tournamentId: string; updates: Partial<Pick<Tournament, 'name' | 'description' | 'startDate' | 'endDate' | 'entryFee' | 'prizePool' | 'prizes' | 'status' | 'winnerId' | 'managers'>> }) => {
       console.log('[Tournaments] Updating tournament:', tournamentId);
-      const tournamentIndex = tournaments.findIndex(t => t.id === tournamentId);
+      const current = (queryClient.getQueryData(['tournaments']) as Tournament[] | undefined) ?? [];
+      const tournamentIndex = current.findIndex(t => t.id === tournamentId);
       if (tournamentIndex === -1) throw new Error('Tournoi non trouvé');
-      
-      const updatedTournaments = [...tournaments];
-      updatedTournaments[tournamentIndex] = {
-        ...updatedTournaments[tournamentIndex],
-        ...updates,
-      };
-      await saveTournaments(updatedTournaments);
-      return updatedTournaments[tournamentIndex];
+      const next = { ...current[tournamentIndex], ...updates };
+      try {
+        await tournamentsApi.update(tournamentId, {
+          name: updates.name,
+          description: updates.description,
+          startDate: updates.startDate?.toISOString?.() ?? (next.startDate instanceof Date ? next.startDate.toISOString() : undefined),
+          endDate: updates.endDate?.toISOString?.() ?? (next.endDate instanceof Date ? next.endDate.toISOString() : undefined),
+          entryFee: updates.entryFee,
+          prizePool: updates.prizePool,
+          prizes: updates.prizes,
+          status: updates.status,
+          winnerId: updates.winnerId,
+          managers: updates.managers,
+        });
+        await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+        return next;
+      } catch (err) {
+        const updated = [...current];
+        updated[tournamentIndex] = next;
+        await saveTournaments(updated);
+        return next;
+      }
+    },
+  });
+
+  const addMatchToTournamentMutation = useMutation({
+    mutationFn: async ({ tournamentId, matchId }: { tournamentId: string; matchId: string }) => {
+      await tournamentsApi.addMatchToTournament(tournamentId, matchId);
+      await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+      await queryClient.invalidateQueries({ queryKey: ['tournament-matches', tournamentId] });
+      await queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+  });
+
+  const setTournamentWinnerMutation = useMutation({
+    mutationFn: async ({ tournamentId, winnerTeamId }: { tournamentId: string; winnerTeamId: string }) => {
+      await tournamentsApi.setWinner(tournamentId, winnerTeamId);
+      await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+    },
+  });
+
+  const removeMatchFromTournamentMutation = useMutation({
+    mutationFn: async ({ tournamentId, matchId }: { tournamentId: string; matchId: string }) => {
+      await tournamentsApi.removeMatchFromTournament(tournamentId, matchId);
+      await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+      await queryClient.invalidateQueries({ queryKey: ['tournament-matches', tournamentId] });
+      await queryClient.invalidateQueries({ queryKey: ['matches'] });
     },
   });
 
   const deleteTournamentMutation = useMutation({
-    mutationFn: async ({ tournamentId, userId }: { tournamentId: string; userId: string }) => {
+    mutationFn: async ({ tournamentId, userId, isAdmin }: { tournamentId: string; userId: string; isAdmin?: boolean }) => {
       console.log('[Tournaments] Deleting tournament:', tournamentId);
-      const tournament = tournaments.find(t => t.id === tournamentId);
+      const current = (queryClient.getQueryData(['tournaments']) as Tournament[] | undefined) ?? [];
+      const tournament = current.find(t => t.id === tournamentId);
       if (!tournament) throw new Error('Tournoi non trouvé');
-      if (tournament.createdBy !== userId) throw new Error('Seul le créateur peut supprimer ce tournoi');
-      if (tournament.status !== 'registration') throw new Error('Impossible de supprimer un tournoi en cours');
-      
-      const updatedTournaments = tournaments.filter(t => t.id !== tournamentId);
-      await saveTournaments(updatedTournaments);
+      if (!isAdmin && tournament.createdBy !== userId) throw new Error('Seul le créateur peut supprimer ce tournoi');
+      if (!isAdmin && tournament.status !== 'registration') throw new Error('Impossible de supprimer un tournoi en cours');
+      try {
+        await tournamentsApi.delete(tournamentId);
+        await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+      } catch (err) {
+        await saveTournaments(current.filter(t => t.id !== tournamentId));
+      }
     },
   });
 
@@ -231,18 +279,36 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
   }, [tournaments]);
 
   const refetchTournaments = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+    await queryClient.refetchQueries({ queryKey: ['tournaments'] });
   }, [queryClient]);
+
+  const isBusinessError = useCallback((err: unknown) => {
+    const msg = (err as Error)?.message ?? '';
+    return [
+      'Tournoi non trouvé',
+      'Équipe déjà inscrite',
+      'Tournoi complet',
+      'Inscriptions fermées',
+      'Équipe non inscrite',
+      'Impossible de se désinscrire',
+      'Données invalides',
+    ].some((s) => msg.includes(s));
+  }, []);
 
   return {
     tournaments,
     isLoading: tournamentsQuery.isLoading,
+    isError: tournamentsQuery.isError,
     refetchTournaments,
+    isRegistering: registerTeamMutation.isPending,
     createTournament: createTournamentMutation.mutateAsync,
     registerTeam: registerTeamMutation.mutateAsync,
     unregisterTeam: unregisterTeamMutation.mutateAsync,
     updateTournament: updateTournamentMutation.mutateAsync,
     deleteTournament: deleteTournamentMutation.mutateAsync,
+    addMatchToTournament: addMatchToTournamentMutation.mutateAsync,
+    setTournamentWinner: setTournamentWinnerMutation.mutateAsync,
+    removeMatchFromTournament: removeMatchFromTournamentMutation.mutateAsync,
     getTournamentById,
     getOpenTournaments,
     getUserTournaments,

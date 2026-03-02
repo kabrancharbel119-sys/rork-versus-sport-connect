@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Modal } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,6 +16,7 @@ import { Sport, SkillLevel, UserSport } from '@/types';
 export default function EditProfileScreen() {
   const router = useRouter();
   const { user, updateProfile, isUpdateLoading, pickAvatar, isPickingAvatar, addSport, removeSport, refreshUser } = useAuth();
+  const scrollViewRef = useRef<ScrollView>(null);
   const [formData, setFormData] = useState({ fullName: '', username: '', phone: '', city: '', country: '', bio: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showSportModal, setShowSportModal] = useState(false);
@@ -182,8 +183,8 @@ export default function EditProfileScreen() {
             <Text style={styles.headerTitle}>Modifier le profil</Text>
             <View style={styles.placeholder} />
           </View>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
-            <ScrollView testID="edit-profile-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 30}>
+            <ScrollView ref={scrollViewRef} testID="edit-profile-scroll" style={styles.scrollView} contentContainerStyle={[styles.scrollContent, { paddingBottom: 320 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
               <View style={styles.avatarSection}>
                 <View style={styles.avatarContainer}>
                   <Avatar uri={user?.avatar} name={user?.fullName} size="xlarge" />
@@ -196,13 +197,13 @@ export default function EditProfileScreen() {
                 </TouchableOpacity>
               </View>
 
-              <Input testID="input-fullname" label="Nom complet" placeholder="Kouamé Yao" value={formData.fullName} onChangeText={(v) => updateField('fullName', v)} autoCapitalize="words" error={errors.fullName} icon={<User size={20} color={Colors.text.muted} />} />
+              <Input scrollViewRef={scrollViewRef} testID="input-fullname" label="Nom complet" placeholder="Kouamé Yao" value={formData.fullName} onChangeText={(v) => updateField('fullName', v)} autoCapitalize="words" error={errors.fullName} icon={<User size={20} color={Colors.text.muted} />} />
               <Input label="Nom d'utilisateur" placeholder="kouame_yao" value={formData.username} onChangeText={(v) => updateField('username', v)} autoCapitalize="none" error={errors.username} icon={<User size={20} color={Colors.text.muted} />} />
-              <Input label="Email" placeholder={user?.email || 'votre@email.com'} value={user?.email || ''} onChangeText={() => {}} editable={false} icon={<Mail size={20} color={Colors.text.muted} />} />
+              <Input scrollViewRef={scrollViewRef} label="Email" placeholder={user?.email || 'votre@email.com'} value={user?.email || ''} onChangeText={() => {}} editable={false} icon={<Mail size={20} color={Colors.text.muted} />} />
               <Input label="Téléphone" placeholder="+225 07 00 00 00" value={formData.phone} onChangeText={(v) => updateField('phone', v)} keyboardType="phone-pad" icon={<Phone size={20} color={Colors.text.muted} />} />
-              <Input label="Ville" placeholder="Abidjan" value={formData.city} onChangeText={(v) => updateField('city', v)} autoCapitalize="words" error={errors.city} icon={<MapPin size={20} color={Colors.text.muted} />} />
+              <Input scrollViewRef={scrollViewRef} label="Ville" placeholder="Abidjan" value={formData.city} onChangeText={(v) => updateField('city', v)} autoCapitalize="words" error={errors.city} icon={<MapPin size={20} color={Colors.text.muted} />} />
               <Input label="Pays" placeholder="Côte d'Ivoire" value={formData.country} onChangeText={(v) => updateField('country', v)} autoCapitalize="words" icon={<MapPin size={20} color={Colors.text.muted} />} />
-              <Input label="Bio" placeholder="Parlez de vous..." value={formData.bio} onChangeText={(v) => updateField('bio', v)} multiline numberOfLines={4} icon={<FileText size={20} color={Colors.text.muted} />} />
+              <Input scrollViewRef={scrollViewRef} label="Bio" placeholder="Parlez de vous..." value={formData.bio} onChangeText={(v) => updateField('bio', v)} multiline numberOfLines={4} icon={<FileText size={20} color={Colors.text.muted} />} />
 
               <View style={styles.sportsSection}>
                 <View style={styles.sportsSectionHeader}>

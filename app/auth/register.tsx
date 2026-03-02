@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -107,10 +107,14 @@ export default function RegisterScreen() {
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 30}
         >
           <ScrollView
-            contentContainerStyle={styles.scrollContent}
+            ref={scrollViewRef}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: 320 }]}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
           >
             <TouchableOpacity
               style={styles.backButton}
@@ -131,6 +135,7 @@ export default function RegisterScreen() {
 
             <View style={styles.form}>
               <Input
+                scrollViewRef={scrollViewRef}
                 testID="input-fullname"
                 label="Prénom"
                 placeholder="Kouamé"
@@ -142,6 +147,7 @@ export default function RegisterScreen() {
               />
 
               <Input
+                scrollViewRef={scrollViewRef}
                 testID="input-lastname"
                 label="Nom"
                 placeholder="Yao"
@@ -173,6 +179,7 @@ export default function RegisterScreen() {
               />
 
               <Input
+                scrollViewRef={scrollViewRef}
                 label="Confirmer le mot de passe"
                 placeholder="••••••••"
                 value={formData.confirmPassword}

@@ -23,6 +23,9 @@ interface CreateMatchData {
   maxPlayers: number;
   createdBy: string;
   homeTeamId?: string;
+  awayTeamId?: string;
+  tournamentId?: string;
+  roundLabel?: string;
   entryFee?: number;
   prize?: number;
   needsPlayers?: boolean;
@@ -117,6 +120,9 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
           ambiance: data.ambiance,
           maxPlayers: data.maxPlayers,
           homeTeamId: data.homeTeamId,
+          awayTeamId: data.awayTeamId,
+          tournamentId: data.tournamentId,
+          roundLabel: data.roundLabel,
           entryFee: data.entryFee,
           prize: data.prize,
           needsPlayers: data.needsPlayers ?? true,
@@ -137,24 +143,13 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
   const joinMatchMutation = useMutation({
     mutationFn: async ({ matchId, userId }: { matchId: string; userId: string }) => {
       console.log('[Matches] Joining match:', matchId);
-      try {
-        await matchesApi.join(matchId, userId);
-      } catch (err: any) {
-        console.log('[Matches] Supabase error:', err.message);
-      }
+      await matchesApi.join(matchId, userId);
       
-      const matchIndex = matches.findIndex(m => m.id === matchId);
-      if (matchIndex === -1) throw new Error('Match non trouvé');
-      
-      const match = matches[matchIndex];
-      if (match.registeredPlayers.includes(userId)) throw new Error('Déjà inscrit');
-      if (match.registeredPlayers.length >= match.maxPlayers) throw new Error('Match complet');
-      
-      const updatedMatches = [...matches];
-      updatedMatches[matchIndex] = {
-        ...match,
-        registeredPlayers: [...match.registeredPlayers, userId],
-      };
+      const updatedMatches = matches.map(m =>
+        m.id === matchId
+          ? { ...m, registeredPlayers: [...m.registeredPlayers, userId] }
+          : m
+      );
       await saveMatches(updatedMatches);
     },
   });
@@ -162,20 +157,13 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
   const leaveMatchMutation = useMutation({
     mutationFn: async ({ matchId, userId }: { matchId: string; userId: string }) => {
       console.log('[Matches] Leaving match:', matchId);
-      try {
-        await matchesApi.leave(matchId, userId);
-      } catch (err: any) {
-        console.log('[Matches] Supabase error:', err.message);
-      }
+      await matchesApi.leave(matchId, userId);
       
-      const matchIndex = matches.findIndex(m => m.id === matchId);
-      if (matchIndex === -1) throw new Error('Match non trouvé');
-      
-      const updatedMatches = [...matches];
-      updatedMatches[matchIndex] = {
-        ...updatedMatches[matchIndex],
-        registeredPlayers: updatedMatches[matchIndex].registeredPlayers.filter(id => id !== userId),
-      };
+      const updatedMatches = matches.map(m =>
+        m.id === matchId
+          ? { ...m, registeredPlayers: m.registeredPlayers.filter(id => id !== userId) }
+          : m
+      );
       await saveMatches(updatedMatches);
     },
   });
@@ -183,23 +171,15 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
   const updateMatchScoreMutation = useMutation({
     mutationFn: async ({ matchId, homeScore, awayScore, playerStats }: { matchId: string; homeScore: number; awayScore: number; playerStats?: MatchPlayerStats[] }) => {
       console.log('[Matches] Updating match score:', matchId);
-      try {
-        await matchesApi.updateScore(matchId, homeScore, awayScore, playerStats);
-      } catch (err: any) {
-        console.log('[Matches] Supabase error:', err.message);
-      }
-      
-      const matchIndex = matches.findIndex(m => m.id === matchId);
-      if (matchIndex === -1) throw new Error('Match non trouvé');
-      
-      const updatedMatches = [...matches];
-      updatedMatches[matchIndex] = {
-        ...updatedMatches[matchIndex],
-        score: { home: homeScore, away: awayScore },
-        status: 'completed',
-        playerStats,
-      };
+      const saved = await matchesApi.updateScore(matchId, homeScore, awayScore, playerStats);
+
+      const updatedMatches = matches.map(m =>
+        m.id === matchId
+          ? { ...m, score: { home: homeScore, away: awayScore }, status: 'completed' as const, playerStats }
+          : m
+      );
       await saveMatches(updatedMatches);
+      return saved;
     },
   });
 

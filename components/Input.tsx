@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -6,9 +6,13 @@ import {
   Text,
   TouchableOpacity,
   ViewStyle,
+  ScrollView,
+  findNodeHandle,
 } from 'react-native';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
+
+const FOCUS_SCROLL_OFFSET = 200;
 
 interface InputProps {
   label?: string;
@@ -28,6 +32,8 @@ interface InputProps {
   editable?: boolean;
   maxLength?: number;
   testID?: string;
+  /** Ref du ScrollView parent : quand ce champ reçoit le focus, le scroll positionne le champ au-dessus du clavier */
+  scrollViewRef?: React.RefObject<ScrollView | null>;
 }
 
 export function Input({
@@ -48,12 +54,39 @@ export function Input({
   editable = true,
   maxLength,
   testID,
+  scrollViewRef,
 }: InputProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const containerRef = useRef<View>(null);
+
+  const handleFocus = useCallback(() => {
+    setIsFocused(true);
+    if (!scrollViewRef?.current || !containerRef.current) return;
+    const scroll = scrollViewRef.current;
+    const container = containerRef.current as View & { measureLayout?: (nativeNode: number, onSuccess: (x: number, y: number, w: number, h: number) => void, onFail: () => void) => void };
+    const scrollToVisible = () => {
+      try {
+        const scrollNode = findNodeHandle(scroll as any);
+        // measureLayout requires a native node (number). Skip when invalid (e.g. Fabric refs).
+        if (typeof scrollNode !== 'number' || typeof container.measureLayout !== 'function' || typeof scroll.scrollTo !== 'function') return;
+        container.measureLayout(
+          scrollNode,
+          (_x: number, y: number) => {
+            const scrollY = Math.max(0, y - FOCUS_SCROLL_OFFSET);
+            scroll.scrollTo({ y: scrollY, animated: true });
+          },
+          () => {}
+        );
+      } catch {
+        // measureLayout can throw when refs are not native (e.g. Fabric). Rely on KeyboardAvoidingView only.
+      }
+    };
+    setTimeout(scrollToVisible, 150);
+  }, [scrollViewRef]);
 
   return (
-    <View style={[styles.container, style]}>
+    <View ref={containerRef} style={[styles.container, style]} collapsable={false}>
       {label && <Text style={styles.label}>{label}</Text>}
       <View
         style={[
@@ -80,7 +113,7 @@ export function Input({
           autoCapitalize={autoCapitalize}
           textContentType={textContentType}
           autoComplete={autoComplete}
-          onFocus={() => setIsFocused(true)}
+          onFocus={handleFocus}
           onBlur={() => setIsFocused(false)}
           multiline={multiline}
           numberOfLines={numberOfLines}

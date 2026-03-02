@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import React, { useState, useRef, useCallback } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, findNodeHandle } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,9 +13,26 @@ import { Avatar } from '@/components/Avatar';
 
 export default function VerificationScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { submitVerification, getUserVerificationStatus, isSubmittingVerification } = useSupport();
   const [reason, setReason] = useState('');
+  const scrollViewRef = useRef<ScrollView>(null);
+  const textAreaContainerRef = useRef<View>(null);
+
+  const scrollToFocusedInput = useCallback(() => {
+    if (!scrollViewRef.current || !textAreaContainerRef.current) return;
+    const scroll = scrollViewRef.current;
+    const container = textAreaContainerRef.current as View & { measureLayout?: (nativeNode: number, onSuccess: (x: number, y: number, w: number, h: number) => void, onFail: () => void) => void };
+    const scrollNode = findNodeHandle(scroll as any);
+    if (scrollNode != null && typeof container.measureLayout === 'function') {
+      setTimeout(() => {
+        container.measureLayout!(scrollNode, (_x, y) => {
+          const scrollY = Math.max(0, y - 200);
+          scroll.scrollTo({ y: scrollY, animated: true });
+        }, () => {});
+      }, 150);
+    }
+  }, []);
 
   const pendingRequest = user ? getUserVerificationStatus(user.id) : null;
 
@@ -33,7 +50,7 @@ export default function VerificationScreen() {
     }
   };
 
-  if (user?.isVerified) {
+  if (user?.isVerified || isAdmin) {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
@@ -47,7 +64,7 @@ export default function VerificationScreen() {
             </View>
             <View style={styles.centerContent}>
               <View style={styles.verifiedBadge}><CheckCircle size={64} color={Colors.primary.blue} /></View>
-              <Text style={styles.verifiedTitle}>Compte vérifié ✓</Text>
+              <Text style={styles.verifiedTitle}>{isAdmin ? 'Compte administrateur ✓' : 'Compte vérifié ✓'}</Text>
               <Text style={styles.verifiedText}>Félicitations ! Votre compte est vérifié. Vous bénéficiez de tous les avantages du badge vérifié.</Text>
               <Card style={styles.benefitsCard}>
                 <Text style={styles.benefitsTitle}>Avantages du badge vérifié</Text>
@@ -102,7 +119,8 @@ export default function VerificationScreen() {
             <Text style={styles.headerTitle}>Demande de vérification</Text>
             <View style={styles.placeholder} />
           </View>
-          <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 30}>
+          <ScrollView style={styles.scrollView} contentContainerStyle={[styles.scrollContent, { paddingBottom: 320 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             <View style={styles.profilePreview}>
               <Avatar uri={user?.avatar} name={user?.fullName || ''} size="xlarge" />
               <View style={styles.profileInfo}>
@@ -131,12 +149,15 @@ export default function VerificationScreen() {
             </Card>
 
             <Text style={styles.formLabel}>Pourquoi souhaitez-vous être vérifié ?</Text>
-            <TextInput style={styles.textArea} placeholder="Expliquez-nous pourquoi vous méritez le badge vérifié... (ex: joueur régulier, capitaine d'équipe, organisateur de tournois)" placeholderTextColor={Colors.text.muted} value={reason} onChangeText={setReason} multiline numberOfLines={5} textAlignVertical="top" maxLength={500} />
+            <View ref={textAreaContainerRef} collapsable={false}>
+              <TextInput style={styles.textArea} placeholder="Expliquez-nous pourquoi vous méritez le badge vérifié... (ex: joueur régulier, capitaine d'équipe, organisateur de tournois)" placeholderTextColor={Colors.text.muted} value={reason} onChangeText={setReason} onFocus={scrollToFocusedInput} multiline numberOfLines={5} textAlignVertical="top" maxLength={500} />
+            </View>
             <Text style={styles.charCount}>{reason.length}/500</Text>
 
             <Button title="Soumettre ma demande" onPress={handleSubmit} loading={isSubmittingVerification} variant="primary" disabled={!reason.trim()} style={styles.submitBtn} />
             <View style={styles.bottomSpacer} />
           </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
       </View>
     </>

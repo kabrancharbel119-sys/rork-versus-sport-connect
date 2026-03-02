@@ -28,6 +28,8 @@ export interface MatchRow {
   location_lng: number | null;
   player_stats: MatchPlayerStats[];
   created_at: string;
+  tournament_id?: string | null;
+  round_label?: string | null;
 }
 
 export const mapMatchRowToMatch = (row: MatchRow): Match => ({
@@ -72,6 +74,8 @@ export const mapMatchRowToMatch = (row: MatchRow): Match => ({
   } : undefined,
   playerStats: (row.player_stats as MatchPlayerStats[]) || [],
   createdAt: new Date(row.created_at),
+  tournamentId: row.tournament_id ?? undefined,
+  roundLabel: row.round_label ?? undefined,
 });
 
 const getDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -107,6 +111,17 @@ export const matchesApi = {
     return mapMatchRowToMatch(data as MatchRow);
   },
 
+  async getByIds(ids: string[]) {
+    if (ids.length === 0) return [];
+    const { data, error } = await (supabase
+      .from('matches')
+      .select('*')
+      .in('id', ids)
+      .order('date_time', { ascending: true }) as any);
+    if (error) throw error;
+    return ((data || []) as MatchRow[]).map(row => mapMatchRowToMatch(row));
+  },
+
   async create(userId: string, matchData: {
     sport: string;
     format: string;
@@ -118,6 +133,9 @@ export const matchesApi = {
     ambiance: string;
     maxPlayers: number;
     homeTeamId?: string;
+    awayTeamId?: string;
+    tournamentId?: string;
+    roundLabel?: string;
     entryFee?: number;
     prize?: number;
     needsPlayers?: boolean;
@@ -135,34 +153,53 @@ export const matchesApi = {
     if (venueError) throw new Error('Terrain non trouvé');
     const venueRow = venue as { id: string; name: string; address: string; city: string };
 
+    // Générer un titre par défaut basé sur le sport et le format
+    const sportLabels: Record<string, string> = {
+      football: 'Football',
+      basketball: 'Basketball',
+      volleyball: 'Volleyball',
+      tennis: 'Tennis',
+      padel: 'Padel',
+    };
+    const sportLabel = sportLabels[matchData.sport] || matchData.sport;
+    const defaultTitle = `${sportLabel} ${matchData.format} - ${venueRow.name}`;
+
+    const insertPayload: Record<string, unknown> = {
+      title: defaultTitle,
+      match_type: matchData.type,
+      sport: matchData.sport,
+      format: matchData.format,
+      type: matchData.type,
+      status: 'open',
+      venue_id: matchData.venueId,
+      venue_data: {
+        id: venueRow.id,
+        name: venueRow.name,
+        address: venueRow.address,
+        city: venueRow.city
+      },
+      date_time: matchData.dateTime,
+      start_time: matchData.dateTime,
+      duration: matchData.duration,
+      level: matchData.level,
+      ambiance: matchData.ambiance,
+      max_players: matchData.maxPlayers,
+      registered_players: [],
+      created_by: userId,
+      home_team_id: matchData.homeTeamId ?? null,
+      away_team_id: matchData.awayTeamId ?? null,
+      entry_fee: matchData.entryFee ?? 0,
+      prize: matchData.prize ?? 0,
+      needs_players: matchData.needsPlayers ?? true,
+      location_lat: matchData.lat,
+      location_lng: matchData.lng,
+    };
+    if (matchData.tournamentId != null) insertPayload.tournament_id = matchData.tournamentId;
+    if (matchData.roundLabel != null) insertPayload.round_label = matchData.roundLabel;
+
     const { data, error } = await (supabase
       .from('matches')
-      .insert({
-        sport: matchData.sport,
-        format: matchData.format,
-        type: matchData.type,
-        status: 'open',
-        venue_id: matchData.venueId,
-        venue_data: {
-          id: venueRow.id,
-          name: venueRow.name,
-          address: venueRow.address,
-          city: venueRow.city
-        },
-        date_time: matchData.dateTime,
-        duration: matchData.duration,
-        level: matchData.level,
-        ambiance: matchData.ambiance,
-        max_players: matchData.maxPlayers,
-        registered_players: [userId],
-        created_by: userId,
-        home_team_id: matchData.homeTeamId,
-        entry_fee: matchData.entryFee ?? 0,
-        prize: matchData.prize ?? 0,
-        needs_players: matchData.needsPlayers ?? true,
-        location_lat: matchData.lat,
-        location_lng: matchData.lng,
-      } as any)
+      .insert(insertPayload as any)
       .select()
       .single() as any);
     
@@ -262,16 +299,24 @@ export const matchesApi = {
   async updateScore(matchId: string, homeScore: number, awayScore: number, playerStats?: MatchPlayerStats[]) {
     console.log('[MatchesAPI] Updating score for match:', matchId);
     
-    const { error } = await ((supabase.from('matches') as any)
-      .update({
-        score_home: homeScore,
-        score_away: awayScore,
-        status: 'completed',
-        player_stats: playerStats || []
-      })
-      .eq('id', matchId));
+    const payload: Record<string, unknown> = {
+      score_home: homeScore,
+      score_away: awayScore,
+      status: 'completed',
+    };
+    if (playerStats && playerStats.length > 0) {
+      payload.player_stats = playerStats;
+    }
+
+    const { data, error } = await ((supabase.from('matches') as any)
+      .update(payload)
+      .eq('id', matchId)
+      .select());
     
     if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new Error('Score non enregistré – vérifiez les permissions (RLS) sur la table matches.');
+    }
 
     if (playerStats) {
       for (const ps of playerStats) {
@@ -300,6 +345,31 @@ export const matchesApi = {
       }
     }
 
+    return this.getById(matchId);
+  },
+
+  async updateMatch(matchId: string, updates: {
+    dateTime?: string;
+    venueId?: string;
+    homeTeamId?: string | null;
+    awayTeamId?: string | null;
+    roundLabel?: string | null;
+    status?: string;
+  }) {
+    const payload: Record<string, unknown> = {};
+    if (updates.dateTime != null) payload.date_time = updates.dateTime;
+    if (updates.venueId != null) {
+      payload.venue_id = updates.venueId;
+      const { data: venue } = await (supabase.from('venues').select('*').eq('id', updates.venueId).single() as any);
+      if (venue) payload.venue_data = { id: venue.id, name: venue.name, address: venue.address, city: venue.city };
+    }
+    if (updates.homeTeamId !== undefined) payload.home_team_id = updates.homeTeamId;
+    if (updates.awayTeamId !== undefined) payload.away_team_id = updates.awayTeamId;
+    if (updates.roundLabel !== undefined) payload.round_label = updates.roundLabel;
+    if (updates.status != null) payload.status = updates.status;
+    if (Object.keys(payload).length === 0) return this.getById(matchId);
+    const { error } = await (supabase.from('matches').update(payload as any).eq('id', matchId) as any);
+    if (error) throw error;
     return this.getById(matchId);
   },
 

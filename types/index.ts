@@ -159,6 +159,10 @@ export interface Match {
   location?: UserLocation;
   playerStats?: MatchPlayerStats[];
   createdAt: Date;
+  /** Id du tournoi si match de tournoi */
+  tournamentId?: string;
+  /** Phase / round (ex: "Poule A", "Quart 1", "Demi-finale", "Finale") */
+  roundLabel?: string;
 }
 
 export interface MatchPlayerStats {
@@ -208,6 +212,7 @@ export interface Tournament {
   winnerId?: string;
   sponsorName?: string;
   sponsorLogo?: string;
+  managers?: string[];
   createdBy: string;
   createdAt: Date;
 }

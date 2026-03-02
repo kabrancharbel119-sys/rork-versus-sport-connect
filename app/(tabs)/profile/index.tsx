@@ -1,10 +1,10 @@
-import React, { useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Settings, Edit2, Trophy, Star, Users, ChevronRight, Shield, Award, TrendingUp, Zap, MapPin, History, CheckCircle, Plus, Compass } from 'lucide-react-native';
+import { Settings, Edit2, Trophy, Star, Users, ChevronRight, Shield, Award, TrendingUp, Zap, MapPin, History, CheckCircle, Plus, Compass, Crown, Medal } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMatches } from '@/contexts/MatchesContext';
@@ -14,10 +14,14 @@ import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
 import { StatCard } from '@/components/StatCard';
 import { sportLabels, levelLabels } from '@/mocks/data';
+import { rankingApi } from '@/lib/api/ranking';
+import { PlayerRanking, Badge } from '@/types/ranking';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, isAdmin, refreshUser } = useAuth();
+  const effectiveVerified = user?.isVerified || isAdmin;
+  const effectivePremium = user?.isPremium || isAdmin;
   const { getUserMatches } = useMatches();
   const { getUserTeams, teams } = useTeams();
   const { getUnlockedCount, getTotalXP, checkAndUnlockTrophies, getUserTrophies } = useTrophies();
@@ -29,6 +33,33 @@ export default function ProfileScreen() {
   const totalXP = user ? getTotalXP(user.id) : 0;
   const isCaptain = (teams ?? []).some(t => t.captainId === user?.id);
   const lastRefresh = useRef(0);
+
+  // États pour le ranking
+  const [playerRanking, setPlayerRanking] = useState<PlayerRanking | null>(null);
+  const [loadingRanking, setLoadingRanking] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Charger le classement du joueur
+  const loadPlayerRanking = async () => {
+    if (!user) return;
+    
+    setLoadingRanking(true);
+    try {
+      const ranking = await rankingApi.getPlayerRanking(user.id);
+      setPlayerRanking(ranking);
+    } catch (error) {
+      console.error('Error loading player ranking:', error);
+    } finally {
+      setLoadingRanking(false);
+    }
+  };
+
+  // Rafraîchir le classement
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadPlayerRanking();
+    setRefreshing(false);
+  };
 
   useFocusEffect(
     React.useCallback(() => {
@@ -50,15 +81,18 @@ export default function ProfileScreen() {
         mvpAwards: user.stats.mvpAwards,
         tournamentWins: user.stats.tournamentWins,
         followers: user.followers,
-        isVerified: user.isVerified,
-        isPremium: user.isPremium,
-        isCaptain,
+        isVerified: effectiveVerified,
+        isPremium: effectivePremium,
+        isCaptain: isCaptain || isAdmin,
         fairPlayScore: user.stats.fairPlayScore,
-        hasTeam: userTeams.length > 0,
-        profileComplete: !!(user.fullName && user.city && user.sports?.length > 0),
+        hasTeam: userTeams.length > 0 || isAdmin,
+        profileComplete: !!(user.fullName && user.city && user.sports?.length > 0) || isAdmin,
       });
+      
+      // Charger le classement du joueur
+      loadPlayerRanking();
     }
-  }, [user, isCaptain, userTeams.length, checkAndUnlockTrophies]);
+  }, [user, isCaptain, userTeams.length, isAdmin, effectiveVerified, effectivePremium, checkAndUnlockTrophies]);
 
   const winRate = user?.stats ? Math.round((user.stats.wins / (user.stats.matchesPlayed || 1)) * 100) : 0;
 
@@ -66,7 +100,8 @@ export default function ProfileScreen() {
     <View style={styles.container}>
       <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScrollView testID="profile-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView testID="profile-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Profil</Text>
             <TouchableOpacity testID="btn-settings" style={styles.settingsButton} onPress={() => router.push('/settings')}>
@@ -77,7 +112,7 @@ export default function ProfileScreen() {
             <View style={styles.profileTop}>
               <View style={styles.avatarWithBadge}>
                 <Avatar uri={user?.avatar} name={user?.fullName} size="xlarge" />
-                {user?.isVerified && (
+                {effectiveVerified && (
                   <View testID="verified-badge" style={styles.verifiedBadge}>
                     <CheckCircle size={16} color={Colors.status.success} />
                   </View>
@@ -167,6 +202,145 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           )}
 
+          {/* Section Classement ELO */}
+          <TouchableOpacity style={styles.rankingCard} onPress={() => router.push('/rankings')} activeOpacity={0.8}>
+            <View style={styles.rankingHeader}>
+              <Trophy size={18} color={Colors.primary.orange} />
+              <Text style={styles.rankingTitle}>Classement ELO</Text>
+              <ChevronRight size={16} color={Colors.text.muted} />
+            </View>
+            
+            {loadingRanking ? (
+              <View style={styles.rankingLoading}>
+                <ActivityIndicator size="small" color={Colors.primary.orange} />
+                <Text style={styles.rankingLoadingText}>Chargement...</Text>
+              </View>
+            ) : playerRanking ? (
+              <View style={styles.rankingContent}>
+                <View style={styles.rankingMain}>
+                  <View style={styles.rankingElo}>
+                    <Text style={styles.rankingEloValue}>{playerRanking.eloRating}</Text>
+                    <Text style={styles.rankingEloLabel}>ELO</Text>
+                    {playerRanking.eloChange !== 0 && (
+                      <View style={styles.rankingChange}>
+                        <Text style={[styles.rankingChangeText, { color: playerRanking.eloChange > 0 ? Colors.status.success : Colors.status.error }]}>
+                          {playerRanking.eloChange > 0 ? '+' : ''}{playerRanking.eloChange}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.rankingRank}>
+                    <View style={styles.rankingRankBadge}>
+                      {playerRanking.rank === 1 && <Crown size={16} color="#FFD700" />}
+                      {playerRanking.rank === 2 && <Medal size={16} color="#C0C0C0" />}
+                      {playerRanking.rank === 3 && <Medal size={16} color="#CD7F32" />}
+                      <Text style={styles.rankingRankValue}>#{playerRanking.rank}</Text>
+                    </View>
+                    <Text style={styles.rankingRankLabel}>Rang mondial</Text>
+                  </View>
+                </View>
+                
+                <View style={styles.rankingStats}>
+                  <View style={styles.rankingStatItem}>
+                    <Text style={styles.rankingStatValue}>{playerRanking.stats.totalMatches}</Text>
+                    <Text style={styles.rankingStatLabel}>Matchs</Text>
+                  </View>
+                  <View style={styles.rankingStatItem}>
+                    <Text style={styles.rankingStatValue}>{playerRanking.stats.wins}</Text>
+                    <Text style={styles.rankingStatLabel}>Victoires</Text>
+                  </View>
+                  <View style={styles.rankingStatItem}>
+                    <Text style={styles.rankingStatValue}>{playerRanking.stats.winRate.toFixed(0)}%</Text>
+                    <Text style={styles.rankingStatLabel}>Taux</Text>
+                  </View>
+                  <View style={styles.rankingStatItem}>
+                    <Text style={styles.rankingStatValue}>{playerRanking.stats.currentWinStreak}</Text>
+                    <Text style={styles.rankingStatLabel}>Série</Text>
+                  </View>
+                </View>
+
+                {/* Badges */}
+                {playerRanking.badges.length > 0 && (
+                  <View style={styles.rankingBadges}>
+                    {playerRanking.badges.slice(0, 4).map((badge, index) => (
+                      <View key={badge.id} style={[styles.rankingBadge, { backgroundColor: badge.color + '20' }]}>
+                        <Text style={styles.rankingBadgeIcon}>{badge.icon}</Text>
+                      </View>
+                    ))}
+                    {playerRanking.badges.length > 4 && (
+                      <View style={styles.moreBadgesBadge}>
+                        <Text style={styles.moreBadgesText}>+{playerRanking.badges.length - 4}</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* Forme récente */}
+                {playerRanking.stats.recentForm.length > 0 && (
+                  <View style={styles.recentForm}>
+                    <Text style={styles.recentFormLabel}>Forme récente</Text>
+                    <View style={styles.recentFormRow}>
+                      {playerRanking.stats.recentForm.slice(0, 5).map((result, index) => (
+                        <View
+                          key={index}
+                          style={[
+                            styles.formBadge,
+                            result === 'W' && styles.formWin,
+                            result === 'L' && styles.formLoss,
+                            result === 'D' && styles.formDraw,
+                          ]}
+                        >
+                          <Text style={styles.formText}>{result}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={styles.rankingEmpty}>
+                <Trophy size={24} color={Colors.text.muted} />
+                <Text style={styles.rankingEmptyText}>Commencez à jouer pour obtenir un classement</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Section Achievements */}
+          {playerRanking && playerRanking.achievements.length > 0 && (
+            <TouchableOpacity style={styles.achievementsCard} onPress={() => router.push('/achievements')} activeOpacity={0.8}>
+              <View style={styles.achievementsHeader}>
+                <Award size={18} color={Colors.primary.orange} />
+                <Text style={styles.achievementsTitle}>Succès ({playerRanking.achievements.length})</Text>
+                <ChevronRight size={16} color={Colors.text.muted} />
+              </View>
+              
+              <View style={styles.achievementsContent}>
+                <View style={styles.achievementsGrid}>
+                  {playerRanking.achievements.slice(0, 6).map((achievement, index) => (
+                    <View key={achievement.id} style={styles.achievementItem}>
+                      <View style={[styles.achievementIcon, { backgroundColor: achievement.color + '20' }]}>
+                        <Text style={styles.achievementIconText}>{achievement.icon}</Text>
+                      </View>
+                      <Text style={styles.achievementName}>{achievement.name}</Text>
+                      <Text style={styles.achievementDesc}>{achievement.description}</Text>
+                      {achievement.unlockedAt && (
+                        <Text style={styles.achievementDate}>
+                          Débloqué le {new Date(achievement.unlockedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                        </Text>
+                      )}
+                    </View>
+                  ))}
+                </View>
+                
+                {playerRanking.achievements.length > 6 && (
+                  <View style={styles.moreAchievements}>
+                    <Text style={styles.moreAchievementsText}>Voir tous les succès ({playerRanking.achievements.length})</Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+          )}
+
           
 
           <View style={styles.section}>
@@ -226,10 +400,10 @@ export default function ProfileScreen() {
               </View>
               <ChevronRight size={20} color={Colors.text.muted} />
             </TouchableOpacity>
-            {user?.isVerified && (
+            {effectiveVerified && (
               <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/verification')}>
                 <CheckCircle size={20} color={Colors.primary.blue} />
-                <Text style={[styles.menuText, { color: Colors.primary.blue }]}>Compte vérifié ✓</Text>
+                <Text style={[styles.menuText, { color: Colors.primary.blue }]}>{isAdmin ? 'Compte admin ✓' : 'Compte vérifié ✓'}</Text>
                 <ChevronRight size={20} color={Colors.text.muted} />
               </TouchableOpacity>
             )}
@@ -325,4 +499,56 @@ const styles = StyleSheet.create({
   menuSubtext: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
 
   bottomSpacer: { height: 20 },
+
+  // Styles pour la section Ranking
+  rankingCard: { backgroundColor: Colors.background.card, borderRadius: 16, padding: 16, marginBottom: 20 },
+  rankingHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
+  rankingTitle: { flex: 1, color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const },
+  rankingLoading: { alignItems: 'center', paddingVertical: 20, gap: 8 },
+  rankingLoadingText: { color: Colors.text.muted, fontSize: 14 },
+  rankingContent: { gap: 16 },
+  rankingMain: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  rankingElo: { alignItems: 'center', gap: 4 },
+  rankingEloValue: { fontSize: 32, fontWeight: '800', color: Colors.primary.orange },
+  rankingEloLabel: { fontSize: 12, color: Colors.text.muted, fontWeight: '500' as const },
+  rankingChange: { marginTop: 2 },
+  rankingChangeText: { fontSize: 12, fontWeight: '600' as const },
+  rankingRank: { alignItems: 'center', gap: 4 },
+  rankingRankBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: Colors.background.cardLight, borderWidth: 1, borderColor: Colors.border.light },
+  rankingRankValue: { fontSize: 16, fontWeight: '700', color: Colors.text.primary },
+  rankingRankLabel: { fontSize: 11, color: Colors.text.muted, fontWeight: '500' as const },
+  rankingStats: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
+  rankingStatItem: { alignItems: 'center', gap: 2 },
+  rankingStatValue: { fontSize: 16, fontWeight: '700', color: Colors.text.primary },
+  rankingStatLabel: { fontSize: 10, color: Colors.text.muted, fontWeight: '500' as const },
+  rankingBadges: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  rankingBadge: { width: 36, height: 36, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  rankingBadgeIcon: { fontSize: 18 },
+  moreBadgesBadge: { width: 36, height: 36, borderRadius: 8, backgroundColor: Colors.background.cardLight, alignItems: 'center', justifyContent: 'center' },
+  moreBadgesText: { color: Colors.text.muted, fontSize: 10, fontWeight: '600' as const },
+  recentForm: { gap: 8 },
+  recentFormLabel: { fontSize: 12, color: Colors.text.muted, fontWeight: '500' as const },
+  recentFormRow: { flexDirection: 'row', gap: 6 },
+  formBadge: { width: 28, height: 28, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  formWin: { backgroundColor: Colors.status.success + '20' },
+  formLoss: { backgroundColor: Colors.status.error + '20' },
+  formDraw: { backgroundColor: Colors.text.muted + '20' },
+  formText: { fontSize: 11, fontWeight: '700', color: Colors.text.primary },
+  rankingEmpty: { alignItems: 'center', paddingVertical: 30, gap: 8 },
+  rankingEmptyText: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' },
+
+  // Styles pour la section Achievements
+  achievementsCard: { backgroundColor: Colors.background.card, borderRadius: 16, padding: 16, marginBottom: 20 },
+  achievementsHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
+  achievementsTitle: { flex: 1, color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const },
+  achievementsContent: { gap: 16 },
+  achievementsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  achievementItem: { width: '48%', backgroundColor: Colors.background.cardLight, borderRadius: 12, padding: 12, gap: 6 },
+  achievementIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  achievementIconText: { fontSize: 20 },
+  achievementName: { fontSize: 12, fontWeight: '600', color: Colors.text.primary, marginBottom: 2 },
+  achievementDesc: { fontSize: 10, color: Colors.text.muted, lineHeight: 14, marginBottom: 4 },
+  achievementDate: { fontSize: 9, color: Colors.text.muted },
+  moreAchievements: { alignItems: 'center', paddingTop: 8 },
+  moreAchievementsText: { fontSize: 12, color: Colors.primary.blue, fontWeight: '500' as const },
 });

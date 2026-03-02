@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -174,11 +174,15 @@ export default function EditMatchScreen() {
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.keyboardView}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 30}
           >
             <ScrollView
+              ref={scrollViewRef}
               style={styles.scrollView}
-              contentContainerStyle={styles.scrollContent}
+              contentContainerStyle={[styles.scrollContent, { paddingBottom: 320 }]}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
             >
               <View style={styles.iconContainer}>
                 <LinearGradient
@@ -300,6 +304,7 @@ export default function EditMatchScreen() {
                 </View>
                 <View style={styles.halfField}>
                   <Input
+                    scrollViewRef={scrollViewRef}
                     label="Heure"
                     placeholder="15:00"
                     value={formData.time}
@@ -321,6 +326,7 @@ export default function EditMatchScreen() {
                 </View>
                 <View style={styles.halfField}>
                   <Input
+                    scrollViewRef={scrollViewRef}
                     label="Max joueurs"
                     placeholder="10"
                     value={formData.maxPlayers}
@@ -343,6 +349,7 @@ export default function EditMatchScreen() {
                   </View>
                   <View style={styles.halfField}>
                     <Input
+                      scrollViewRef={scrollViewRef}
                       label="Prize (FCFA)"
                       placeholder="50000"
                       value={formData.prize}

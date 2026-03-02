@@ -178,6 +178,8 @@ export interface Database {
       matches: {
         Row: {
           id: string
+          title: string
+          match_type: string
           sport: string
           format: string
           type: string
@@ -187,6 +189,7 @@ export interface Database {
           venue_id: string | null
           venue_data: Json | null
           date_time: string
+          start_time: string
           duration: number
           level: string
           ambiance: string
@@ -202,10 +205,14 @@ export interface Database {
           location_lat: number | null
           location_lng: number | null
           player_stats: Json
+          tournament_id: string | null
+          round_label: string | null
           created_at: string
         }
         Insert: {
           id?: string
+          title?: string
+          match_type?: string
           sport: string
           format: string
           type: string
@@ -215,6 +222,7 @@ export interface Database {
           venue_id?: string | null
           venue_data?: Json | null
           date_time: string
+          start_time?: string
           duration?: number
           level: string
           ambiance: string
@@ -230,10 +238,14 @@ export interface Database {
           location_lat?: number | null
           location_lng?: number | null
           player_stats?: Json
+          tournament_id?: string | null
+          round_label?: string | null
           created_at?: string
         }
         Update: {
           id?: string
+          title?: string
+          match_type?: string
           sport?: string
           format?: string
           type?: string
@@ -243,6 +255,7 @@ export interface Database {
           venue_id?: string | null
           venue_data?: Json | null
           date_time?: string
+          start_time?: string
           duration?: number
           level?: string
           ambiance?: string
@@ -258,6 +271,8 @@ export interface Database {
           location_lat?: number | null
           location_lng?: number | null
           player_stats?: Json
+          tournament_id?: string | null
+          round_label?: string | null
           created_at?: string
         }
       }

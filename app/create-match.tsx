@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -52,7 +52,7 @@ const formats: Record<Sport, string[]> = {
 
 export default function CreateMatchScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { createMatch, venues, isCreating } = useMatches();
   
   // Utiliser les terrains de l'API ou les données mockées en fallback
@@ -78,6 +78,7 @@ export default function CreateMatchScreen() {
   const selectedVenue = availableVenues.find(v => v.id === formData.venueId);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const updateField = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -97,7 +98,7 @@ export default function CreateMatchScreen() {
       return;
     }
     if (!validate()) return;
-    const effectiveType = formData.type === 'ranked' ? 'friendly' : formData.type;
+    const effectiveType = (isAdmin && formData.type === 'ranked') ? 'ranked' : (formData.type === 'ranked' ? 'friendly' : formData.type);
     try {
       const dateTime = new Date(`${formData.date}T${formData.time}`);
       
@@ -142,11 +143,15 @@ export default function CreateMatchScreen() {
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.keyboardView}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 30}
           >
             <ScrollView
+              ref={scrollViewRef}
               style={styles.scrollView}
-              contentContainerStyle={styles.scrollContent}
+              contentContainerStyle={[styles.scrollContent, { paddingBottom: 320 }]}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
             >
               <View style={styles.iconContainer}>
                 <LinearGradient
@@ -172,7 +177,7 @@ export default function CreateMatchScreen() {
                       <Text style={[styles.typeChipText, formData.type === type && styles.typeChipTextActive]}>
                         {type === 'friendly' ? '⚽ Amical' : '🏆 Classé'}
                       </Text>
-                      {type === 'ranked' && (
+                      {type === 'ranked' && !isAdmin && (
                         <Text style={[styles.typeChipSub, formData.type === type && styles.typeChipSubActive]}>
                           Bientôt
                         </Text>
@@ -182,7 +187,7 @@ export default function CreateMatchScreen() {
                 </View>
               </View>
 
-              {formData.type === 'ranked' && (
+              {formData.type === 'ranked' && !isAdmin && (
                 <Card style={styles.rankedSoonCard}>
                   <View style={styles.rankedSoonHeader}>
                     <View style={styles.rankedSoonIcon}>
@@ -281,6 +286,7 @@ export default function CreateMatchScreen() {
               <View style={styles.row}>
                 <View style={styles.halfField}>
                   <Input
+                    scrollViewRef={scrollViewRef}
                     label="Date"
                     placeholder="2026-01-25"
                     value={formData.date}
@@ -302,6 +308,7 @@ export default function CreateMatchScreen() {
               <View style={styles.row}>
                 <View style={styles.halfField}>
                   <Input
+                    scrollViewRef={scrollViewRef}
                     label="Durée (min)"
                     placeholder="90"
                     value={formData.duration}
@@ -311,6 +318,7 @@ export default function CreateMatchScreen() {
                 </View>
                 <View style={styles.halfField}>
                   <Input
+                    scrollViewRef={scrollViewRef}
                     label="Max joueurs"
                     placeholder="10"
                     value={formData.maxPlayers}

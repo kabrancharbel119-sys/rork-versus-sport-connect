@@ -4,7 +4,7 @@ import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Calendar, Clock, MapPin, Users, Trophy, DollarSign, Share2, Edit2, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, Calendar, Clock, MapPin, Users, Trophy, DollarSign, Share2, Edit2, Trash2, Play, Radio, Square, Circle } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMatches } from '@/contexts/MatchesContext';
@@ -14,6 +14,8 @@ import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { sportLabels, levelLabels, ambianceLabels } from '@/mocks/data';
+import { liveScoringApi } from '@/lib/api/live-scoring';
+import { rankingApi } from '@/lib/api/ranking';
 
 export default function MatchDetailScreen() {
   const router = useRouter();
@@ -23,6 +25,8 @@ export default function MatchDetailScreen() {
   const { notifyMatchUpdate } = useNotifications();
   const { getUserById } = useUsers();
   const [isJoining, setIsJoining] = useState(false);
+  const [isLiveScoring, setIsLiveScoring] = useState(false);
+  const [isStartingLive, setIsStartingLive] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -141,6 +145,62 @@ export default function MatchDetailScreen() {
       case 'completed': return 'Terminé';
       default: return status;
     }
+  };
+
+  const handleStartLiveScoring = async () => {
+    if (!user || !isCreator) return;
+    
+    setIsStartingLive(true);
+    try {
+      // Simuler des équipes (à adapter selon votre logique)
+      const homeTeamId = 'home-team-id'; // À adapter
+      const awayTeamId = 'away-team-id'; // À adapter
+      
+      await liveScoringApi.startLiveMatch(match.id, homeTeamId, awayTeamId);
+      setIsLiveScoring(true);
+      Alert.alert('Live Scoring', 'Le match est maintenant en direct ! 🏁');
+      
+      // Mettre à jour le statut du match
+      await updateMatch({ matchId: match.id, status: 'in_progress' });
+    } catch (error: any) {
+      Alert.alert('Erreur', 'Impossible de démarrer le live scoring');
+    }
+    setIsStartingLive(false);
+  };
+
+  const handleEndLiveScoring = async () => {
+    if (!user || !isCreator) return;
+    
+    Alert.alert(
+      'Terminer le match',
+      'Êtes-vous sûr de vouloir terminer le match ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Terminer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await liveScoringApi.endLiveMatch(match.id);
+              setIsLiveScoring(false);
+              Alert.alert('Match terminé', 'Le live scoring a été arrêté');
+              
+              // Mettre à jour le statut du match
+              await updateMatch({ matchId: match.id, status: 'completed' });
+              
+              // Mettre à jour les classements (à implémenter)
+              // await updatePlayerRankings();
+            } catch (error: any) {
+              Alert.alert('Erreur', 'Impossible de terminer le match');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleOpenLiveScoring = () => {
+    router.push(`/live-match/${match.id}`);
   };
 
   return (
@@ -327,6 +387,52 @@ export default function MatchDetailScreen() {
                   <View style={styles.registeredBanner}>
                     <Text style={styles.registeredText}>✓ Vous êtes inscrit</Text>
                   </View>
+                  
+                  {/* Boutons Live Scoring pour le créateur */}
+                  {isCreator && (
+                    <View style={styles.liveScoringActions}>
+                      {!isLiveScoring && match.status === 'confirmed' && (
+                        <Button
+                          title="🏁 Démarrer le Live Scoring"
+                          onPress={handleStartLiveScoring}
+                          loading={isStartingLive}
+                          variant="orange"
+                          style={styles.liveScoringButton}
+                        />
+                      )}
+                      
+                      {isLiveScoring && (
+                        <>
+                          <TouchableOpacity 
+                            style={styles.liveScoringBanner}
+                            onPress={handleOpenLiveScoring}
+                          >
+                            <Radio size={20} color={Colors.primary.orange} />
+                            <Text style={styles.liveScoringBannerText}>🔴 Match en direct - Cliquez pour suivre</Text>
+                          </TouchableOpacity>
+                          
+                          <Button
+                            title="⏹️ Terminer le match"
+                            onPress={handleEndLiveScoring}
+                            variant="destructive"
+                            style={styles.liveScoringButton}
+                          />
+                        </>
+                      )}
+                    </View>
+                  )}
+                  
+                  {/* Bouton pour voir le live scoring pour les participants */}
+                  {!isCreator && isLiveScoring && (
+                    <TouchableOpacity 
+                      style={styles.liveScoringBanner}
+                      onPress={handleOpenLiveScoring}
+                    >
+                      <Radio size={20} color={Colors.primary.orange} />
+                      <Text style={styles.liveScoringBannerText}>🔴 Match en direct - Suivre en temps réel</Text>
+                    </TouchableOpacity>
+                  )}
+                  
                   {!isCreator && (
                     <Button
                       title="Se désinscrire"
@@ -657,6 +763,29 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     width: '100%',
+  },
+  liveScoringActions: {
+    gap: 12,
+    marginBottom: 12,
+  },
+  liveScoringButton: {
+    width: '100%',
+  },
+  liveScoringBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Colors.primary.orange + '20',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.primary.orange + '40',
+  },
+  liveScoringBannerText: {
+    color: Colors.primary.orange,
+    fontSize: 15,
+    fontWeight: '600' as const,
+    flex: 1,
   },
   bottomSpacer: {
     height: 40,

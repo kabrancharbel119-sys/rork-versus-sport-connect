@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Modal, TextInput, ActionSheetIOS } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, Stack } from 'expo-router';
@@ -82,6 +82,7 @@ export default function CreateTeamScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { createTeam, isCreating, getUserTeams } = useTeams();
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const alreadyInTeam = user ? getUserTeams(user.id).length >= 1 : false;
 
@@ -121,56 +122,167 @@ export default function CreateTeamScreen() {
   const updateField = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }));
+    
+    if (field === 'name' && typeof value === 'string') {
+      if (value.length >= 3 && value.length <= 30) {
+        setErrors(prev => ({ ...prev, name: '' }));
+      }
+    }
+    
+    if (field === 'maxMembers' && typeof value === 'string') {
+      const num = parseInt(value, 10);
+      if (!isNaN(num) && num >= 2 && num <= 50) {
+        setErrors(prev => ({ ...prev, maxMembers: '' }));
+      }
+    }
   };
 
-  const validate = () => {
+  const validateStep = (stepNum: number): boolean => {
     const newErrors: Record<string, string> = {};
-    if (!formData.name.trim()) newErrors.name = 'Nom requis';
-    else if (formData.name.length < 3) newErrors.name = 'Minimum 3 caractères';
-    else if (formData.name.length > 30) newErrors.name = 'Maximum 30 caractères';
-    if (!formData.city.trim()) newErrors.city = 'Ville requise';
-    const maxMembers = parseInt(formData.maxMembers, 10);
-    if (isNaN(maxMembers) || maxMembers < 2) newErrors.maxMembers = 'Minimum 2 membres';
-    if (maxMembers > 50) newErrors.maxMembers = 'Maximum 50 membres';
+    
+    if (stepNum === 1) {
+      if (!formData.name.trim()) {
+        newErrors.name = 'Nom requis';
+      } else if (formData.name.length < 3) {
+        newErrors.name = 'Minimum 3 caractères';
+      } else if (formData.name.length > 30) {
+        newErrors.name = 'Maximum 30 caractères';
+      }
+      
+      if (!/^[a-zA-Z0-9À-ÿ\s'-]+$/.test(formData.name)) {
+        newErrors.name = 'Caractères spéciaux non autorisés';
+      }
+    }
+    
+    if (stepNum === 2) {
+      if (!formData.city.trim()) {
+        newErrors.city = 'Ville requise';
+      } else if (formData.city.length < 2) {
+        newErrors.city = 'Nom de ville trop court';
+      }
+      
+      const maxMembers = parseInt(formData.maxMembers, 10);
+      if (isNaN(maxMembers) || maxMembers < 2) {
+        newErrors.maxMembers = 'Minimum 2 membres';
+      } else if (maxMembers > 50) {
+        newErrors.maxMembers = 'Maximum 50 membres';
+      }
+      
+      const formatNum = parseInt(formData.format.match(/\d+/)?.[0] || '0', 10);
+      if (maxMembers < formatNum) {
+        newErrors.maxMembers = `Minimum ${formatNum} pour le format ${formData.format}`;
+      }
+    }
+    
     setErrors(newErrors);
+    
+    if (Object.keys(newErrors).length > 0) {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    }
+    
     return Object.keys(newErrors).length === 0;
+  };
+  
+  const validate = () => {
+    return validateStep(1) && validateStep(2);
   };
 
   const handleCreate = async () => {
-    if (!validate() || !user) return;
+    if (!validate() || !user) {
+      Alert.alert('Validation échouée', 'Veuillez vérifier tous les champs requis.');
+      setStep(1);
+      return;
+    }
+    
     if (alreadyInTeam) {
       Alert.alert('Une seule équipe', 'Vous ne pouvez être membre que d\'une seule équipe à la fois. Quittez votre équipe actuelle pour en créer une nouvelle.');
       return;
     }
+    
+    const teamData = {
+      name: formData.name.trim(),
+      logo: formData.logo || undefined,
+      sport: formData.sport,
+      format: formData.format,
+      level: formData.level,
+      ambiance: formData.ambiance,
+      city: formData.city.trim(),
+      country: formData.country,
+      description: formData.description?.trim() || undefined,
+      maxMembers: parseInt(formData.maxMembers, 10),
+      captainId: user.id,
+      isRecruiting: formData.isRecruiting,
+      customRoles,
+    };
+    
     try {
-      await createTeam({
-        name: formData.name,
-        logo: formData.logo || undefined,
-        sport: formData.sport,
-        format: formData.format,
-        level: formData.level,
-        ambiance: formData.ambiance,
-        city: formData.city,
-        country: formData.country,
-        description: formData.description || undefined,
-        maxMembers: parseInt(formData.maxMembers, 10),
-        captainId: user.id,
-        isRecruiting: formData.isRecruiting,
-        customRoles,
-      });
-      Alert.alert('Succès', 'Équipe créée avec succès !', [{ text: 'OK', onPress: () => router.back() }]);
+      await createTeam(teamData);
+      Alert.alert(
+        '🎉 Équipe créée !', 
+        `${teamData.name} a été créée avec succès. Vous êtes maintenant le capitaine !`,
+        [
+          { 
+            text: 'Voir mon équipe', 
+            onPress: () => {
+              router.back();
+              setTimeout(() => router.push('/(tabs)/teams'), 100);
+            }
+          },
+          { text: 'OK', onPress: () => router.back() }
+        ]
+      );
     } catch (error: any) {
-      Alert.alert('Erreur', error.message || 'Impossible de créer l\'équipe');
+      console.error('[CreateTeam] Error:', error);
+      const errorMsg = error.message || 'Impossible de créer l\'équipe';
+      
+      if (errorMsg.includes('name')) {
+        setErrors({ name: 'Ce nom est déjà utilisé' });
+        setStep(1);
+      }
+      
+      Alert.alert('Erreur', errorMsg);
     }
   };
 
   const addCustomRole = () => {
-    if (!newRoleName.trim()) return;
-    if (customRoles.some(r => r.name.toLowerCase() === newRoleName.toLowerCase())) {
+    const trimmedName = newRoleName.trim();
+    
+    if (!trimmedName) {
+      Alert.alert('Erreur', 'Le nom du rôle ne peut pas être vide');
+      return;
+    }
+    
+    if (trimmedName.length < 2) {
+      Alert.alert('Erreur', 'Le nom du rôle doit contenir au moins 2 caractères');
+      return;
+    }
+    
+    if (trimmedName.length > 20) {
+      Alert.alert('Erreur', 'Le nom du rôle ne peut pas dépasser 20 caractères');
+      return;
+    }
+    
+    if (customRoles.some(r => r.name.toLowerCase() === trimmedName.toLowerCase())) {
       Alert.alert('Erreur', 'Ce rôle existe déjà');
       return;
     }
-    setCustomRoles([...customRoles, { id: `role-${Date.now()}`, name: newRoleName.trim(), isCustom: true, createdBy: user?.id }]);
+    
+    if (TEAM_ROLES.some(r => r.toLowerCase() === trimmedName.toLowerCase())) {
+      Alert.alert('Erreur', 'Ce rôle existe déjà dans les rôles par défaut');
+      return;
+    }
+    
+    if (customRoles.length >= 10) {
+      Alert.alert('Limite atteinte', 'Vous ne pouvez pas ajouter plus de 10 rôles personnalisés');
+      return;
+    }
+    
+    setCustomRoles([...customRoles, { 
+      id: `role-${Date.now()}`, 
+      name: trimmedName, 
+      isCustom: true, 
+      createdBy: user?.id 
+    }]);
     setNewRoleName('');
   };
 
@@ -210,6 +322,12 @@ export default function CreateTeamScreen() {
         error={errors.name}
         maxLength={30}
       />
+      {formData.name.length > 0 && !errors.name && (
+        <View style={styles.validationSuccess}>
+          <Check size={16} color={Colors.status.success} />
+          <Text style={styles.validationSuccessText}>Nom valide</Text>
+        </View>
+      )}
 
       <View style={styles.fieldGroup}>
         <Text style={styles.fieldLabel}>Sport *</Text>
@@ -284,6 +402,7 @@ export default function CreateTeamScreen() {
       <View style={styles.rowInputs}>
         <View style={styles.halfInput}>
           <Input
+            scrollViewRef={scrollViewRef}
             testID="input-city"
             label="Ville *"
             placeholder="Abidjan"
@@ -319,6 +438,7 @@ export default function CreateTeamScreen() {
       </TouchableOpacity>
 
       <Input
+        scrollViewRef={scrollViewRef}
         label="Description (optionnel)"
         placeholder="Décrivez votre équipe, vos objectifs, votre style de jeu..."
         value={formData.description}
@@ -370,27 +490,45 @@ export default function CreateTeamScreen() {
       </View>
 
       <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Récapitulatif</Text>
+        <Text style={styles.summaryTitle}>📋 Récapitulatif</Text>
+        <View style={styles.summaryDivider} />
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Nom:</Text>
           <Text style={styles.summaryValue}>{formData.name || '-'}</Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Sport:</Text>
-          <Text style={styles.summaryValue}>{sportLabels[formData.sport]} {formData.format}</Text>
+          <Text style={styles.summaryValue}>{sportIcons[formData.sport]} {sportLabels[formData.sport]} {formData.format}</Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Niveau:</Text>
           <Text style={styles.summaryValue}>{levelLabels[formData.level]}</Text>
         </View>
         <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Ambiance:</Text>
+          <Text style={styles.summaryValue}>{ambianceLabels[formData.ambiance]}</Text>
+        </View>
+        <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Lieu:</Text>
-          <Text style={styles.summaryValue}>{formData.city}</Text>
+          <Text style={styles.summaryValue}>{formData.city}, {formData.country}</Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Membres max:</Text>
-          <Text style={styles.summaryValue}>{formData.maxMembers}</Text>
+          <Text style={styles.summaryValue}>{formData.maxMembers} joueurs</Text>
         </View>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Recrutement:</Text>
+          <Text style={styles.summaryValue}>{formData.isRecruiting ? '✅ Ouvert' : '🔒 Fermé'}</Text>
+        </View>
+        {customRoles.length > 0 && (
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Rôles custom:</Text>
+            <Text style={styles.summaryValue}>{customRoles.length}</Text>
+          </View>
+        )}
+      </View>
+      <View style={styles.infoBox}>
+        <Text style={styles.infoBoxText}>💡 Vous serez automatiquement le capitaine de l'équipe</Text>
       </View>
     </>
   );
@@ -443,8 +581,8 @@ export default function CreateTeamScreen() {
             <View style={[styles.progressFill, { width: `${(step / 3) * 100}%` }]} />
           </View>
 
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
-            <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 30}>
+            <ScrollView ref={scrollViewRef} style={styles.scrollView} contentContainerStyle={[styles.scrollContent, { paddingBottom: 320 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
               {step === 1 && renderStep1()}
               {step === 2 && renderStep2()}
               {step === 3 && renderStep3()}
@@ -458,11 +596,11 @@ export default function CreateTeamScreen() {
                 <Button
                   title="Suivant"
                   onPress={() => {
-                    if (step === 1 && !formData.name.trim()) {
-                      setErrors({ name: 'Nom requis' });
+                    if (!validateStep(step)) {
                       return;
                     }
                     setStep(step + 1);
+                    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
                   }}
                   variant="primary"
                   size="large"
@@ -727,11 +865,16 @@ const styles = StyleSheet.create({
   customRoleChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(21,101,192,0.15)' },
   customRoleText: { color: Colors.primary.blue, fontSize: 12, fontWeight: '500' as const },
   noCustomRoles: { color: Colors.text.muted, fontSize: 13, fontStyle: 'italic' as const },
-  summaryCard: { backgroundColor: Colors.background.card, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: Colors.border.light },
-  summaryTitle: { color: Colors.text.primary, fontSize: 16, fontWeight: '600' as const, marginBottom: 16 },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
-  summaryLabel: { color: Colors.text.muted, fontSize: 14 },
-  summaryValue: { color: Colors.text.primary, fontSize: 14, fontWeight: '500' as const },
+  summaryCard: { backgroundColor: Colors.background.card, padding: 18, borderRadius: 14, borderWidth: 1, borderColor: Colors.border.light, marginBottom: 16 },
+  summaryTitle: { color: Colors.text.primary, fontSize: 17, fontWeight: '700' as const, marginBottom: 12 },
+  summaryDivider: { height: 1, backgroundColor: Colors.border.light, marginBottom: 12 },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, alignItems: 'center' },
+  summaryLabel: { color: Colors.text.muted, fontSize: 14, flex: 1 },
+  summaryValue: { color: Colors.text.primary, fontSize: 14, fontWeight: '600' as const, flex: 1, textAlign: 'right' as const },
+  validationSuccess: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: -12, marginBottom: 16 },
+  validationSuccessText: { color: Colors.status.success, fontSize: 12, fontWeight: '500' as const },
+  infoBox: { backgroundColor: Colors.primary.blue + '15', padding: 14, borderRadius: 12, borderLeftWidth: 3, borderLeftColor: Colors.primary.blue },
+  infoBoxText: { color: Colors.text.secondary, fontSize: 13, lineHeight: 18 },
   footer: { flexDirection: 'row', paddingHorizontal: 20, paddingVertical: 16, gap: 12, borderTopWidth: 1, borderTopColor: Colors.border.light },
   backBtn: { flex: 1 },
   nextBtn: { flex: 2 },

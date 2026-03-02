@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -9,12 +9,13 @@ import {
   RefreshControl,
   Platform,
   ViewStyle,
+  Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Image } from 'expo-image';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { BlurView } from 'expo-blur';
+
 import {
   Bell,
   Search,
@@ -28,6 +29,7 @@ import {
   Sparkles,
   Zap,
   Target,
+  CheckCircle,
 } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -73,7 +75,7 @@ export default function HomeScreen() {
   const { getUnreadCount, refetchNotifications } = useNotifications();
   const { getRecruitingTeams, getUserTeams, getAllTeams, teams, getPendingRequests, refetchTeams } = useTeams();
   const { getUpcomingMatches, matches } = useMatches();
-  const { getUserTournaments, getActiveTournaments } = useTournaments();
+  const { tournaments, getUserTournaments, getActiveTournaments } = useTournaments();
 
   const [refreshing, setRefreshing] = React.useState(false);
   const pendingTeamRequestsCount = user
@@ -101,7 +103,13 @@ export default function HomeScreen() {
   const recruitingTeams = getRecruitingTeams()
     .filter((t) => !userTeams.some((ut) => ut.id === t.id))
     .slice(0, 3);
-  const activeTournaments = getActiveTournaments().filter((t) => t.status === 'registration').slice(0, 5);
+  const allTournaments = [...getActiveTournaments(), ...tournaments.filter(t => t.status === 'completed')]
+    .filter((t, i, arr) => arr.findIndex(x => x.id === t.id) === i)
+    .sort((a, b) => {
+      const order: Record<string, number> = { in_progress: 0, registration: 1, completed: 2 };
+      return (order[a.status] ?? 3) - (order[b.status] ?? 3) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    })
+    .slice(0, 8);
   const userTournaments = user ? getUserTournaments(user.id).slice(0, 5) : [];
 
   useEffect(() => {
@@ -114,6 +122,7 @@ export default function HomeScreen() {
     }
   }, [allTeams, otherTeamsInCity, matches, upcomingMatches, displayMatches]);
 
+
   const onRefresh = async () => {
     setRefreshing(true);
     try {
@@ -123,66 +132,174 @@ export default function HomeScreen() {
     }
   };
 
-  const TournamentCard = ({ tournament, colors }: { tournament: any; colors: [string, string] }) => (
-    <TouchableOpacity
-      activeOpacity={0.88}
-      onPress={() => router.push(`/tournament/${tournament.id}`)}
-      style={[styles.tournamentCardWrap, cardShadow]}
-    >
-      <LinearGradient
-        colors={colors}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.tournamentCard}
-      >
-        <View style={styles.tournamentTop}>
-          <View style={styles.tournamentBadge}>
-            <Trophy size={13} color="#FFF" />
-            <Text style={styles.tournamentBadgeText}>{tournament.prizePool.toLocaleString()} FCFA</Text>
-          </View>
-          <View style={styles.tournamentTeams}>
-            <Text style={styles.tournamentTeamsText}>
-              {tournament.registeredTeams.length}/{tournament.maxTeams}
-            </Text>
-            <Text style={styles.tournamentTeamsLabel}>équipes</Text>
-          </View>
-        </View>
-        <Text style={styles.tournamentName} numberOfLines={2}>{tournament.name}</Text>
-        <Text style={styles.tournamentInfo}>{sportLabels[tournament.sport]} • {tournament.format}</Text>
-        <View style={styles.tournamentDateRow}>
-          <Calendar size={13} color="rgba(255,255,255,0.9)" />
-          <Text style={styles.tournamentDate}>{formatDate(tournament.startDate)}</Text>
-        </View>
-      </LinearGradient>
-    </TouchableOpacity>
-  );
+  const statusColors: Record<string, [string, string]> = {
+    registration: [Colors.gradient.orangeStart, Colors.gradient.orangeEnd],
+    in_progress: ['#1E6B3A', '#0F4A26'],
+    completed: [Colors.background.card, Colors.background.cardLight],
+  };
+  const statusLabels: Record<string, string> = {
+    registration: 'Inscriptions',
+    in_progress: 'En cours',
+    completed: 'Terminé',
+  };
+  const statusDotColors: Record<string, string> = {
+    registration: Colors.status.success,
+    in_progress: '#4ADE80',
+    completed: Colors.text.muted,
+  };
 
-  const TeamCard = ({ team }: { team: any }) => (
-    <Card
-      style={[styles.teamCard, cardShadow]}
-      onPress={() => router.push(`/team/${team.id}`)}
-      variant="gradient"
-    >
+  const getCountdownLabel = (startDate: string | Date | null | undefined) => {
+    if (!startDate) return null;
+    const now = new Date();
+    const start = new Date(startDate);
+    const diffMs = start.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return null;
+    if (diffDays === 0) return "Aujourd'hui";
+    if (diffDays === 1) return 'Demain';
+    if (diffDays <= 7) return `Dans ${diffDays}j`;
+    if (diffDays <= 30) return `Dans ${Math.ceil(diffDays / 7)} sem.`;
+    return null;
+  };
+
+  const TournamentCard = ({ tournament, index }: { tournament: any; index?: number }) => {
+    const gradientColors = statusColors[tournament.status] ?? statusColors.registration;
+    const regPct = tournament.maxTeams > 0
+      ? (tournament.registeredTeams.length / tournament.maxTeams)
+      : 0;
+    const countdown = tournament.status === 'registration' ? getCountdownLabel(tournament.startDate) : null;
+    const isCompleted = tournament.status === 'completed';
+    const isLive = tournament.status === 'in_progress';
+    const levelText = levelLabels?.[tournament.level] ?? '';
+
+    return (
+      <View>
+        <TouchableOpacity
+          activeOpacity={0.88}
+          onPress={() => router.push(`/tournament/${tournament.id}`)}
+          style={[styles.tournamentCardWrap, cardShadow]}
+        >
+          <LinearGradient
+            colors={gradientColors}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.tournamentCard, isCompleted && styles.tournamentCardCompleted]}
+          >
+          <View style={styles.tournamentTop}>
+            <View style={styles.tournamentStatusBadge}>
+              <View style={[styles.tournamentStatusDot, { backgroundColor: statusDotColors[tournament.status] ?? Colors.text.muted }]} />
+              <Text style={styles.tournamentStatusText}>{statusLabels[tournament.status] ?? tournament.status}</Text>
+            </View>
+            {countdown && (
+              <View style={styles.tournamentCountdownBadge}>
+                <Text style={styles.tournamentCountdownText}>{countdown}</Text>
+              </View>
+            )}
+            {isLive && (
+              <View style={styles.tournamentLiveBadge}>
+                <View style={styles.tournamentLiveDot} />
+                <Text style={styles.tournamentLiveText}>LIVE</Text>
+              </View>
+            )}
+          </View>
+
+          <Text style={styles.tournamentName} numberOfLines={2}>{tournament.name}</Text>
+
+          <View style={styles.tournamentInfoRow}>
+            <Text style={styles.tournamentInfoChip}>{sportLabels[tournament.sport]}</Text>
+            <Text style={styles.tournamentInfoChip}>{tournament.format}</Text>
+            {levelText ? <Text style={styles.tournamentInfoChip}>{levelText}</Text> : null}
+          </View>
+
+          {tournament.status === 'registration' && (
+            <View style={styles.tournamentProgressWrap}>
+              <View style={styles.tournamentProgressBg}>
+                <View style={[styles.tournamentProgressFill, { width: `${Math.min(regPct * 100, 100)}%` }]} />
+              </View>
+              <Text style={styles.tournamentProgressLabel}>
+                {tournament.registeredTeams.length}/{tournament.maxTeams} équipes
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.tournamentBottom}>
+            <View style={styles.tournamentDateRow}>
+              <Calendar size={12} color="rgba(255,255,255,0.85)" />
+              <Text style={styles.tournamentDate}>{formatDate(tournament.startDate)}</Text>
+            </View>
+            {tournament.venue?.city && (
+              <View style={styles.tournamentVenueRow}>
+                <MapPin size={10} color="rgba(255,255,255,0.7)" />
+                <Text style={styles.tournamentVenueText} numberOfLines={1}>{tournament.venue.city}</Text>
+              </View>
+            )}
+            {tournament.status !== 'registration' && (
+              <View style={styles.tournamentTeams}>
+                <Users size={12} color="rgba(255,255,255,0.8)" />
+                <Text style={styles.tournamentTeamsText}>
+                  {tournament.registeredTeams.length}
+                </Text>
+              </View>
+            )}
+            {isCompleted && (
+              <View style={styles.tournamentCompletedBadge}>
+                <CheckCircle size={12} color="rgba(255,255,255,0.7)" />
+              </View>
+            )}
+          </View>
+
+          {tournament.prizePool > 0 && (
+            <View style={styles.tournamentPrizeBadge}>
+              <Trophy size={11} color="#FFD700" />
+              <Text style={styles.tournamentPrizeText}>{tournament.prizePool.toLocaleString()} FCFA</Text>
+            </View>
+          )}
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const TeamCard = ({ team, index }: { team: any; index?: number }) => {
+    return (
+      <View>
+        <TouchableOpacity
+          style={[styles.teamCard, cardShadow]}
+          onPress={() => router.push(`/team/${team.id}`)}
+          activeOpacity={0.8}
+        >
+          <LinearGradient
+            colors={[Colors.primary.blue + '08', 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.teamCardGradient}
+          />
+          <View style={styles.teamCardAccent} />
       <View style={styles.teamRow}>
-        <View style={styles.teamAvatarWrap}>
-          <Avatar uri={team.logo} name={team.name} size="large" />
-        </View>
+        <Avatar uri={team.logo} name={team.name} size="large" />
         <View style={styles.teamInfo}>
           <Text style={styles.teamName} numberOfLines={1}>{team.name}</Text>
-          <Text style={styles.teamMeta}>{sportLabels[team.sport]} • {team.format}</Text>
-          <View style={styles.teamLocation}>
-            <MapPin size={12} color={Colors.text.muted} />
-            <Text style={styles.teamLocationText} numberOfLines={1}>{team.city}</Text>
+          <View style={styles.teamMetaRow}>
+            <View style={styles.teamMetaChip}><Text style={styles.teamMetaChipText}>{sportLabels[team.sport]}</Text></View>
+            <View style={styles.teamMetaChip}><Text style={styles.teamMetaChipText}>{team.format}</Text></View>
           </View>
+          {team.city && (
+            <View style={styles.teamLocation}>
+              <MapPin size={11} color={Colors.text.muted} />
+              <Text style={styles.teamLocationText} numberOfLines={1}>{team.city}</Text>
+            </View>
+          )}
         </View>
         <View style={styles.teamStats}>
-          <Text style={styles.teamMembersNum}>{team.members.length}/{team.maxMembers}</Text>
-          <Text style={styles.teamMembersLabel}>membres</Text>
+          <Text style={styles.teamMembersNum}>{team.members.length}</Text>
+          <Text style={styles.teamMembersLabel}>/{team.maxMembers}</Text>
         </View>
-        <ChevronRight size={18} color={Colors.text.muted} />
+        <ChevronRight size={16} color={Colors.text.muted} />
+        </View>
+      </TouchableOpacity>
       </View>
-    </Card>
-  );
+    );
+  };
 
   const Section = ({
     title,
@@ -226,15 +343,20 @@ export default function HomeScreen() {
     { icon: Users, color: Colors.primary.blue, label: 'Équipe', route: '/create-team', desc: 'Rejoindre' },
     { icon: Trophy, color: Colors.status.success, label: 'Tournoi', route: '/tournaments', desc: 'Découvrir' },
     { icon: TrendingUp, color: '#8B5CF6', label: 'Stats', route: '/(tabs)/profile', desc: 'Profil' },
+    { icon: Trophy, color: '#FFD700', label: 'Classements', route: '/rankings', desc: 'Global' },
   ];
 
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#060A10', Colors.background.dark, '#0B1018', '#0D1420']}
-        locations={[0, 0.3, 0.6, 1]}
+        colors={['#060A10', '#0A0E16', Colors.background.dark, '#0B1018', '#0D1420']}
+        locations={[0, 0.2, 0.5, 0.7, 1]}
         style={StyleSheet.absoluteFill}
       />
+      <View style={styles.backgroundPattern}>
+        <View style={[styles.patternCircle, { top: -100, right: -50 }]} />
+        <View style={[styles.patternCircle, { bottom: 100, left: -80 }]} />
+      </View>
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
@@ -245,8 +367,7 @@ export default function HomeScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />
           }
         >
-          <View style={[styles.header, Platform.OS === 'ios' && styles.headerBlur]}>
-            {Platform.OS === 'ios' && <BlurView intensity={48} tint="dark" style={StyleSheet.absoluteFill} />}
+          <View style={styles.header}>
             <View style={styles.headerInner}>
               <TouchableOpacity
                 style={styles.headerLeft}
@@ -257,16 +378,16 @@ export default function HomeScreen() {
                   <Avatar uri={user?.avatar} name={user?.fullName} size="medium" />
                 </View>
                 <View style={styles.headerText}>
-                  <Text style={styles.greeting}>{getGreeting()}</Text>
+                  <Text style={styles.greeting}>{getGreeting()} 👋</Text>
                   <Text style={styles.userName}>{user?.fullName?.split(' ')[0] || 'Joueur'}</Text>
                 </View>
               </TouchableOpacity>
               <View style={styles.headerRight}>
                 <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/search')} accessibilityLabel="Recherche" accessibilityRole="button">
-                  <Search size={21} color={Colors.text.primary} strokeWidth={2} />
+                  <Search size={20} color={Colors.text.primary} strokeWidth={2} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/notifications')} accessibilityLabel="Notifications" accessibilityRole="button">
-                  <Bell size={21} color={Colors.text.primary} strokeWidth={2} />
+                  <Bell size={20} color={Colors.text.primary} strokeWidth={2} />
                   {unreadNotifs > 0 && (
                     <View style={styles.badge}>
                       <Text style={styles.badgeNum}>{unreadNotifs > 99 ? '99+' : unreadNotifs}</Text>
@@ -277,50 +398,43 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <TouchableOpacity
-            activeOpacity={0.97}
-            onPress={() => router.push('/(tabs)/matches')}
-            style={[styles.bannerWrap, cardShadow]}
-          >
-            <LinearGradient
-              colors={['#1a5490', Colors.primary.blue, '#0D47A1']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.banner}
+          <View>
+            <TouchableOpacity
+              activeOpacity={0.93}
+              onPress={() => router.push('/(tabs)/matches')}
+              style={[styles.bannerWrap, cardShadow]}
             >
               <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.25)']}
-                style={StyleSheet.absoluteFill}
-              />
-              <View style={styles.bannerContent}>
-                <View style={styles.bannerLeft}>
-                  <View style={styles.bannerPill}>
-                    <Zap size={12} color="rgba(255,255,255,0.95)" />
-                    <Text style={styles.bannerPillText}>Prêt à jouer</Text>
+                colors={['#0E4DA4', '#1565C0', '#0D47A1', '#0A3D8F']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.banner}
+              >
+                <View style={styles.bannerGlow} />
+                <View style={styles.bannerContent}>
+                  <View style={styles.bannerLeft}>
+                    <View style={styles.bannerPill}>
+                      <Zap size={11} color="#FFD700" />
+                      <Text style={styles.bannerPillText}>Prêt à jouer</Text>
+                    </View>
+                    <Text style={styles.bannerTitle}>Trouve un{'\n'}match</Text>
+                    <Text style={styles.bannerSub}>Ou crée le tien en un clic</Text>
+                    <View style={styles.bannerCta}>
+                      <Text style={styles.bannerCtaText}>Voir les matchs</Text>
+                      <ChevronRight size={18} color="#FFF" strokeWidth={2.5} />
+                    </View>
                   </View>
-                  <Text style={styles.bannerTitle}>Trouve un match</Text>
-                  <Text style={styles.bannerSub}>Ou crée le tien en un clic</Text>
-                  <View style={styles.bannerCta}>
-                    <Text style={styles.bannerCtaText}>Voir les matchs</Text>
-                    <ChevronRight size={20} color={Colors.primary.blue} strokeWidth={2.5} />
+                  <View style={styles.bannerRight}>
+                    <View style={styles.bannerCircle}>
+                      <Swords size={36} color="rgba(255,255,255,0.9)" strokeWidth={1.5} />
+                    </View>
                   </View>
                 </View>
-                <View style={styles.bannerImgWrap}>
-                  <Image
-                    source={{ uri: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=400' }}
-                    style={styles.bannerImg}
-                    contentFit="cover"
-                  />
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.4)']}
-                    style={styles.bannerImgOverlay}
-                  />
-                </View>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
 
-          <View style={[styles.quickWrap, cardShadow]}>
+          <View style={styles.quickWrap}>
             <View style={styles.quickGrid}>
               {quickItems.map((item, i) => (
                 <TouchableOpacity
@@ -329,9 +443,9 @@ export default function HomeScreen() {
                   onPress={() => router.push(item.route as any)}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.quickIconBg, { backgroundColor: `${item.color}22` }]}>
-                    <item.icon size={24} color={item.color} strokeWidth={2} />
-                  </View>
+                  <LinearGradient colors={[`${item.color}18`, `${item.color}08`]} style={styles.quickIconBg}>
+                    <item.icon size={22} color={item.color} strokeWidth={2} />
+                  </LinearGradient>
                   <Text style={styles.quickLabel}>{item.label}</Text>
                   <Text style={styles.quickDesc}>{item.desc}</Text>
                 </TouchableOpacity>
@@ -342,7 +456,7 @@ export default function HomeScreen() {
           {userTournaments.length > 0 && (
             <Section
               title="Mes tournois"
-              subtitle="Inscriptions en cours"
+              subtitle={`${userTournaments.filter(t => t.status === 'in_progress').length > 0 ? userTournaments.filter(t => t.status === 'in_progress').length + ' en cours' : userTournaments.length + ' tournoi' + (userTournaments.length > 1 ? 's' : '')}`}
               icon={Trophy}
               onSeeAll={() => router.push('/tournaments')}
             >
@@ -351,9 +465,14 @@ export default function HomeScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.hScroll}
               >
-                {userTournaments.map((t) => (
-                  <TournamentCard key={t.id} tournament={t} colors={[Colors.primary.blue, Colors.primary.blueDark]} />
-                ))}
+                {userTournaments
+                  .sort((a, b) => {
+                    const o: Record<string, number> = { in_progress: 0, registration: 1, completed: 2 };
+                    return (o[a.status] ?? 3) - (o[b.status] ?? 3);
+                  })
+                  .map((t, idx) => (
+                    <TournamentCard key={t.id} tournament={t} index={idx} />
+                  ))}
               </ScrollView>
             </Section>
           )}
@@ -365,7 +484,7 @@ export default function HomeScreen() {
             onSeeAll={() => router.push('/(tabs)/teams')}
           >
             {userTeams.length > 0 ? (
-              userTeams.slice(0, 3).map((team) => <TeamCard key={team.id} team={team} />)
+              userTeams.slice(0, 3).map((team, idx) => <TeamCard key={team.id} team={team} index={idx} />)
             ) : (
               <TouchableOpacity
                 activeOpacity={0.85}
@@ -396,7 +515,7 @@ export default function HomeScreen() {
             onSeeAll={() => router.push('/(tabs)/teams')}
           >
             {otherTeamsInCity.length > 0 ? (
-              otherTeamsInCity.map((team) => <TeamCard key={team.id} team={team} />)
+              otherTeamsInCity.map((team, idx) => <TeamCard key={team.id} team={team} index={idx} />)
             ) : (
               <View style={styles.emptyCardSmall}>
                 <Text style={styles.emptyTextSmall}>
@@ -409,19 +528,15 @@ export default function HomeScreen() {
             )}
           </Section>
 
-          <Section title="Tournois ouverts" icon={Trophy} onSeeAll={() => router.push('/tournaments')}>
-            {activeTournaments.length > 0 ? (
+          <Section title="Tournois" subtitle="Découvrir et participer" icon={Trophy} onSeeAll={() => router.push('/tournaments')}>
+            {allTournaments.length > 0 ? (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.hScroll}
               >
-                {activeTournaments.map((t) => (
-                  <TournamentCard
-                    key={t.id}
-                    tournament={t}
-                    colors={[Colors.gradient.orangeStart, Colors.gradient.orangeEnd]}
-                  />
+                {allTournaments.map((t, idx) => (
+                  <TournamentCard key={t.id} tournament={t} index={idx} />
                 ))}
               </ScrollView>
             ) : (
@@ -433,7 +548,7 @@ export default function HomeScreen() {
                 <View style={{ marginBottom: 8 }}>
                   <Trophy size={32} color={Colors.text.muted} />
                 </View>
-                <Text style={styles.emptyTextSmall}>Aucun tournoi en inscription pour le moment</Text>
+                <Text style={styles.emptyTextSmall}>Aucun tournoi pour le moment</Text>
                 <Text style={styles.emptyLink}>Voir les tournois</Text>
               </TouchableOpacity>
             )}
@@ -504,7 +619,7 @@ export default function HomeScreen() {
 
           <Section title="Équipes qui recrutent" icon={Users} onSeeAll={() => router.push('/(tabs)/teams')}>
             {recruitingTeams.length > 0 ? (
-              recruitingTeams.map((team) => <TeamCard key={team.id} team={team} />)
+              recruitingTeams.map((team, idx) => <TeamCard key={team.id} team={team} index={idx} />)
             ) : (
               <View style={styles.emptyCardSmall}>
                 <Text style={styles.emptyTextSmall}>Aucune équipe en recrutement</Text>
@@ -522,46 +637,54 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
+  backgroundPattern: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  patternCircle: {
+    position: 'absolute',
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: Colors.primary.orange + '08',
+    opacity: 0.3,
+  },
   header: {
     paddingHorizontal: PAD,
-    paddingTop: 10,
-    paddingBottom: 14,
-    marginBottom: 16,
-    overflow: 'hidden',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    paddingTop: 8,
+    paddingBottom: 16,
+    marginBottom: 8,
   },
-  headerBlur: { overflow: 'hidden' },
   headerInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatarRing: {
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 2.5,
+    borderColor: Colors.primary.orange + '50',
     borderRadius: 999,
     padding: 2,
   },
-  headerText: { gap: 0 },
-  greeting: { color: Colors.text.muted, fontSize: 12, fontWeight: '600' as const },
-  userName: { color: Colors.text.primary, fontSize: 19, fontWeight: '800' as const, letterSpacing: -0.2 },
-  headerRight: { flexDirection: 'row', gap: 10 },
+  headerText: { gap: 1 },
+  greeting: { color: Colors.text.muted, fontSize: 13, fontWeight: '500' as const },
+  userName: { color: Colors.text.primary, fontSize: 20, fontWeight: '800' as const, letterSpacing: -0.3 },
+  headerRight: { flexDirection: 'row', gap: 8 },
   iconBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: Colors.background.card + 'DD',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: Colors.border.light + '60',
   },
   badge: {
     position: 'absolute',
-    top: 4,
-    right: 4,
+    top: -2,
+    right: -2,
     minWidth: 20,
     height: 20,
     borderRadius: 10,
@@ -569,154 +692,218 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 5,
+    borderWidth: 2,
+    borderColor: Colors.background.dark,
   },
-  badgeNum: { color: '#FFF', fontSize: 11, fontWeight: '800' as const },
+  badgeNum: { color: '#FFF', fontSize: 10, fontWeight: '800' as const },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: PAD, paddingTop: 8, paddingBottom: 28 },
   bannerWrap: {
     borderRadius: RADIUS,
-    marginBottom: 22,
+    marginBottom: 20,
     overflow: 'hidden',
   },
   banner: {
     borderRadius: RADIUS,
     overflow: 'hidden',
-    minHeight: 140,
+    minHeight: 160,
+    position: 'relative',
+  },
+  bannerGlow: {
+    position: 'absolute',
+    top: -50,
+    right: -50,
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    opacity: 0.5,
   },
   bannerContent: {
     flexDirection: 'row',
-    alignItems: 'stretch',
+    alignItems: 'center',
     padding: 22,
-    minHeight: 140,
+    minHeight: 160,
   },
-  bannerLeft: { flex: 1, justifyContent: 'center', paddingRight: 12 },
+  bannerLeft: { flex: 1, justifyContent: 'center', paddingRight: 16 },
   bannerPill: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 999,
-    marginBottom: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
-  bannerPillText: { color: 'rgba(255,255,255,0.95)', fontSize: 12, fontWeight: '700' as const },
+  bannerPillText: { color: 'rgba(255,255,255,0.95)', fontSize: 11, fontWeight: '700' as const },
   bannerTitle: {
     color: '#FFF',
-    fontSize: 24,
-    fontWeight: '800' as const,
-    marginBottom: 4,
-    letterSpacing: -0.4,
+    fontSize: 26,
+    fontWeight: '900' as const,
+    marginBottom: 6,
+    letterSpacing: -0.5,
+    lineHeight: 30,
   },
-  bannerSub: { color: 'rgba(255,255,255,0.85)', fontSize: 14, marginBottom: 14, lineHeight: 20 },
+  bannerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 13, marginBottom: 16 },
   bannerCta: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#FFF',
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     gap: 6,
-    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8 }, android: {} }),
-  },
-  bannerCtaText: { color: Colors.primary.blue, fontWeight: '700' as const, fontSize: 14 },
-  bannerImgWrap: { width: 110, height: 110, borderRadius: 16, overflow: 'hidden', alignSelf: 'center' },
-  bannerImg: { width: '100%', height: '100%', borderRadius: 16 },
-  bannerImgOverlay: { ...StyleSheet.absoluteFillObject, borderRadius: 16 },
-  quickWrap: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: RADIUS,
-    marginBottom: 28,
-    padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(255,255,255,0.15)',
   },
-  quickGrid: { flexDirection: 'row', justifyContent: 'space-between', gap: 4 },
-  quickItem: { flex: 1, alignItems: 'center', gap: 8 },
+  bannerCtaText: { color: '#FFF', fontWeight: '700' as const, fontSize: 13 },
+  bannerRight: { alignItems: 'center', justifyContent: 'center' },
+  bannerCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  quickWrap: {
+    marginBottom: 26,
+  },
+  quickGrid: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  quickItem: { flex: 1, alignItems: 'center', gap: 8, backgroundColor: Colors.background.card + 'CC', borderRadius: 16, paddingVertical: 16, paddingHorizontal: 4, borderWidth: 1, borderColor: Colors.border.light + '60', backdropFilter: 'blur(10px)' },
   quickIconBg: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quickLabel: { color: Colors.text.primary, fontSize: 13, fontWeight: '700' as const },
-  quickDesc: { color: Colors.text.muted, fontSize: 11, fontWeight: '500' as const },
-  section: { marginBottom: 30 },
+  quickLabel: { color: Colors.text.primary, fontSize: 12, fontWeight: '700' as const },
+  quickDesc: { color: Colors.text.muted, fontSize: 10, fontWeight: '500' as const },
+  section: { marginBottom: 28 },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   sectionIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 11,
     backgroundColor: Colors.primary.orange + '18',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.primary.orange + '30',
   },
-  sectionTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '800' as const, letterSpacing: -0.2 },
-  sectionSubtitle: { color: Colors.text.muted, fontSize: 13, marginTop: 2 },
-  seeAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  seeAllText: { color: Colors.primary.orange, fontSize: 14, fontWeight: '600' as const },
+  sectionTitle: { color: Colors.text.primary, fontSize: 17, fontWeight: '800' as const, letterSpacing: -0.2 },
+  sectionSubtitle: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
+  seeAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: Colors.primary.orange + '12', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
+  seeAllText: { color: Colors.primary.orange, fontSize: 12, fontWeight: '600' as const },
   hScroll: { gap: GAP, paddingRight: PAD },
   tournamentCardWrap: { borderRadius: CARD_R, overflow: 'hidden', width: width * 0.72 },
-  tournamentCard: { padding: 18, borderRadius: CARD_R, minHeight: 140 },
+  tournamentCard: { padding: 18, borderRadius: CARD_R, minHeight: 165, justifyContent: 'space-between' },
+  tournamentCardCompleted: { opacity: 0.8 },
   tournamentTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 12,
   },
-  tournamentBadge: {
+  tournamentStatusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    gap: 5,
+    backgroundColor: 'rgba(0,0,0,0.3)',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 10,
   },
-  tournamentBadgeText: { color: '#FFF', fontSize: 12, fontWeight: '700' as const },
-  tournamentTeams: { alignItems: 'flex-end' },
-  tournamentTeamsText: { color: '#FFF', fontSize: 16, fontWeight: '800' as const },
-  tournamentTeamsLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 11 },
-  tournamentName: { color: '#FFF', fontSize: 17, fontWeight: '700' as const, marginBottom: 4 },
-  tournamentInfo: { color: 'rgba(255,255,255,0.88)', fontSize: 13, marginBottom: 8 },
-  tournamentDateRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  tournamentDate: { color: 'rgba(255,255,255,0.9)', fontSize: 12 },
-  teamCard: { marginBottom: GAP, borderRadius: CARD_R, overflow: 'hidden' },
+  tournamentStatusDot: { width: 7, height: 7, borderRadius: 4 },
+  tournamentStatusText: { color: '#FFF', fontSize: 10, fontWeight: '700' as const },
+  tournamentCountdownBadge: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  tournamentCountdownText: { color: '#FFF', fontSize: 10, fontWeight: '700' as const },
+  tournamentBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
+  tournamentProgressWrap: { marginTop: 8, marginBottom: 2 },
+  tournamentProgressBg: { height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.15)', overflow: 'hidden' },
+  tournamentProgressFill: { height: '100%', borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.9)' },
+  tournamentProgressLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10, marginTop: 4, fontWeight: '500' as const },
+  tournamentPrizeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+    marginTop: 10,
+  },
+  tournamentPrizeText: { color: '#FFD700', fontSize: 11, fontWeight: '800' as const },
+  tournamentCompletedBadge: { marginLeft: 4 },
+  tournamentLiveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,59,48,0.4)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  tournamentLiveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FF3B30' },
+  tournamentLiveText: { color: '#FFF', fontSize: 9, fontWeight: '800' as const, letterSpacing: 0.8 },
+  tournamentVenueRow: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: 100 },
+  tournamentVenueText: { color: 'rgba(255,255,255,0.7)', fontSize: 10 },
+  tournamentTeams: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  tournamentTeamsText: { color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: '600' as const },
+  tournamentName: { color: '#FFF', fontSize: 17, fontWeight: '800' as const, marginBottom: 6, letterSpacing: -0.3, lineHeight: 22 },
+  tournamentInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4, flexWrap: 'wrap' },
+  tournamentInfoChip: { color: 'rgba(255,255,255,0.8)', fontSize: 10, fontWeight: '600' as const, backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
+  tournamentDateRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  tournamentDate: { color: 'rgba(255,255,255,0.85)', fontSize: 11 },
+  teamCard: { marginBottom: 10, borderRadius: 16, overflow: 'hidden', backgroundColor: Colors.background.card, flexDirection: 'row', borderWidth: 1, borderColor: Colors.border.light, position: 'relative' },
+  teamCardGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  teamCardAccent: { width: 4, backgroundColor: Colors.primary.blue, zIndex: 1 },
   teamRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    padding: 2,
+    gap: 12,
+    padding: 14,
+    flex: 1,
   },
-  teamAvatarWrap: {},
   teamInfo: { flex: 1, minWidth: 0, gap: 4 },
-  teamName: { color: Colors.text.primary, fontSize: 16, fontWeight: '700' as const },
-  teamMeta: { color: Colors.text.secondary, fontSize: 13 },
+  teamName: { color: Colors.text.primary, fontSize: 15, fontWeight: '700' as const },
+  teamMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  teamMetaChip: { backgroundColor: Colors.background.cardLight, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
+  teamMetaChipText: { color: Colors.text.secondary, fontSize: 10, fontWeight: '600' as const },
   teamLocation: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  teamLocationText: { color: Colors.text.muted, fontSize: 12, flex: 1 },
-  teamStats: { alignItems: 'center' },
+  teamLocationText: { color: Colors.text.muted, fontSize: 11, flex: 1 },
+  teamStats: { alignItems: 'center', flexDirection: 'row' },
   teamMembersNum: { color: Colors.primary.orange, fontSize: 18, fontWeight: '800' as const },
-  teamMembersLabel: { color: Colors.text.muted, fontSize: 11 },
-  matchCard: { marginBottom: GAP, borderRadius: CARD_R, overflow: 'hidden' },
+  teamMembersLabel: { color: Colors.text.muted, fontSize: 12 },
+  matchCard: { marginBottom: 10, borderRadius: 16, overflow: 'hidden' },
   matchCardRanked: { borderLeftWidth: 4, borderLeftColor: Colors.primary.orange },
-  matchTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  matchBadge: { backgroundColor: Colors.primary.blue, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-  matchBadgeRanked: { backgroundColor: Colors.primary.orange },
-  matchBadgeText: { color: '#FFF', fontSize: 11, fontWeight: '700' as const },
-  matchLevel: { color: Colors.text.muted, fontSize: 12 },
-  rankedTagline: { color: Colors.primary.orange, fontSize: 11, fontWeight: '600' as const, marginBottom: 4 },
-  matchSport: { color: Colors.text.primary, fontSize: 16, fontWeight: '700' as const, marginBottom: 10 },
-  matchMeta: { gap: 6, marginBottom: 10 },
-  matchMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  matchTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  matchBadge: { backgroundColor: Colors.primary.blue + '20', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  matchBadgeRanked: { backgroundColor: Colors.primary.orange + '20' },
+  matchBadgeText: { color: Colors.primary.blue, fontSize: 10, fontWeight: '700' as const },
+  matchLevel: { color: Colors.text.muted, fontSize: 11, fontWeight: '500' as const },
+  rankedTagline: { color: Colors.primary.orange, fontSize: 10, fontWeight: '600' as const, marginBottom: 4 },
+  matchSport: { color: Colors.text.primary, fontSize: 15, fontWeight: '700' as const, marginBottom: 10 },
+  matchMeta: { gap: 6, marginBottom: 12 },
+  matchMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   matchMetaText: { color: Colors.text.secondary, fontSize: 13, flex: 1 },
   matchFooter: {
     flexDirection: 'row',
@@ -726,48 +913,51 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.border.light,
   },
-  matchPlayers: { color: Colors.text.muted, fontSize: 13 },
-  matchPrize: { color: Colors.primary.orange, fontSize: 13, fontWeight: '700' as const },
-  rankedLabel: { color: Colors.primary.orange, fontSize: 12, fontWeight: '700' as const },
+  matchPlayers: { color: Colors.text.muted, fontSize: 12 },
+  matchPrize: { color: Colors.primary.orange, fontSize: 12, fontWeight: '700' as const },
+  rankedLabel: { color: Colors.primary.orange, fontSize: 11, fontWeight: '700' as const },
   emptyCard: {
-    borderRadius: CARD_R,
+    borderRadius: 18,
     overflow: 'hidden',
     alignItems: 'center',
-    paddingVertical: 32,
+    paddingVertical: 36,
     paddingHorizontal: 24,
     position: 'relative',
   },
   emptyIconWrap: {
     width: 64,
     height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.primary.blue + '25',
+    borderRadius: 20,
+    backgroundColor: Colors.primary.blue + '15',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 16,
   },
-  emptyTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '700' as const, marginBottom: 6 },
-  emptyText: { color: Colors.text.muted, fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 16 },
+  emptyTitle: { color: Colors.text.primary, fontSize: 17, fontWeight: '700' as const, marginBottom: 6 },
+  emptyText: { color: Colors.text.muted, fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 18 },
   emptyCta: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: Colors.primary.orange + '20',
+    backgroundColor: Colors.primary.orange + '15',
     paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: 22,
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.primary.orange + '25',
   },
-  emptyCtaText: { color: Colors.primary.orange, fontSize: 14, fontWeight: '700' as const },
+  emptyCtaText: { color: Colors.primary.orange, fontSize: 13, fontWeight: '700' as const },
   emptyCardSmall: {
     backgroundColor: Colors.background.card,
-    borderRadius: CARD_R,
+    borderRadius: 16,
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: 28,
     paddingHorizontal: 20,
     borderWidth: 1,
     borderColor: Colors.border.light,
+    borderStyle: 'dashed',
   },
-  emptyTextSmall: { color: Colors.text.muted, fontSize: 14, marginBottom: 10 },
-  emptyLink: { color: Colors.primary.orange, fontSize: 14, fontWeight: '600' as const },
+  emptyTextSmall: { color: Colors.text.muted, fontSize: 13, marginBottom: 10 },
+  emptyLink: { color: Colors.primary.orange, fontSize: 13, fontWeight: '600' as const },
   spacer: { height: 40 },
 });

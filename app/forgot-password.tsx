@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -134,9 +134,10 @@ export default function ForgotPasswordScreen() {
     <>
       <Text style={styles.title}>Réinitialisation</Text>
       <Text style={styles.subtitle}>Entrez le code reçu par email et votre nouveau mot de passe</Text>
-      <Input 
-        label="Code de vérification" 
-        placeholder="000000" 
+      <Input
+        scrollViewRef={scrollViewRef}
+        label="Code de vérification"
+        placeholder="000000"
         value={code} 
         onChangeText={setCode} 
         keyboardType="numeric" 
@@ -153,9 +154,10 @@ export default function ForgotPasswordScreen() {
         error={errors.newPassword} 
         icon={<Key size={20} color={Colors.text.muted} />} 
       />
-      <Input 
-        label="Confirmer le mot de passe" 
-        placeholder="••••••••" 
+      <Input
+        scrollViewRef={scrollViewRef}
+        label="Confirmer le mot de passe"
+        placeholder="••••••••"
         value={confirmPassword} 
         onChangeText={setConfirmPassword} 
         secureTextEntry 
@@ -197,8 +199,8 @@ export default function ForgotPasswordScreen() {
       <View style={styles.container}>
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 30}>
+            <ScrollView ref={scrollViewRef} contentContainerStyle={[styles.scrollContent, { paddingBottom: 320 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
               {step !== 'success' && (
                 <TouchableOpacity style={styles.backButton} onPress={() => step === 'email' ? router.back() : setStep('email')}>
                   <ArrowLeft size={24} color={Colors.text.primary} />
