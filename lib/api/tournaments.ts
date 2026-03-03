@@ -180,6 +180,16 @@ export const tournamentsApi = {
     managers?: string[];
   }) {
     console.log('[TournamentsAPI] Updating tournament:', id);
+    
+    // Get current tournament data to check for date changes
+    const { data: currentTournament, error: fetchError } = await (supabase
+      .from('tournaments')
+      .select('start_date, end_date, match_ids')
+      .eq('id', id)
+      .single() as any);
+    
+    if (fetchError) throw fetchError;
+    
     const payload: Record<string, unknown> = {};
     if (data.name != null) payload.name = data.name;
     if (data.description != null) payload.description = data.description;
@@ -194,13 +204,64 @@ export const tournamentsApi = {
     if (data.matchIds != null) payload.match_ids = data.matchIds;
     if (data.winnerId !== undefined) payload.winner_id = data.winnerId;
     if (data.managers != null) payload.managers = data.managers;
+    
     const { data: row, error } = await (supabase
       .from('tournaments')
-      .update(payload)
+      .update(payload as any)
       .eq('id', id)
       .select()
       .single() as any);
     if (error) throw error;
+    
+    // If dates changed, update all tournament matches proportionally
+    if ((data.startDate != null || data.endDate != null) && currentTournament) {
+      const oldStart = new Date(currentTournament.start_date);
+      const oldEnd = new Date(currentTournament.end_date);
+      const newStart = data.startDate ? new Date(data.startDate) : oldStart;
+      const newEnd = data.endDate ? new Date(data.endDate) : oldEnd;
+      
+      const matchIds = (currentTournament.match_ids as string[]) || [];
+      
+      if (matchIds.length > 0) {
+        console.log('[TournamentsAPI] Updating match dates for', matchIds.length, 'matches');
+        
+        // Get all matches
+        const { data: matches, error: matchesError } = await (supabase
+          .from('matches')
+          .select('id, date_time, start_time')
+          .in('id', matchIds) as any);
+        
+        if (!matchesError && matches) {
+          const oldDuration = oldEnd.getTime() - oldStart.getTime();
+          const newDuration = newEnd.getTime() - newStart.getTime();
+          
+          // Update each match proportionally
+          for (const match of matches) {
+            const oldMatchDate = new Date(match.date_time || match.start_time);
+            
+            // Calculate the position of this match in the old tournament timeline (0 to 1)
+            const position = oldDuration > 0 
+              ? (oldMatchDate.getTime() - oldStart.getTime()) / oldDuration 
+              : 0;
+            
+            // Apply the same position to the new timeline
+            const newMatchTime = new Date(newStart.getTime() + (position * newDuration));
+            
+            // Update the match
+            await supabase
+              .from('matches')
+              .update({
+                date_time: newMatchTime.toISOString(),
+                start_time: newMatchTime.toISOString(),
+              } as any)
+              .eq('id', match.id);
+          }
+          
+          console.log('[TournamentsAPI] Updated', matches.length, 'match dates');
+        }
+      }
+    }
+    
     return mapTournamentRowToTournament(row as TournamentRow);
   },
 
@@ -228,7 +289,7 @@ export const tournamentsApi = {
     const updated = [...current, teamId];
     const { error: updateError } = await (supabase
       .from('tournaments')
-      .update({ registered_teams: updated })
+      .update({ registered_teams: updated } as any)
       .eq('id', tournamentId) as any);
     if (updateError) throw updateError;
     return { success: true };
@@ -249,7 +310,7 @@ export const tournamentsApi = {
     if (updated.length === current.length) throw new Error('Équipe non inscrite');
     const { error: updateError } = await (supabase
       .from('tournaments')
-      .update({ registered_teams: updated })
+      .update({ registered_teams: updated } as any)
       .eq('id', tournamentId) as any);
     if (updateError) throw updateError;
     return { success: true };
@@ -279,7 +340,7 @@ export const tournamentsApi = {
     const updated = [...current, matchId];
     const { error: updateError } = await (supabase
       .from('tournaments')
-      .update({ match_ids: updated })
+      .update({ match_ids: updated } as any)
       .eq('id', tournamentId) as any);
     if (updateError) throw updateError;
     return { success: true };
@@ -288,7 +349,7 @@ export const tournamentsApi = {
   async setWinner(tournamentId: string, winnerTeamId: string) {
     const { error } = await (supabase
       .from('tournaments')
-      .update({ winner_id: winnerTeamId, status: 'completed' })
+      .update({ winner_id: winnerTeamId, status: 'completed' } as any)
       .eq('id', tournamentId) as any);
     if (error) throw error;
     return { success: true };
@@ -306,7 +367,7 @@ export const tournamentsApi = {
     if (updated.length === current.length) throw new Error('Match non lié à ce tournoi');
     const { error: updateError } = await (supabase
       .from('tournaments')
-      .update({ match_ids: updated })
+      .update({ match_ids: updated } as any)
       .eq('id', tournamentId) as any);
     if (updateError) throw updateError;
     return { success: true };

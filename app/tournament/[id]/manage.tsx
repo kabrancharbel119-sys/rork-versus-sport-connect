@@ -620,6 +620,8 @@ export default function ManageTournamentScreen() {
   const [showScoreModal, setShowScoreModal] = useState<Match | null>(null);
   const [showWinnerModal, setShowWinnerModal] = useState(false);
   const [editMatchModal, setEditMatchModal] = useState<Match | null>(null);
+  const [showAdvanceRoundModal, setShowAdvanceRoundModal] = useState(false);
+  const [confirmedRounds, setConfirmedRounds] = useState<Set<string>>(new Set());
 
   const [isMatchmaking, setIsMatchmaking] = useState(false);
   const [isRemovingMatch, setIsRemovingMatch] = useState(false);
@@ -787,7 +789,10 @@ export default function ManageTournamentScreen() {
 
   const filteredMatches = useMemo(() => {
     if (!matchRoundFilter) return matchesSorted;
-    return matchesSorted.filter((m) => m.roundLabel === matchRoundFilter);
+    // Filter by round prefix to show all matches of the same round type
+    // e.g., if filter is "Tour de 64 1", show all "Tour de 64 X" matches
+    const filterPrefix = matchRoundFilter.replace(/ \d+$/, ''); // Remove trailing number
+    return matchesSorted.filter((m) => m.roundLabel?.startsWith(filterPrefix));
   }, [matchesSorted, matchRoundFilter]);
 
   const registeredTeamIds = tournament?.registeredTeams ?? [];
@@ -900,7 +905,7 @@ export default function ManageTournamentScreen() {
     return registeredTeamIds.map((tid) => {
       const row = standings.find((s) => s.teamId === tid);
       const rank = standings.findIndex((s) => s.teamId === tid) + 1;
-      return { teamId: tid, rank, ...(row ?? { played: 0, wins: 0, draws: 0, losses: 0, gf: 0, ga: 0, pts: 0, diff: 0, form: [] }) };
+      return { rank, ...(row ?? { teamId: tid, played: 0, wins: 0, draws: 0, losses: 0, gf: 0, ga: 0, pts: 0, diff: 0, form: [] }) };
     }).sort((a, b) => a.rank - b.rank);
   }, [registeredTeamIds, standings]);
 
@@ -1033,6 +1038,33 @@ export default function ManageTournamentScreen() {
   }, [user, tournament, doCreateMatch]);
 
   const handleSaveScore = useCallback(async (matchId: string, homeScore: number, awayScore: number) => {
+    const match = tournamentMatches.find((m) => m.id === matchId);
+    
+    // Check if the round is already confirmed
+    if (match?.roundLabel && confirmedRounds.has(match.roundLabel)) {
+      Alert.alert(
+        'Scores confirmés',
+        'Les scores de ce tour ont déjà été confirmés. Voulez-vous vraiment modifier ce score ?',
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Modifier quand même', onPress: async () => {
+            // Remove confirmation for this round
+            setConfirmedRounds(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(match.roundLabel!);
+              return newSet;
+            });
+            await performScoreSave(matchId, homeScore, awayScore);
+          }}
+        ]
+      );
+      return;
+    }
+    
+    await performScoreSave(matchId, homeScore, awayScore);
+  }, [tournamentMatches, confirmedRounds]);
+
+  const performScoreSave = useCallback(async (matchId: string, homeScore: number, awayScore: number) => {
     await updateMatchScore({ matchId, homeScore, awayScore });
 
     if (tournament?.type === 'knockout' || tournament?.type === 'group_knockout') {
@@ -1053,6 +1085,29 @@ export default function ManageTournamentScreen() {
             }
           }
         }
+        
+        // Check if this is the final match - if so, complete the tournament
+        if (match.roundLabel === 'Finale' && homeScore !== awayScore) {
+          const winnerId = homeScore > awayScore ? match.homeTeamId : match.awayTeamId;
+          if (winnerId && tournament) {
+            try {
+              await updateTournament({
+                tournamentId: tournament.id,
+                updates: {
+                  status: 'completed',
+                  winnerId: winnerId
+                }
+              });
+              Alert.alert(
+                'Tournoi terminé ! 🏆',
+                `Félicitations à ${teamName(winnerId)} pour leur victoire !`,
+                [{ text: 'OK' }]
+              );
+            } catch (err) {
+              console.error('Error completing tournament:', err);
+            }
+          }
+        }
       }
     }
 
@@ -1060,7 +1115,264 @@ export default function ManageTournamentScreen() {
     setShowScoreModal(null);
     const winnerLabel = homeScore > awayScore ? 'Domicile' : homeScore < awayScore ? 'Extérieur' : 'Match nul';
     Alert.alert('Score enregistré', `${homeScore} - ${awayScore} (${winnerLabel})`);
-  }, [updateMatchScore, refetchAll, tournament, tournamentMatches]);
+  }, [updateMatchScore, refetchAll, tournament, tournamentMatches, updateTournament, teamName]);
+
+  // Check if all matches in a round have scores
+  const getRoundMatches = useCallback((roundLabel: string) => {
+    return tournamentMatches.filter(m => m.roundLabel === roundLabel);
+  }, [tournamentMatches]);
+
+  const isRoundComplete = useCallback((roundLabel: string) => {
+    const roundMatches = getRoundMatches(roundLabel);
+    return roundMatches.length > 0 && roundMatches.every(m => 
+      m.status === 'completed' && m.score != null
+    );
+  }, [getRoundMatches]);
+
+  // Check if all scores are entered for a round (but not necessarily confirmed)
+  const areAllScoresEntered = useCallback((roundLabel: string) => {
+    const roundMatches = getRoundMatches(roundLabel);
+    return roundMatches.length > 0 && roundMatches.every(m => 
+      m.status === 'completed' && m.score != null
+    );
+  }, [getRoundMatches]);
+
+  // Check if a round is confirmed
+  const isRoundConfirmed = useCallback((roundLabel: string) => {
+    return confirmedRounds.has(roundLabel);
+  }, [confirmedRounds]);
+
+  const getCurrentRound = useCallback(() => {
+    if (!tournament) return null;
+    
+    // Get all unique round prefixes (without numbers)
+    const roundLabels = [...new Set(tournamentMatches.map(m => m.roundLabel).filter((label): label is string => Boolean(label)))];
+    
+    if (roundLabels.length === 0) return null;
+    
+    // Group by round prefix
+    const roundPrefixes = [
+      'Tour de 64', 'Tour de 32', 'Huitième', 'Quart', 'Demi', 'Finale',
+      'Journée', 'Poule'
+    ];
+    
+    // Find unique round types
+    const uniqueRounds: string[] = [];
+    roundPrefixes.forEach(prefix => {
+      const hasRound = roundLabels.some(label => label.startsWith(prefix));
+      if (hasRound) {
+        // Get the first label with this prefix
+        const firstLabel = roundLabels.find(label => label.startsWith(prefix));
+        if (firstLabel) uniqueRounds.push(firstLabel);
+      }
+    });
+    
+    // Find the first incomplete round (check all matches with same prefix)
+    for (const roundLabel of uniqueRounds) {
+      const prefix = roundLabel.replace(/ \d+$/, ''); // Remove trailing number
+      const roundMatches = tournamentMatches.filter(m => m.roundLabel?.startsWith(prefix));
+      const allComplete = roundMatches.every(m => m.status === 'completed' && m.score);
+      
+      if (!allComplete) {
+        return roundLabel; // Return first label of this round type
+      }
+    }
+    
+    // If all rounds are complete, return the last one
+    return uniqueRounds[uniqueRounds.length - 1] || null;
+  }, [tournament, tournamentMatches]);
+
+  const getNextRound = useCallback(() => {
+    const currentRound = getCurrentRound();
+    if (!currentRound) return null;
+    
+    // Determine current round prefix
+    let currentPrefix = '';
+    const roundOrder = [
+      { prefix: 'Tour de 64', next: 'Tour de 32' },
+      { prefix: 'Tour de 32', next: 'Huitième de finale' },
+      { prefix: 'Huitième', next: 'Quart de finale' },
+      { prefix: 'Quart', next: 'Demi-finale' },
+      { prefix: 'Demi', next: 'Finale' },
+      { prefix: 'Finale', next: null }
+    ];
+    
+    for (const { prefix, next } of roundOrder) {
+      if (currentRound.startsWith(prefix)) {
+        return next;
+      }
+    }
+    
+    return null;
+  }, [getCurrentRound]);
+
+  // Confirm scores for a round
+  const handleConfirmScores = useCallback((roundLabel: string) => {
+    if (!areAllScoresEntered(roundLabel)) {
+      Alert.alert('Scores incomplets', 'Tous les scores du tour doivent être saisis avant de confirmer.');
+      return;
+    }
+    
+    Alert.alert(
+      'Confirmer les scores',
+      `Voulez-vous confirmer tous les scores du tour "${roundLabel}" ? Cette action verrouillera les scores et permettra de passer au tour suivant.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { 
+          text: 'Confirmer', 
+          onPress: () => {
+            setConfirmedRounds(prev => new Set(prev).add(roundLabel));
+            Alert.alert('Scores confirmés', `Les scores du tour "${roundLabel}" sont maintenant confirmés.`);
+          }
+        }
+      ]
+    );
+  }, [areAllScoresEntered, confirmedRounds]);
+
+  const canAdvanceToNextRound = useCallback(() => {
+    const currentRound = getCurrentRound();
+    return currentRound && isRoundComplete(currentRound) && isRoundConfirmed(currentRound) && getNextRound();
+  }, [getCurrentRound, isRoundComplete, isRoundConfirmed, getNextRound]);
+
+  const canConfirmScores = useCallback(() => {
+    const currentRound = getCurrentRound();
+    return currentRound && areAllScoresEntered(currentRound) && !isRoundConfirmed(currentRound);
+  }, [getCurrentRound, areAllScoresEntered, isRoundConfirmed]);
+
+  // Advance to next round - generate matches with winners
+  const handleAdvanceToNextRound = useCallback(async () => {
+    if (!tournament || !user) return;
+    const currentRound = getCurrentRound();
+    const nextRound = getNextRound();
+    
+    if (!currentRound || !nextRound) {
+      Alert.alert('Erreur', 'Impossible de déterminer le tour suivant.');
+      return;
+    }
+
+    // Get all matches from current round (using prefix to match all "Tour de 32 1", "Tour de 32 2", etc.)
+    const currentRoundPrefix = currentRound.replace(/ \d+$/, ''); // Remove trailing number
+    const currentRoundMatches = tournamentMatches.filter(m => m.roundLabel?.startsWith(currentRoundPrefix));
+    
+    // Extract winners
+    const winners: string[] = [];
+    for (const match of currentRoundMatches) {
+      if (!match.score || !match.homeTeamId || !match.awayTeamId) continue;
+      
+      const winnerId = match.score.home > match.score.away 
+        ? match.homeTeamId 
+        : match.score.away > match.score.home 
+        ? match.awayTeamId 
+        : null;
+      
+      if (winnerId) {
+        winners.push(winnerId);
+      }
+    }
+
+    if (winners.length === 0) {
+      Alert.alert('Erreur', 'Aucun vainqueur trouvé dans le tour actuel.');
+      return;
+    }
+
+    // Check if there are draws
+    const hasDraws = currentRoundMatches.some(m => m.score && m.score.home === m.score.away);
+    if (hasDraws) {
+      Alert.alert(
+        'Matchs nuls détectés',
+        'Certains matchs se sont terminés par un match nul. Les matchs nuls ne peuvent pas progresser en élimination directe. Veuillez modifier les scores.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Passer au tour suivant',
+      `Générer ${Math.floor(winners.length / 2)} match(s) pour le tour "${nextRound}" avec les ${winners.length} vainqueurs du "${currentRound}" ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Générer',
+          onPress: async () => {
+            setIsMatchmaking(true);
+            try {
+              // Get venue from tournament or find a valid one
+              let venue = tournament.venue;
+              
+              // If tournament venue is not valid, try to find one from the venues list
+              if (!venue?.id || !/^[0-9a-f-]{36}$/i.test(venue.id)) {
+                const venueId = getVenueId();
+                venue = venues?.find((v) => v.id === venueId) ?? venues?.[0];
+              }
+              
+              // Final validation
+              if (!venue?.id || !/^[0-9a-f-]{36}$/i.test(venue.id)) {
+                Alert.alert('Erreur', 'Aucun lieu valide disponible. Veuillez configurer un lieu pour le tournoi.');
+                setIsMatchmaking(false);
+                return;
+              }
+
+              // Create matches for next round - all on the same day
+              const baseDate = new Date();
+              baseDate.setDate(baseDate.getDate() + 3); // 3 days from now
+              baseDate.setHours(10, 0, 0, 0);
+
+              const matchesToCreate = Math.floor(winners.length / 2);
+              let createdCount = 0;
+
+              for (let i = 0; i < matchesToCreate; i++) {
+                const homeTeamId = winners[i * 2];
+                const awayTeamId = winners[i * 2 + 1];
+
+                if (!homeTeamId || !awayTeamId) continue;
+
+                // All matches on the same day, with 2-hour intervals
+                const matchDate = new Date(baseDate);
+                matchDate.setHours(10 + i * 2, 0, 0, 0);
+
+                const roundLabel = knockoutLabel(matchesToCreate, i);
+
+                const m = await createMatch({
+                  sport: tournament.sport,
+                  format: tournament.format,
+                  type: 'tournament',
+                  venue,
+                  dateTime: matchDate,
+                  duration: 90,
+                  level: tournament.level,
+                  ambiance: 'competitive',
+                  maxPlayers: 22,
+                  createdBy: user.id,
+                  homeTeamId,
+                  awayTeamId,
+                  tournamentId: tournament.id,
+                  roundLabel,
+                  needsPlayers: false,
+                });
+
+                await addMatchToTournament({ tournamentId: tournament.id, matchId: m.id });
+                createdCount++;
+              }
+
+              await refetchAll();
+              setShowAdvanceRoundModal(false);
+              Alert.alert(
+                'Tour suivant généré !',
+                `${createdCount} match(s) créé(s) pour le tour "${nextRound}".`
+              );
+            } catch (e: unknown) {
+              Alert.alert('Erreur', (e as Error).message);
+            } finally {
+              setIsMatchmaking(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [tournament, user, getCurrentRound, getNextRound, tournamentMatches, venues, getVenueId, createMatch, addMatchToTournament, refetchAll]);
+
+  const showAdvanceToNextRoundButton = canManage && canAdvanceToNextRound() && tournament?.status !== 'completed';
+  const showConfirmScoresButton = canManage && canConfirmScores() && tournament?.status !== 'completed';
 
   const handleRemoveMatch = useCallback((matchId: string) => {
     if (isRemovingMatch) return;
@@ -1246,7 +1558,14 @@ export default function ManageTournamentScreen() {
           </View>
           <View style={st.matchScoreCol}>
             {done ? (
-              <View style={st.scorePill}><Text style={st.matchScoreText}>{m.score!.home} - {m.score!.away}</Text></View>
+              canManage ? (
+                <TouchableOpacity style={st.scorePill} onPress={(e) => { e.stopPropagation(); setShowScoreModal(m); }}>
+                  <Text style={st.matchScoreText}>{m.score!.home} - {m.score!.away}</Text>
+                  <Text style={st.editScoreHint}>Modifier</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={st.scorePill}><Text style={st.matchScoreText}>{m.score!.home} - {m.score!.away}</Text></View>
+              )
             ) : isTBD ? (
               <View style={st.tbdBadge}><Clock size={12} color={Colors.text.muted} /><Text style={st.tbdBadgeText}>TBD</Text></View>
             ) : past ? (
@@ -1363,14 +1682,56 @@ export default function ManageTournamentScreen() {
 
           {activeTab === 'overview' && (<>
             {tournament.winnerId && (
-              <LinearGradient colors={['rgba(255,215,0,0.15)', 'rgba(255,215,0,0.05)']} style={st.winnerBanner}>
-                <View style={st.winnerTrophyWrap}><Trophy size={24} color="#FFD700" /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={st.winnerBannerLabel}>Champion du tournoi</Text>
-                  <Text style={st.winnerBannerName}>{teamName(tournament.winnerId)}</Text>
-                </View>
-                <Award size={20} color="rgba(255,215,0,0.4)" />
-              </LinearGradient>
+              <View style={st.championCard}>
+                <LinearGradient 
+                  colors={['rgba(255,215,0,0.25)', 'rgba(255,215,0,0.08)', 'rgba(255,140,0,0.05)']} 
+                  style={st.championGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <View style={st.championHeader}>
+                    <View style={st.championTrophyWrap}>
+                      <Trophy size={32} color="#FFD700" strokeWidth={2.5} />
+                    </View>
+                    <View style={st.championSparkles}>
+                      <Award size={16} color="rgba(255,215,0,0.6)" />
+                      <Award size={12} color="rgba(255,215,0,0.4)" style={{ position: 'absolute', top: -8, right: -8 }} />
+                    </View>
+                  </View>
+                  
+                  <View style={st.championContent}>
+                    <Text style={st.championLabel}>🏆 CHAMPION DU TOURNOI</Text>
+                    <Text style={st.championName}>{teamName(tournament.winnerId)}</Text>
+                    <View style={st.championStats}>
+                      <View style={st.championStatItem}>
+                        <Text style={st.championStatValue}>{completedMatches.filter(m => 
+                          (m.homeTeamId === tournament.winnerId && m.score && m.score.home > m.score.away) ||
+                          (m.awayTeamId === tournament.winnerId && m.score && m.score.away > m.score.home)
+                        ).length}</Text>
+                        <Text style={st.championStatLabel}>Victoires</Text>
+                      </View>
+                      <View style={st.championStatDivider} />
+                      <View style={st.championStatItem}>
+                        <Text style={st.championStatValue}>{tournamentMatches.length}</Text>
+                        <Text style={st.championStatLabel}>Matchs joués</Text>
+                      </View>
+                      <View style={st.championStatDivider} />
+                      <View style={st.championStatItem}>
+                        <Text style={st.championStatValue}>{registeredTeamIds.length}</Text>
+                        <Text style={st.championStatLabel}>Équipes</Text>
+                      </View>
+                    </View>
+                  </View>
+                  
+                  <View style={st.championFooter}>
+                    <View style={st.championBadge}>
+                      <Award size={14} color="#FFD700" />
+                      <Text style={st.championBadgeText}>Vainqueur</Text>
+                    </View>
+                    <Text style={st.championDate}>{new Date(tournament.startDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</Text>
+                  </View>
+                </LinearGradient>
+              </View>
             )}
 
             {/* Phase tracker */}
@@ -1534,21 +1895,100 @@ export default function ManageTournamentScreen() {
               )}
             </View>
 
+            {/* Confirm scores and advance round buttons */}
+            {showConfirmScoresButton && (
+              <View style={st.advanceRoundSection}>
+                <View style={st.advanceRoundContent}>
+                  <View style={st.advanceRoundHeader}>
+                    <Check size={16} color={Colors.primary.orange} />
+                    <Text style={st.advanceRoundTitle}>Scores complets !</Text>
+                  </View>
+                  <Text style={st.advanceRoundDescription}>
+                    Tous les scores du {getCurrentRound()} ont été saisis. Confirmez les scores pour débloquer le passage au tour suivant.
+                  </Text>
+                  <TouchableOpacity 
+                    style={[st.advanceRoundBtn, canConfirmScores() ? {} : st.advanceRoundBtnDisabled]} 
+                    onPress={() => {
+                      const currentRound = getCurrentRound();
+                      if (currentRound) handleConfirmScores(currentRound);
+                    }}
+                    disabled={!canConfirmScores()}
+                  >
+                    <Check size={16} color="#fff" />
+                    <Text style={st.advanceRoundBtnText}>Confirmer les scores</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {showAdvanceToNextRoundButton && (
+              <View style={st.advanceRoundSection}>
+                <View style={[st.advanceRoundContent, { borderLeftColor: Colors.status.success }]}>
+                  <View style={st.advanceRoundHeader}>
+                    <Trophy size={16} color={Colors.status.success} />
+                    <Text style={[st.advanceRoundTitle, { color: Colors.status.success }]}>Scores confirmés !</Text>
+                  </View>
+                  <Text style={st.advanceRoundDescription}>
+                    Les scores du {getCurrentRound()} sont confirmés. Vous pouvez maintenant passer au tour suivant : {getNextRound()}.
+                  </Text>
+                  <TouchableOpacity style={[st.advanceRoundBtn, { backgroundColor: Colors.status.success }]} onPress={handleAdvanceToNextRound} disabled={isMatchmaking}>
+                    {isMatchmaking ? <ActivityIndicator size="small" color="#fff" /> : <Play size={16} color="#fff" />}
+                    <Text style={st.advanceRoundBtnText}>{isMatchmaking ? 'Génération...' : 'Passer au tour suivant'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
             {roundLabels.length > 1 && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={st.filterRow}>
                 <TouchableOpacity style={[st.filterChip, !matchRoundFilter && st.filterChipActive]} onPress={() => setMatchRoundFilter(null)}>
                   <Text style={[st.filterChipText, !matchRoundFilter && st.filterChipTextActive]}>Tous ({tournamentMatches.length})</Text>
                 </TouchableOpacity>
-                {roundLabels.map((rl) => {
-                  const count = tournamentMatches.filter((m) => m.roundLabel === rl).length;
-                  const doneCount = tournamentMatches.filter((m) => m.roundLabel === rl && m.status === 'completed' && m.score).length;
-                  return (
-                    <TouchableOpacity key={rl} style={[st.filterChip, matchRoundFilter === rl && st.filterChipActive]} onPress={() => setMatchRoundFilter(rl)}>
-                      <Text style={[st.filterChipText, matchRoundFilter === rl && st.filterChipTextActive]}>{rl}</Text>
-                      <View style={st.filterChipCount}><Text style={st.filterChipCountText}>{doneCount}/{count}</Text></View>
+                {(() => {
+                  // Group rounds to avoid duplicates
+                  const roundPrefixes = [
+                    { prefix: 'Tour de 64', display: 'Tour 1 (64)' },
+                    { prefix: 'Tour de 32', display: 'Tour 2 (32)' },
+                    { prefix: 'Huitième', display: 'Tour 3 (16)' },
+                    { prefix: 'Quart', display: 'Tour 4 (8)' },
+                    { prefix: 'Demi', display: 'Tour 5 (4)' },
+                    { prefix: 'Finale', display: 'Finale (2)' },
+                  ];
+                  
+                  const uniqueRounds: { prefix: string; display: string; firstLabel: string; count: number; doneCount: number }[] = [];
+                  
+                  roundPrefixes.forEach(({ prefix, display }) => {
+                    const matches = tournamentMatches.filter((m) => 
+                      m.roundLabel?.startsWith(prefix) && 
+                      (prefix !== 'Finale' || !m.roundLabel.includes('Petite'))
+                    );
+                    if (matches.length > 0) {
+                      const doneCount = matches.filter((m) => m.status === 'completed' && m.score).length;
+                      uniqueRounds.push({
+                        prefix,
+                        display,
+                        firstLabel: matches[0].roundLabel || '',
+                        count: matches.length,
+                        doneCount
+                      });
+                    }
+                  });
+                  
+                  return uniqueRounds.map((round) => (
+                    <TouchableOpacity 
+                      key={round.prefix} 
+                      style={[st.filterChip, matchRoundFilter === round.firstLabel && st.filterChipActive]} 
+                      onPress={() => setMatchRoundFilter(round.firstLabel)}
+                    >
+                      <Text style={[st.filterChipText, matchRoundFilter === round.firstLabel && st.filterChipTextActive]}>
+                        {round.display}
+                      </Text>
+                      <View style={st.filterChipCount}>
+                        <Text style={st.filterChipCountText}>{round.doneCount}/{round.count}</Text>
+                      </View>
                     </TouchableOpacity>
-                  );
-                })}
+                  ));
+                })()}
               </ScrollView>
             )}
 
@@ -1575,7 +2015,13 @@ export default function ManageTournamentScreen() {
               {/* Mini bracket for knockout */}
               {bracketRounds.length > 0 && (
                 <View style={st.bracketCard}>
-                  <Text style={st.bracketTitle}>Arbre du tournoi</Text>
+                  <View style={st.bracketHeader}>
+                    <View style={st.bracketTitleRow}>
+                      <Trophy size={16} color={Colors.primary.orange} />
+                      <Text style={st.bracketTitle}>Arbre du tournoi</Text>
+                    </View>
+                    <Text style={st.bracketSubtitle}>{bracketRounds.reduce((acc, r) => acc + r.matches.length, 0)} matchs • {tournament.type === 'knockout' ? 'Élimination directe' : 'Knockout'}</Text>
+                  </View>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.bracketScroll}>
                     {bracketRounds.map((round, ri) => (
                       <React.Fragment key={round.name}>
@@ -1584,18 +2030,31 @@ export default function ManageTournamentScreen() {
                           {round.matches.map((m) => {
                             const done = m.status === 'completed' && m.score;
                             const isTBD = !m.homeTeamId || !m.awayTeamId;
+                            const homeWins = done && m.score!.home > m.score!.away;
+                            const awayWins = done && m.score!.away > m.score!.home;
                             return (
-                              <View key={m.id} style={[st.bracketMatch, done && st.bracketMatchDone, isTBD && st.bracketMatchTBD]}>
-                                <View style={st.bracketTeamRow}>
-                                  <Text style={[st.bracketTeamName, done && m.score!.home > m.score!.away && { color: Colors.primary.orange, fontWeight: '800' }]} numberOfLines={1}>{m.homeTeamId ? teamName(m.homeTeamId) : '?'}</Text>
-                                  {done && <Text style={st.bracketScore}>{m.score!.home}</Text>}
+                              <TouchableOpacity 
+                                key={m.id} 
+                                style={[st.bracketMatch, done && st.bracketMatchDone, isTBD && st.bracketMatchTBD]}
+                                onPress={() => !isTBD && setShowScoreModal(m)}
+                                activeOpacity={isTBD ? 1 : 0.7}
+                              >
+                                <View style={[st.bracketTeamRow, homeWins && st.bracketTeamRowWinner]}>
+                                  <View style={[st.bracketTeamDot, homeWins && st.bracketTeamDotWinner]} />
+                                  <Text style={[st.bracketTeamName, homeWins && st.bracketTeamNameWinner]} numberOfLines={1}>
+                                    {m.homeTeamId ? teamName(m.homeTeamId) : '?'}
+                                  </Text>
+                                  {done && <Text style={[st.bracketScore, homeWins && st.bracketScoreWinner]}>{m.score!.home}</Text>}
                                 </View>
                                 <View style={st.bracketSep} />
-                                <View style={st.bracketTeamRow}>
-                                  <Text style={[st.bracketTeamName, done && m.score!.away > m.score!.home && { color: Colors.primary.orange, fontWeight: '800' }]} numberOfLines={1}>{m.awayTeamId ? teamName(m.awayTeamId) : '?'}</Text>
-                                  {done && <Text style={st.bracketScore}>{m.score!.away}</Text>}
+                                <View style={[st.bracketTeamRow, awayWins && st.bracketTeamRowWinner]}>
+                                  <View style={[st.bracketTeamDot, awayWins && st.bracketTeamDotWinner]} />
+                                  <Text style={[st.bracketTeamName, awayWins && st.bracketTeamNameWinner]} numberOfLines={1}>
+                                    {m.awayTeamId ? teamName(m.awayTeamId) : '?'}
+                                  </Text>
+                                  {done && <Text style={[st.bracketScore, awayWins && st.bracketScoreWinner]}>{m.score!.away}</Text>}
                                 </View>
-                              </View>
+                              </TouchableOpacity>
                             );
                           })}
                         </View>
@@ -1610,23 +2069,65 @@ export default function ManageTournamentScreen() {
                 </View>
               )}
 
-              <View style={{ gap: 18 }}>
-                {roundLabels.map((rl) => {
-                  const roundMatches = matchesSorted.filter((m) => m.roundLabel === rl);
-                  if (roundMatches.length === 0) return null;
-                  const doneCount = roundMatches.filter((m) => m.status === 'completed' && m.score).length;
-                  const allDone = doneCount === roundMatches.length;
-                  return (
-                    <View key={rl}>
-                      <View style={st.roundSectionHeader}>
-                        <View style={[st.roundSectionDot, allDone && { backgroundColor: Colors.status.success }]} />
-                        <Text style={st.roundSectionTitle}>{rl}</Text>
-                        <Text style={st.roundSectionCount}>{doneCount}/{roundMatches.length}</Text>
-                      </View>
-                      <View style={{ gap: 8 }}>{roundMatches.map((m) => renderMatchCard(m))}</View>
-                    </View>
-                  );
-                })}
+              {/* Tour cards - one button per round */}
+              <View style={{ gap: 12 }}>
+                {(() => {
+                  // Group matches by round type (Tour de 64, Tour de 32, etc.)
+                  const roundGroups: { prefix: string; displayLabel: string; matches: Match[]; firstLabel: string }[] = [];
+                  
+                  // Define round prefixes in order
+                  const roundPrefixes = [
+                    { prefix: 'Tour de 64', display: 'Tour 1 (64 équipes)' },
+                    { prefix: 'Tour de 32', display: 'Tour 2 (32 équipes)' },
+                    { prefix: 'Huitième', display: 'Tour 3 (16 équipes)' },
+                    { prefix: 'Quart', display: 'Tour 4 (8 équipes)' },
+                    { prefix: 'Demi', display: 'Tour 5 (4 équipes)' },
+                    { prefix: 'Finale', display: 'Finale (2 équipes)' },
+                  ];
+                  
+                  roundPrefixes.forEach(({ prefix, display }) => {
+                    const matches = matchesSorted.filter((m) => 
+                      m.roundLabel?.startsWith(prefix) && 
+                      (prefix !== 'Finale' || !m.roundLabel.includes('Petite'))
+                    );
+                    if (matches.length > 0) {
+                      roundGroups.push({
+                        prefix,
+                        displayLabel: display,
+                        matches,
+                        firstLabel: matches[0].roundLabel || ''
+                      });
+                    }
+                  });
+                  
+                  return roundGroups.map((group) => {
+                    const doneCount = group.matches.filter((m) => m.status === 'completed' && m.score).length;
+                    const allDone = doneCount === group.matches.length;
+                    
+                    return (
+                      <TouchableOpacity 
+                        key={group.prefix} 
+                        style={[st.roundCard, allDone && st.roundCardComplete]}
+                        onPress={() => setMatchRoundFilter(group.firstLabel)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={st.roundCardHeader}>
+                          <View style={[st.roundCardDot, allDone && { backgroundColor: Colors.status.success }]} />
+                          <Text style={st.roundCardTitle}>{group.displayLabel}</Text>
+                        </View>
+                        <View style={st.roundCardStats}>
+                          <Text style={st.roundCardCount}>{group.matches.length} matchs</Text>
+                          <Text style={[st.roundCardProgress, allDone && { color: Colors.status.success }]}>
+                            {doneCount}/{group.matches.length} scores
+                          </Text>
+                        </View>
+                        <View style={st.roundCardFooter}>
+                          <Text style={st.roundCardAction}>Voir les matchs →</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  });
+                })()}
                 {matchesSorted.filter((m) => !m.roundLabel).length > 0 && (
                   <View>
                     <View style={st.roundSectionHeader}><View style={st.roundSectionDot} /><Text style={st.roundSectionTitle}>Sans phase</Text></View>
@@ -2145,23 +2646,33 @@ export default function ManageTournamentScreen() {
     </Modal>
 
     <Modal visible={!!showScoreModal} animationType="slide" transparent statusBarTranslucent>
-      <View style={st.modalOverlay}>
-        {!IS_WEB && <TouchableOpacity style={st.modalDismiss} activeOpacity={1} onPress={() => { Keyboard.dismiss(); }} />}
-        <View style={st.modalContent}>
-          <View style={st.modalHeader}><Text style={st.modalTitle}>Saisir le score</Text><TouchableOpacity onPress={() => setShowScoreModal(null)} style={st.modalClose}><X size={22} color="#fff" /></TouchableOpacity></View>
-          <ScoreModal match={showScoreModal} teamName={teamName} onSave={handleSaveScore} onClose={() => setShowScoreModal(null)} />
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <View style={st.modalOverlay}>
+          {!IS_WEB && <TouchableOpacity style={st.modalDismiss} activeOpacity={1} onPress={() => { Keyboard.dismiss(); }} />}
+          <View style={st.modalContent}>
+            <View style={st.modalHeader}><Text style={st.modalTitle}>Saisir le score</Text><TouchableOpacity onPress={() => setShowScoreModal(null)} style={st.modalClose}><X size={22} color="#fff" /></TouchableOpacity></View>
+            <ScoreModal match={showScoreModal} teamName={teamName} onSave={handleSaveScore} onClose={() => setShowScoreModal(null)} />
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
 
     <Modal visible={!!editMatchModal} animationType="slide" transparent statusBarTranslucent>
-      <View style={st.modalOverlay}>
-        {!IS_WEB && <TouchableOpacity style={st.modalDismiss} activeOpacity={1} onPress={() => { Keyboard.dismiss(); }} />}
-        <View style={st.modalContent}>
-          <View style={st.modalHeader}><Text style={st.modalTitle}>Modifier le match</Text><TouchableOpacity onPress={() => setEditMatchModal(null)} style={st.modalClose}><X size={22} color="#fff" /></TouchableOpacity></View>
-          {editMatchModal && <EditMatchForm match={editMatchModal} tournament={tournament} getTeamById={getTeamById} venues={venues ?? []} onSave={handleEditSave} onCancel={() => setEditMatchModal(null)} saving={isSavingMatch} styles={st} />}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <View style={st.modalOverlay}>
+          {!IS_WEB && <TouchableOpacity style={st.modalDismiss} activeOpacity={1} onPress={() => { Keyboard.dismiss(); }} />}
+          <View style={st.modalContent}>
+            <View style={st.modalHeader}><Text style={st.modalTitle}>Modifier le match</Text><TouchableOpacity onPress={() => setEditMatchModal(null)} style={st.modalClose}><X size={22} color="#fff" /></TouchableOpacity></View>
+            {editMatchModal && <EditMatchForm match={editMatchModal} tournament={tournament} getTeamById={getTeamById} venues={venues ?? []} onSave={handleEditSave} onCancel={() => setEditMatchModal(null)} saving={isSavingMatch} styles={st} />}
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
 
     <Modal visible={showWinnerModal} animationType="slide" transparent statusBarTranslucent>
@@ -2252,10 +2763,23 @@ const st = StyleSheet.create({
   metricValue: { color: '#fff', fontSize: 22, fontWeight: '800' },
   metricLabel: { color: Colors.text.muted, fontSize: 11, marginTop: 2 },
 
-  winnerBanner: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1.5, borderColor: 'rgba(255,215,0,0.3)' },
-  winnerTrophyWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,215,0,0.15)', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  winnerBannerLabel: { color: Colors.text.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  winnerBannerName: { color: '#FFD700', fontSize: 17, fontWeight: '800', marginTop: 2 },
+  championCard: { marginBottom: 20, borderRadius: 20, overflow: 'hidden', borderWidth: 2, borderColor: 'rgba(255,215,0,0.4)' },
+  championGradient: { padding: 20 },
+  championHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  championTrophyWrap: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,215,0,0.2)', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,215,0,0.5)' },
+  championSparkles: { position: 'relative' },
+  championContent: { alignItems: 'center', marginBottom: 20 },
+  championLabel: { color: '#FFD700', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8 },
+  championName: { color: '#fff', fontSize: 28, fontWeight: '900', textAlign: 'center', marginBottom: 16, textShadowColor: 'rgba(255,215,0,0.3)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
+  championStats: { flexDirection: 'row', alignItems: 'center', gap: 16, backgroundColor: 'rgba(0,0,0,0.3)', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
+  championStatItem: { alignItems: 'center' },
+  championStatValue: { color: '#FFD700', fontSize: 20, fontWeight: '900' },
+  championStatLabel: { color: Colors.text.muted, fontSize: 10, fontWeight: '600', marginTop: 2 },
+  championStatDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,215,0,0.2)' },
+  championFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,215,0,0.2)' },
+  championBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,215,0,0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,215,0,0.3)' },
+  championBadgeText: { color: '#FFD700', fontSize: 11, fontWeight: '800' },
+  championDate: { color: Colors.text.muted, fontSize: 11, fontWeight: '600' },
 
   nextMatchCard: { backgroundColor: Colors.background.card, borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1.5, borderColor: Colors.primary.orange + '40', borderLeftWidth: 4, borderLeftColor: Colors.primary.orange },
   nextMatchHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
@@ -2341,6 +2865,17 @@ const st = StyleSheet.create({
   roundSectionDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.primary.orange },
   roundSectionTitle: { color: '#fff', fontSize: 14, fontWeight: '700', flex: 1 },
   roundSectionCount: { color: Colors.text.muted, fontSize: 11, fontWeight: '600' },
+
+  roundCard: { backgroundColor: Colors.background.card, borderRadius: 16, padding: 16, borderWidth: 1.5, borderColor: Colors.border.light, borderLeftWidth: 4, borderLeftColor: Colors.primary.orange },
+  roundCardComplete: { borderLeftColor: Colors.status.success },
+  roundCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  roundCardDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.primary.orange },
+  roundCardTitle: { color: '#fff', fontSize: 16, fontWeight: '800', flex: 1 },
+  roundCardStats: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  roundCardCount: { color: Colors.text.secondary, fontSize: 13, fontWeight: '600' },
+  roundCardProgress: { color: Colors.primary.orange, fontSize: 13, fontWeight: '700' },
+  roundCardFooter: { paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border.light },
+  roundCardAction: { color: Colors.primary.orange, fontSize: 13, fontWeight: '700', textAlign: 'center' },
 
   bigActionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: Colors.primary.orange, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 20, marginTop: 12 },
   bigActionText: { color: '#fff', fontSize: 15, fontWeight: '700' },
@@ -2502,17 +3037,36 @@ const st = StyleSheet.create({
   nextMatchRoundBadge: { backgroundColor: Colors.background.cardLight, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginLeft: 'auto' },
   nextMatchRoundText: { color: Colors.text.muted, fontSize: 9, fontWeight: '700' },
 
-  bracketCard: { backgroundColor: Colors.background.card, borderRadius: 16, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: Colors.border.light },
-  bracketTitle: { color: Colors.text.muted, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
+  bracketCard: { backgroundColor: Colors.background.card, borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: Colors.border.light },
+  bracketHeader: { marginBottom: 16 },
+  bracketTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  bracketTitle: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  bracketSubtitle: { color: Colors.text.muted, fontSize: 12, fontWeight: '600' },
+
+  editScoreHint: { color: Colors.text.muted, fontSize: 9, fontWeight: '600', marginTop: 2, textAlign: 'center' },
+
+  advanceRoundSection: { marginBottom: 16 },
+  advanceRoundContent: { backgroundColor: Colors.background.card, borderRadius: 16, padding: 16, borderWidth: 1.5, borderColor: Colors.primary.orange + '40', borderLeftWidth: 4, borderLeftColor: Colors.primary.orange },
+  advanceRoundHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  advanceRoundTitle: { color: Colors.primary.orange, fontSize: 16, fontWeight: '800' },
+  advanceRoundDescription: { color: Colors.text.secondary, fontSize: 13, lineHeight: 18, marginBottom: 12 },
+  advanceRoundBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.primary.orange, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16 },
+  advanceRoundBtnDisabled: { backgroundColor: Colors.background.cardLight, opacity: 0.5 },
+  advanceRoundBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   bracketScroll: { alignItems: 'center', gap: 0, paddingRight: 16 },
-  bracketRound: { gap: 8, minWidth: 110 },
-  bracketRoundName: { color: Colors.text.muted, fontSize: 9, fontWeight: '700', textAlign: 'center', marginBottom: 6, textTransform: 'uppercase' },
-  bracketMatch: { backgroundColor: Colors.background.cardLight, borderRadius: 8, padding: 6, borderWidth: 1, borderColor: Colors.border.light },
-  bracketMatchDone: { borderColor: Colors.status.success + '40' },
-  bracketMatchTBD: { opacity: 0.45, borderStyle: 'dashed' as any },
-  bracketTeamRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 2, paddingHorizontal: 4 },
-  bracketTeamName: { color: '#fff', fontSize: 10, fontWeight: '600', flex: 1 },
-  bracketScore: { color: Colors.text.muted, fontSize: 10, fontWeight: '800', width: 16, textAlign: 'right' },
+  bracketRound: { gap: 10, minWidth: 130 },
+  bracketRoundName: { color: Colors.text.muted, fontSize: 10, fontWeight: '700', textAlign: 'center', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+  bracketMatch: { backgroundColor: Colors.background.cardLight, borderRadius: 10, padding: 8, borderWidth: 1.5, borderColor: Colors.border.light },
+  bracketMatchDone: { borderColor: Colors.status.success + '60', backgroundColor: Colors.status.success + '08' },
+  bracketMatchTBD: { opacity: 0.4, borderStyle: 'dashed' as any },
+  bracketTeamRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 3, paddingHorizontal: 2 },
+  bracketTeamRowWinner: { backgroundColor: Colors.primary.orange + '10', borderRadius: 6, marginHorizontal: -2, paddingHorizontal: 4 },
+  bracketTeamDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.text.muted + '40' },
+  bracketTeamDotWinner: { backgroundColor: Colors.primary.orange },
+  bracketTeamName: { color: Colors.text.secondary, fontSize: 11, fontWeight: '600', flex: 1 },
+  bracketTeamNameWinner: { color: '#fff', fontWeight: '800' },
+  bracketScore: { color: Colors.text.muted, fontSize: 11, fontWeight: '700', minWidth: 18, textAlign: 'right' },
+  bracketScoreWinner: { color: Colors.primary.orange, fontWeight: '900' },
   bracketSep: { height: 1, backgroundColor: Colors.border.light, marginVertical: 1 },
   bracketConnectorCol: { justifyContent: 'space-around', paddingVertical: 10, width: 16 },
   bracketConnectorLine: { width: 16, height: 2, backgroundColor: Colors.border.light },

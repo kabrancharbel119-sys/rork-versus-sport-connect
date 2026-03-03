@@ -5,11 +5,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { User, UserSport, Sport, UserStats } from '@/types';
-import { usersApi } from '@/lib/api/users';
 import { notificationsApi } from '@/lib/api/notifications';
 import { registerForPushNotifications } from '@/lib/push-notifications';
-import 'react-native-get-random-values';
-import { v4 as uuidv4 } from 'uuid';
+import { signUp, signIn, signOut, getCurrentUser } from '@/lib/api/auth';
+import { supabase } from '@/lib/supabase';
+import { usersApi } from '@/lib/api/users';
 
 const AUTH_STORAGE_KEY = 'vs_auth';
 const USER_STORAGE_KEY = 'vs_user';
@@ -21,16 +21,17 @@ interface AuthState {
 }
 
 interface RegisterData {
-  phone: string;
+  email: string;
   password: string;
   username: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   city?: string;
-  country?: string;
+  referralCode?: string;
 }
 
 interface LoginData {
-  phone: string;
+  email: string;
   password: string;
 }
 
@@ -60,17 +61,19 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     queryFn: async () => {
       if (__DEV__) console.log('[Auth] Checking auth state...');
       
-      const [authData, userData] = await Promise.all([
-        AsyncStorage.getItem(AUTH_STORAGE_KEY),
-        AsyncStorage.getItem(USER_STORAGE_KEY),
-      ]);
-
-      if (authData && userData) {
-        const isAuth = JSON.parse(authData);
-        if (isAuth) {
-          if (__DEV__) console.log('[Auth] Found stored auth data');
-          return { isAuthenticated: true, user: JSON.parse(userData) as User };
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        const profile = await getCurrentUser();
+        if (profile) {
+          await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(profile));
+          return { isAuthenticated: true, user: profile };
         }
+      }
+
+      const userData = await AsyncStorage.getItem(USER_STORAGE_KEY);
+      if (userData) {
+        return { isAuthenticated: true, user: JSON.parse(userData) as User };
       }
 
       return { isAuthenticated: false, user: null };
@@ -106,13 +109,17 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const loginMutation = useMutation({
     mutationFn: async (data: LoginData) => {
-      if (__DEV__) console.log('[Auth] Attempting login for:', data.phone);
+      if (__DEV__) console.log('[Auth] Attempting login for:', data.email);
       
       if (!data.password) {
         throw new Error('Mot de passe requis');
       }
 
-      const user = await usersApi.authenticate(data.phone, data.password);
+      await signIn(data.email, data.password);
+      const user = await getCurrentUser();
+      
+      if (!user) throw new Error('Utilisateur non trouvé');
+      
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(true));
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
       
@@ -127,28 +134,26 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const registerMutation = useMutation({
     mutationFn: async (data: RegisterData) => {
-      if (__DEV__) console.log('[Auth] Attempting registration for:', data.phone);
+      if (__DEV__) console.log('[Auth] Attempting registration for:', data.email);
 
       if (!data.password) {
         throw new Error('Mot de passe requis');
       }
 
-      const userId = uuidv4();
-      
-      const user = await usersApi.create({
-        id: userId,
-        username: data.username,
-        fullName: data.fullName,
-        phone: data.phone,
+      const profile = await signUp({
+        email: data.email,
         password: data.password,
+        username: data.username,
+        firstName: data.firstName,
+        lastName: data.lastName,
         city: data.city,
-        country: data.country,
+        referralCode: data.referralCode,
       });
 
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(true));
-      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(profile));
 
-      return user;
+      return profile;
     },
     onSuccess: (user) => {
       setAuthState({ isAuthenticated: true, isLoading: false, user });
@@ -235,6 +240,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const logoutMutation = useMutation({
     mutationFn: async () => {
       if (__DEV__) console.log('[Auth] Starting logout process...');
+      await signOut();
       await AsyncStorage.multiRemove([
         AUTH_STORAGE_KEY,
         USER_STORAGE_KEY,

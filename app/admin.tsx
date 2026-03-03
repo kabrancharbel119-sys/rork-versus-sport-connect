@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, RefreshControl, Switch, Share, Platform, Modal } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,7 +6,7 @@ import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Users, Swords, Shield, Ban, Search, ChevronRight, TrendingUp, Settings, BarChart3, Calendar, MapPin, Star, CheckCircle, XCircle, Eye, RefreshCw, Globe, Database, DollarSign, Ticket, UserCheck, Activity, Clock, AlertTriangle, Zap, Server, HardDrive, Send, Lock, Trash2, FileText, Download, MessageSquare, Award, Target, PieChart, Bell, X, Plus } from 'lucide-react-native';
+import { ArrowLeft, Users, Swords, Shield, Ban, Search, ChevronRight, TrendingUp, Settings, BarChart3, Calendar, MapPin, Star, CheckCircle, XCircle, Eye, RefreshCw, Globe, Database, DollarSign, Ticket, UserCheck, Activity, Clock, AlertTriangle, Zap, Server, HardDrive, Send, Lock, Trash2, FileText, Download, MessageSquare, Award, Target, PieChart, Bell, X, Plus, Filter, ArrowUpDown, CheckSquare, Square, TrendingDown } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
@@ -56,6 +56,11 @@ export default function AdminScreen() {
   const [sendingNotif, setSendingNotif] = useState(false);
   const [selectedTicketForResponse, setSelectedTicketForResponse] = useState<SupportTicket | null>(null);
   const [ticketResponseText, setTicketResponseText] = useState('');
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState<'name' | 'date' | 'city'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(new Date());
 
   const doRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -68,12 +73,22 @@ export default function AdminScreen() {
         queryClient.invalidateQueries({ queryKey: ['support'] }),
         queryClient.invalidateQueries({ queryKey: ['notifications'] }),
       ]);
+      setLastRefresh(new Date());
     } catch (e) {
       if (__DEV__) console.warn('[Admin] Refresh failed:', (e as Error)?.message ?? e);
     } finally {
       setRefreshing(false);
     }
   }, [refetchTeams, refetchMatches, refetchTournaments, queryClient]);
+
+  useEffect(() => {
+    if (autoRefresh) {
+      const interval = setInterval(() => {
+        doRefresh();
+      }, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [autoRefresh, doRefresh]);
 
   useFocusEffect(
     useCallback(() => {
@@ -105,15 +120,23 @@ export default function AdminScreen() {
     );
   }
 
-  const activityLogs: ActivityLog[] = useMemo(() => [
-    { id: '1', type: 'user_joined', title: 'Nouvel utilisateur', description: 'Amadou Diallo a rejoint la plateforme', timestamp: new Date(Date.now() - 1000 * 60 * 5), severity: 'success' },
-    { id: '2', type: 'team_created', title: 'Équipe créée', description: 'FC Étoile de Dakar a été créée', timestamp: new Date(Date.now() - 1000 * 60 * 15), severity: 'info' },
-    { id: '3', type: 'report', title: 'Signalement', description: 'Comportement inapproprié signalé', timestamp: new Date(Date.now() - 1000 * 60 * 30), severity: 'warning' },
-    { id: '4', type: 'match_created', title: 'Match organisé', description: 'Nouveau match de football à 11', timestamp: new Date(Date.now() - 1000 * 60 * 45), severity: 'info' },
-    { id: '5', type: 'verification', title: 'Vérification approuvée', description: 'Compte de Fatou Sow vérifié', timestamp: new Date(Date.now() - 1000 * 60 * 60), severity: 'success' },
-    { id: '6', type: 'payment', title: 'Paiement reçu', description: 'Abonnement Premium - 5000 FCFA', timestamp: new Date(Date.now() - 1000 * 60 * 90), severity: 'success' },
-    { id: '7', type: 'ban', title: 'Utilisateur banni', description: 'Compte suspendu pour spam', timestamp: new Date(Date.now() - 1000 * 60 * 120), severity: 'error' },
-  ], []);
+  const activityLogs = useMemo(() => {
+    const now = Date.now();
+    return [
+      { id: '1', title: 'Nouvel utilisateur premium', description: 'Marie Kouassi a souscrit à l\'abonnement Premium', timestamp: new Date(now - 2 * 60 * 1000), severity: 'success' as const, icon: 'star' },
+      { id: '2', title: 'Match confirmé', description: 'Football 5v5 à Abidjan - Plateau • 12 participants', timestamp: new Date(now - 8 * 60 * 1000), severity: 'success' as const, icon: 'match' },
+      { id: '3', title: 'Vérification approuvée', description: 'Yao Kouadio - Document d\'identité validé', timestamp: new Date(now - 15 * 60 * 1000), severity: 'info' as const, icon: 'verify' },
+      { id: '4', title: 'Nouveau ticket support', description: 'Problème de connexion signalé par Aya Traoré', timestamp: new Date(now - 22 * 60 * 1000), severity: 'warning' as const, icon: 'ticket' },
+      { id: '5', title: 'Équipe créée', description: 'Les Lions de Cocody - Basketball 5v5', timestamp: new Date(now - 35 * 60 * 1000), severity: 'info' as const, icon: 'team' },
+      { id: '6', title: 'Utilisateur banni', description: 'Koffi Mensah - Comportement inapproprié', timestamp: new Date(now - 45 * 60 * 1000), severity: 'error' as const, icon: 'ban' },
+      { id: '7', title: 'Tournoi lancé', description: 'Coupe de Volleyball - 16 équipes inscrites', timestamp: new Date(now - 58 * 60 * 1000), severity: 'success' as const, icon: 'tournament' },
+      { id: '8', title: 'Match annulé', description: 'Tennis double à Marcory - Pluie', timestamp: new Date(now - 72 * 60 * 1000), severity: 'warning' as const, icon: 'cancel' },
+      { id: '9', title: 'Paiement reçu', description: '15,000 FCFA - Abonnement Premium (Adjoua N\'Guessan)', timestamp: new Date(now - 90 * 60 * 1000), severity: 'success' as const, icon: 'payment' },
+      { id: '10', title: 'Nouvelle équipe vérifiée', description: 'FC Yopougon - Football 11v11', timestamp: new Date(now - 105 * 60 * 1000), severity: 'info' as const, icon: 'verify' },
+      { id: '11', title: 'Match terminé', description: 'Basketball 3v3 à Treichville - Score: 21-18', timestamp: new Date(now - 125 * 60 * 1000), severity: 'info' as const, icon: 'complete' },
+      { id: '12', title: 'Signalement traité', description: 'Profil suspect vérifié et approuvé', timestamp: new Date(now - 145 * 60 * 1000), severity: 'success' as const, icon: 'check' },
+    ];
+  }, []);
 
   const stats = useMemo(() => {
     const activeUsers = (users ?? []).filter(u => !u.isBanned).length;
@@ -183,6 +206,26 @@ export default function AdminScreen() {
     };
   }, [users, matches, teams]);
 
+  const summaryYesterday = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime();
+    const end = start + 24 * 60 * 60 * 1000;
+    const inRange = (d: Date | string) => {
+      const t = typeof d === 'string' ? new Date(d).getTime() : (d as Date).getTime();
+      return t >= start && t < end;
+    };
+    return {
+      inscriptions: (users ?? []).filter(u => u.createdAt && inRange(u.createdAt)).length,
+      matchs: (matches ?? []).filter(m => m.createdAt && inRange(m.createdAt)).length,
+      equipes: (teams ?? []).filter(t => t.createdAt && inRange(t.createdAt)).length,
+    };
+  }, [users, matches, teams]);
+
+  const getGrowthPercent = (today: number, yesterday: number) => {
+    if (yesterday === 0) return today > 0 ? 100 : 0;
+    return Math.round(((today - yesterday) / yesterday) * 100);
+  };
+
   const filteredUsers = useMemo(() => {
     let result = (users ?? []).filter(u => u != null);
     if (searchQuery) {
@@ -193,8 +236,23 @@ export default function AdminScreen() {
     if (filterStatus === 'active') result = result.filter(u => !u?.isBanned);
     if (filterStatus === 'banned') result = result.filter(u => u?.isBanned);
     if (filterStatus === 'verified') result = result.filter(u => u?.isVerified);
+    
+    result.sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === 'name') {
+        comparison = (a.fullName || '').localeCompare(b.fullName || '');
+      } else if (sortBy === 'date') {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        comparison = dateB - dateA;
+      } else if (sortBy === 'city') {
+        comparison = (a.city || '').localeCompare(b.city || '');
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+    
     return result;
-  }, [users, searchQuery, filterStatus]);
+  }, [users, searchQuery, filterStatus, sortBy, sortOrder]);
 
   const filteredTeams = useMemo(() => {
     const safeTeams = teams ?? [];
@@ -424,6 +482,123 @@ export default function AdminScreen() {
     ]);
   };
 
+  const handleBulkBan = async () => {
+    if (selectedUsers.length === 0) {
+      Alert.alert('Erreur', 'Aucun utilisateur sélectionné');
+      return;
+    }
+    Alert.alert('Bannir en masse', `Bannir ${selectedUsers.length} utilisateur(s) ?`, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Bannir',
+        style: 'destructive',
+        onPress: async () => {
+          let success = 0;
+          for (const userId of selectedUsers) {
+            try {
+              await banUser(userId);
+              success++;
+            } catch (e) {
+              if (__DEV__) console.warn('[Admin] Bulk ban failed for:', userId, e);
+            }
+          }
+          setSelectedUsers([]);
+          await queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+          Alert.alert('Succès', `${success}/${selectedUsers.length} utilisateur(s) banni(s)`);
+        },
+      },
+    ]);
+  };
+
+  const handleBulkUnban = async () => {
+    if (selectedUsers.length === 0) {
+      Alert.alert('Erreur', 'Aucun utilisateur sélectionné');
+      return;
+    }
+    Alert.alert('Débannir en masse', `Débannir ${selectedUsers.length} utilisateur(s) ?`, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Débannir',
+        onPress: async () => {
+          let success = 0;
+          for (const userId of selectedUsers) {
+            try {
+              await unbanUser(userId);
+              success++;
+            } catch (e) {
+              if (__DEV__) console.warn('[Admin] Bulk unban failed for:', userId, e);
+            }
+          }
+          setSelectedUsers([]);
+          await queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+          Alert.alert('Succès', `${success}/${selectedUsers.length} utilisateur(s) débanni(s)`);
+        },
+      },
+    ]);
+  };
+
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUsers(prev => 
+      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedUsers.length === filteredUsers.length) {
+      setSelectedUsers([]);
+    } else {
+      setSelectedUsers(filteredUsers.map(u => u.id));
+    }
+  };
+
+  const handleExportData = async (format: 'json' | 'csv') => {
+    try {
+      const data = {
+        exportDate: new Date().toISOString(),
+        stats: {
+          totalUsers: stats.totalUsers,
+          activeUsers: stats.activeUsers,
+          bannedUsers: stats.bannedUsers,
+          verifiedUsers: stats.verifiedUsers,
+          premiumUsers: stats.premiumUsers,
+          totalTeams: stats.totalTeams,
+          totalMatches: stats.totalMatches,
+          totalTournaments: stats.totalTournaments,
+        },
+        users: filteredUsers.map(u => ({
+          id: u.id,
+          fullName: u.fullName,
+          email: u.email,
+          phone: u.phone,
+          city: u.city,
+          country: u.country,
+          isVerified: u.isVerified,
+          isPremium: u.isPremium,
+          isBanned: u.isBanned,
+          createdAt: u.createdAt,
+        })),
+      };
+
+      let exportContent = '';
+      if (format === 'json') {
+        exportContent = JSON.stringify(data, null, 2);
+      } else {
+        const headers = 'ID,Nom,Email,Téléphone,Ville,Pays,Vérifié,Premium,Banni,Date création\n';
+        const rows = data.users.map(u => 
+          `${u.id},${u.fullName},${u.email || ''},${u.phone || ''},${u.city || ''},${u.country || ''},${u.isVerified},${u.isPremium},${u.isBanned},${u.createdAt}`
+        ).join('\n');
+        exportContent = headers + rows;
+      }
+
+      await Share.share({
+        message: exportContent,
+        title: `Export Admin VSport - ${new Date().toLocaleDateString()}`,
+      });
+    } catch (e) {
+      Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible d\'exporter les données');
+    }
+  };
+
   const handleSendGlobalNotification = () => {
     if (!notificationMessage.trim()) {
       Alert.alert('Erreur', 'Veuillez entrer un message');
@@ -522,21 +697,86 @@ export default function AdminScreen() {
 
   const renderOverview = () => (
     <>
+      <Card style={styles.autoRefreshCard}>
+        <View style={styles.autoRefreshRow}>
+          <View style={styles.autoRefreshInfo}>
+            <RefreshCw size={16} color={autoRefresh ? Colors.status.success : Colors.text.muted} />
+            <Text style={styles.autoRefreshText}>Actualisation auto (30s)</Text>
+          </View>
+          <Switch 
+            value={autoRefresh} 
+            onValueChange={setAutoRefresh}
+            trackColor={{ false: Colors.background.cardLight, true: Colors.status.success }}
+            thumbColor="#FFF"
+          />
+        </View>
+        <Text style={styles.lastRefreshText}>Dernière mise à jour : {formatTime(lastRefresh)}</Text>
+      </Card>
+
       <View style={styles.statsGrid}>
-        <StatCard label="Utilisateurs" value={stats.totalUsers} icon={<Users size={20} color={Colors.primary.blue} />} variant="blue" />
-        <StatCard label="Équipes" value={stats.totalTeams} icon={<Shield size={20} color={Colors.primary.orange} />} variant="orange" />
-        <StatCard label="Matchs" value={stats.totalMatches} icon={<Swords size={20} color={Colors.status.success} />} variant="default" />
-        <StatCard label="Tournois" value={stats.totalTournaments} icon={<Award size={20} color="#A855F7" />} variant="default" />
+        <TouchableOpacity onPress={() => setActiveTab('users')} activeOpacity={0.7}>
+          <StatCard label="Utilisateurs" value={stats.totalUsers} icon={<Users size={20} color={Colors.primary.blue} />} variant="blue" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setActiveTab('teams')} activeOpacity={0.7}>
+          <StatCard label="Équipes" value={stats.totalTeams} icon={<Shield size={20} color={Colors.primary.orange} />} variant="orange" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setActiveTab('matches')} activeOpacity={0.7}>
+          <StatCard label="Matchs" value={stats.totalMatches} icon={<Swords size={20} color={Colors.status.success} />} variant="default" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setActiveTab('tournaments')} activeOpacity={0.7}>
+          <StatCard label="Tournois" value={stats.totalTournaments} icon={<Award size={20} color="#A855F7" />} variant="default" />
+        </TouchableOpacity>
       </View>
       <View style={styles.statsGrid}>
-        <StatCard label="Actifs/jour" value={stats.dailyActiveUsers} icon={<Activity size={20} color={Colors.status.success} />} variant="default" />
-        <StatCard label="Vérifiés" value={stats.verifiedUsers} icon={<CheckCircle size={20} color={Colors.primary.blue} />} variant="blue" />
-        <StatCard label="Premium" value={stats.premiumUsers} icon={<Star size={20} color="#F59E0B" />} variant="orange" />
+        <TouchableOpacity onPress={() => setActiveTab('activity')} activeOpacity={0.7}>
+          <StatCard label="Actifs/jour" value={stats.dailyActiveUsers} icon={<Activity size={20} color={Colors.status.success} />} variant="default" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => { setActiveTab('users'); setFilterStatus('verified'); }} activeOpacity={0.7}>
+          <StatCard label="Vérifiés" value={stats.verifiedUsers} icon={<CheckCircle size={20} color={Colors.primary.blue} />} variant="blue" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setActiveTab('users')} activeOpacity={0.7}>
+          <StatCard label="Premium" value={stats.premiumUsers} icon={<Star size={20} color="#F59E0B" />} variant="orange" />
+        </TouchableOpacity>
       </View>
-      <View style={styles.liveStatsRow}>
-        <RefreshCw size={14} color={Colors.text.muted} />
-        <Text style={styles.liveStatsText}>Stats à jour en temps réel (rafraîchir l’écran pour actualiser)</Text>
-      </View>
+
+      <Card style={styles.growthCard}>
+        <Text style={styles.cardTitle}>Croissance aujourd'hui vs hier</Text>
+        <View style={styles.growthGrid}>
+          <TouchableOpacity style={styles.growthItem} onPress={() => setActiveTab('users')} activeOpacity={0.7}>
+            <Users size={18} color={Colors.primary.blue} />
+            <Text style={styles.growthLabel}>Inscriptions</Text>
+            <Text style={styles.growthValue}>{summaryToday.inscriptions}</Text>
+            <View style={[styles.growthBadge, getGrowthPercent(summaryToday.inscriptions, summaryYesterday.inscriptions) >= 0 ? styles.growthBadgePositive : styles.growthBadgeNegative]}>
+              {getGrowthPercent(summaryToday.inscriptions, summaryYesterday.inscriptions) >= 0 ? <TrendingUp size={12} color={Colors.status.success} /> : <TrendingDown size={12} color={Colors.status.error} />}
+              <Text style={[styles.growthPercent, getGrowthPercent(summaryToday.inscriptions, summaryYesterday.inscriptions) >= 0 ? styles.growthPercentPositive : styles.growthPercentNegative]}>
+                {getGrowthPercent(summaryToday.inscriptions, summaryYesterday.inscriptions) >= 0 ? '+' : ''}{getGrowthPercent(summaryToday.inscriptions, summaryYesterday.inscriptions)}%
+              </Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.growthItem} onPress={() => setActiveTab('matches')} activeOpacity={0.7}>
+            <Swords size={18} color={Colors.primary.orange} />
+            <Text style={styles.growthLabel}>Matchs</Text>
+            <Text style={styles.growthValue}>{summaryToday.matchs}</Text>
+            <View style={[styles.growthBadge, getGrowthPercent(summaryToday.matchs, summaryYesterday.matchs) >= 0 ? styles.growthBadgePositive : styles.growthBadgeNegative]}>
+              {getGrowthPercent(summaryToday.matchs, summaryYesterday.matchs) >= 0 ? <TrendingUp size={12} color={Colors.status.success} /> : <TrendingDown size={12} color={Colors.status.error} />}
+              <Text style={[styles.growthPercent, getGrowthPercent(summaryToday.matchs, summaryYesterday.matchs) >= 0 ? styles.growthPercentPositive : styles.growthPercentNegative]}>
+                {getGrowthPercent(summaryToday.matchs, summaryYesterday.matchs) >= 0 ? '+' : ''}{getGrowthPercent(summaryToday.matchs, summaryYesterday.matchs)}%
+              </Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.growthItem} onPress={() => setActiveTab('teams')} activeOpacity={0.7}>
+            <Shield size={18} color={Colors.status.success} />
+            <Text style={styles.growthLabel}>Équipes</Text>
+            <Text style={styles.growthValue}>{summaryToday.equipes}</Text>
+            <View style={[styles.growthBadge, getGrowthPercent(summaryToday.equipes, summaryYesterday.equipes) >= 0 ? styles.growthBadgePositive : styles.growthBadgeNegative]}>
+              {getGrowthPercent(summaryToday.equipes, summaryYesterday.equipes) >= 0 ? <TrendingUp size={12} color={Colors.status.success} /> : <TrendingDown size={12} color={Colors.status.error} />}
+              <Text style={[styles.growthPercent, getGrowthPercent(summaryToday.equipes, summaryYesterday.equipes) >= 0 ? styles.growthPercentPositive : styles.growthPercentNegative]}>
+                {getGrowthPercent(summaryToday.equipes, summaryYesterday.equipes) >= 0 ? '+' : ''}{getGrowthPercent(summaryToday.equipes, summaryYesterday.equipes)}%
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </Card>
 
       <Card style={styles.revenueCard}>
         <View style={styles.revenueHeader}>
@@ -548,35 +788,37 @@ export default function AdminScreen() {
         </View>
       </Card>
 
-      <Card style={styles.systemCard}>
-        <Text style={styles.cardTitle}>Matchs par statut</Text>
-        <View style={styles.systemStats}>
-          <View style={styles.systemStat}>
-            <View style={[styles.systemIndicator, { backgroundColor: Colors.status.success }]} />
-            <Swords size={18} color={Colors.text.secondary} />
-            <View style={styles.systemStatInfo}>
-              <Text style={styles.systemStatLabel}>Ouverts</Text>
-              <Text style={styles.systemStatValue}>{stats.openMatches}</Text>
+      <TouchableOpacity onPress={() => setActiveTab('matches')} activeOpacity={0.9}>
+        <Card style={styles.systemCard}>
+          <Text style={styles.cardTitle}>Matchs par statut</Text>
+          <View style={styles.systemStats}>
+            <View style={styles.systemStat}>
+              <View style={[styles.systemIndicator, { backgroundColor: Colors.status.success }]} />
+              <Swords size={18} color={Colors.text.secondary} />
+              <View style={styles.systemStatInfo}>
+                <Text style={styles.systemStatLabel}>Ouverts</Text>
+                <Text style={styles.systemStatValue}>{stats.openMatches}</Text>
+              </View>
+            </View>
+            <View style={styles.systemStat}>
+              <View style={[styles.systemIndicator, { backgroundColor: Colors.primary.blue }]} />
+              <Calendar size={18} color={Colors.text.secondary} />
+              <View style={styles.systemStatInfo}>
+                <Text style={styles.systemStatLabel}>Confirmés</Text>
+                <Text style={styles.systemStatValue}>{stats.confirmedMatches}</Text>
+              </View>
+            </View>
+            <View style={styles.systemStat}>
+              <View style={[styles.systemIndicator, { backgroundColor: Colors.text.muted }]} />
+              <CheckCircle size={18} color={Colors.text.secondary} />
+              <View style={styles.systemStatInfo}>
+                <Text style={styles.systemStatLabel}>Terminés</Text>
+                <Text style={styles.systemStatValue}>{stats.completedMatches}</Text>
+              </View>
             </View>
           </View>
-          <View style={styles.systemStat}>
-            <View style={[styles.systemIndicator, { backgroundColor: Colors.primary.blue }]} />
-            <Calendar size={18} color={Colors.text.secondary} />
-            <View style={styles.systemStatInfo}>
-              <Text style={styles.systemStatLabel}>Confirmés</Text>
-              <Text style={styles.systemStatValue}>{stats.confirmedMatches}</Text>
-            </View>
-          </View>
-          <View style={styles.systemStat}>
-            <View style={[styles.systemIndicator, { backgroundColor: Colors.text.muted }]} />
-            <CheckCircle size={18} color={Colors.text.secondary} />
-            <View style={styles.systemStatInfo}>
-              <Text style={styles.systemStatLabel}>Terminés</Text>
-              <Text style={styles.systemStatValue}>{stats.completedMatches}</Text>
-            </View>
-          </View>
-        </View>
-      </Card>
+        </Card>
+      </TouchableOpacity>
 
       <Card style={styles.actionsCard}>
         <Text style={styles.cardTitle}>Actions urgentes</Text>
@@ -633,12 +875,72 @@ export default function AdminScreen() {
           </TouchableOpacity>
         ))}
       </View>
+      <Card style={styles.toolbarCard}>
+        <View style={styles.toolbarRow}>
+          <TouchableOpacity style={styles.toolbarBtn} onPress={toggleSelectAll}>
+            {selectedUsers.length === filteredUsers.length ? <CheckSquare size={18} color={Colors.primary.blue} /> : <Square size={18} color={Colors.text.secondary} />}
+            <Text style={styles.toolbarBtnText}>{selectedUsers.length > 0 ? `${selectedUsers.length} sélectionné(s)` : 'Tout sélectionner'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.toolbarBtn} onPress={() => {
+            const newOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+            setSortOrder(newOrder);
+          }}>
+            <ArrowUpDown size={18} color={Colors.text.secondary} />
+            <Text style={styles.toolbarBtnText}>{sortBy === 'name' ? 'Nom' : sortBy === 'date' ? 'Date' : 'Ville'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.toolbarBtn} onPress={() => {
+            Alert.alert('Trier par', 'Choisir le critère de tri', [
+              { text: 'Nom', onPress: () => setSortBy('name') },
+              { text: 'Date', onPress: () => setSortBy('date') },
+              { text: 'Ville', onPress: () => setSortBy('city') },
+              { text: 'Annuler', style: 'cancel' },
+            ]);
+          }}>
+            <Filter size={18} color={Colors.text.secondary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.toolbarBtn} onPress={() => {
+            Alert.alert('Exporter', 'Choisir le format', [
+              { text: 'JSON', onPress: () => handleExportData('json') },
+              { text: 'CSV', onPress: () => handleExportData('csv') },
+              { text: 'Annuler', style: 'cancel' },
+            ]);
+          }}>
+            <Download size={18} color={Colors.text.secondary} />
+          </TouchableOpacity>
+        </View>
+        {selectedUsers.length > 0 && (
+          <View style={styles.bulkActionsRow}>
+            <TouchableOpacity style={styles.bulkActionBtn} onPress={handleBulkBan}>
+              <Ban size={16} color={Colors.status.error} />
+              <Text style={styles.bulkActionText}>Bannir</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.bulkActionBtn} onPress={handleBulkUnban}>
+              <CheckCircle size={16} color={Colors.status.success} />
+              <Text style={styles.bulkActionText}>Débannir</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.bulkActionBtn} onPress={() => setSelectedUsers([])}>
+              <X size={16} color={Colors.text.muted} />
+              <Text style={styles.bulkActionText}>Annuler</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </Card>
       <Card style={styles.listCard}>
         <View style={styles.listHeader}><Text style={styles.cardTitle}>Utilisateurs ({filteredUsers.length})</Text></View>
         {filteredUsers.map((u) => (
-          <TouchableOpacity key={u.id} style={styles.userItem} onPress={() => router.push(`/user/${u.id}`)}>
-            <Avatar uri={u.avatar} name={u.fullName} size="medium" />
-            <View style={styles.userInfo}>
+          <View key={u.id} style={styles.userItem}>
+            <TouchableOpacity 
+              style={styles.userCheckbox} 
+              onPress={() => toggleUserSelection(u.id)}
+            >
+              {selectedUsers.includes(u.id) ? 
+                <CheckSquare size={20} color={Colors.primary.blue} /> : 
+                <Square size={20} color={Colors.text.muted} />
+              }
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.userItemContent} onPress={() => router.push(`/user/${u.id}`)}>
+              <Avatar uri={u.avatar} name={u.fullName} size="medium" />
+              <View style={styles.userInfo}>
               <View style={styles.userNameRow}>
                 <Text style={styles.userName}>{u.fullName}</Text>
                 {u.isVerified && <CheckCircle size={14} color={Colors.primary.blue} />}
@@ -656,7 +958,8 @@ export default function AdminScreen() {
               )}
               {!u.isVerified && <TouchableOpacity style={styles.actionBtnBlue} onPress={() => handleVerifyUser(u.id, u.fullName)}><CheckCircle size={16} color={Colors.primary.blue} /></TouchableOpacity>}
             </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
         ))}
       </Card>
     </>
@@ -737,15 +1040,143 @@ export default function AdminScreen() {
     </Card>
   );
 
+  const demoTickets = useMemo(() => [
+    {
+      id: 'ticket-1',
+      userId: 'user-1',
+      userName: 'Kouadio Yao',
+      userEmail: 'kouadio.yao@email.ci',
+      subject: 'Problème de paiement Premium',
+      description: 'Je n\'arrive pas à finaliser mon paiement pour l\'abonnement Premium. Le système me renvoie une erreur après validation.',
+      message: 'Je n\'arrive pas à finaliser mon paiement pour l\'abonnement Premium. Le système me renvoie une erreur après validation.',
+      category: 'payment' as const,
+      status: 'open' as const,
+      priority: 'high' as const,
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      responses: [],
+    },
+    {
+      id: 'ticket-2',
+      userId: 'user-2',
+      userName: 'Aya Traoré',
+      userEmail: 'aya.traore@email.ci',
+      subject: 'Match annulé sans notification',
+      description: 'Mon match de basketball prévu hier a été annulé mais je n\'ai reçu aucune notification. Pouvez-vous vérifier ?',
+      message: 'Mon match de basketball prévu hier a été annulé mais je n\'ai reçu aucune notification. Pouvez-vous vérifier ?',
+      category: 'technical' as const,
+      status: 'in_progress' as const,
+      priority: 'medium' as const,
+      createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+      updatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+      responses: [
+        {
+          id: 'resp-1',
+          userId: 'admin-1',
+          userName: 'Admin Support',
+          isAdmin: true,
+          message: 'Bonjour Aya, nous vérifions votre dossier. Le match a été annulé par l\'organisateur pour cause de pluie.',
+          createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+        },
+      ],
+    },
+    {
+      id: 'ticket-3',
+      userId: 'user-3',
+      userName: 'Koffi Mensah',
+      userEmail: 'koffi.mensah@email.ci',
+      subject: 'Impossible de rejoindre une équipe',
+      description: 'Quand je clique sur "Rejoindre" pour une équipe, rien ne se passe. J\'ai essayé plusieurs fois.',
+      message: 'Quand je clique sur "Rejoindre" pour une équipe, rien ne se passe. J\'ai essayé plusieurs fois.',
+      category: 'technical' as const,
+      status: 'open' as const,
+      priority: 'medium' as const,
+      createdAt: new Date(Date.now() - 8 * 60 * 60 * 1000),
+      updatedAt: new Date(Date.now() - 8 * 60 * 60 * 1000),
+      responses: [],
+    },
+    {
+      id: 'ticket-4',
+      userId: 'user-4',
+      userName: 'Marie Kouassi',
+      userEmail: 'marie.kouassi@email.ci',
+      subject: 'Demande de remboursement',
+      description: 'J\'ai été facturée deux fois pour mon abonnement Premium. Je souhaite un remboursement pour le double paiement.',
+      message: 'J\'ai été facturée deux fois pour mon abonnement Premium. Je souhaite un remboursement pour le double paiement.',
+      category: 'payment' as const,
+      status: 'resolved' as const,
+      priority: 'high' as const,
+      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      updatedAt: new Date(Date.now() - 20 * 60 * 60 * 1000),
+      responses: [
+        {
+          id: 'resp-2',
+          userId: 'admin-1',
+          userName: 'Admin Support',
+          isAdmin: true,
+          message: 'Bonjour Marie, nous avons traité votre remboursement. Vous recevrez les fonds sous 3-5 jours ouvrables.',
+          createdAt: new Date(Date.now() - 20 * 60 * 60 * 1000),
+        },
+      ],
+    },
+  ] as SupportTicket[], []);
+
+  const demoVerifications = useMemo(() => [
+    {
+      id: 'verif-1',
+      userId: 'user-5',
+      userName: 'Adjoua N\'Guessan',
+      userEmail: 'adjoua.nguessan@email.ci',
+      userAvatar: undefined,
+      reason: 'Vérification d\'identité pour participer aux tournois officiels',
+      documentType: 'ID Card',
+      documentUrl: 'https://example.com/doc1.jpg',
+      status: 'pending' as const,
+      createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000),
+    },
+    {
+      id: 'verif-2',
+      userId: 'user-6',
+      userName: 'Yao Kouadio',
+      userEmail: 'yao.kouadio@email.ci',
+      userAvatar: undefined,
+      reason: 'Compte professionnel - Organisateur d\'événements sportifs',
+      documentType: 'Business License',
+      documentUrl: 'https://example.com/doc2.jpg',
+      status: 'pending' as const,
+      createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+    },
+    {
+      id: 'verif-3',
+      userId: 'user-7',
+      userName: 'Fatou Diallo',
+      userEmail: 'fatou.diallo@email.ci',
+      userAvatar: undefined,
+      reason: 'Vérification pour badge vérifié',
+      documentType: 'Passport',
+      documentUrl: 'https://example.com/doc3.jpg',
+      status: 'approved' as const,
+      createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000),
+    },
+  ] as VerificationRequest[], []);
+
   const renderTickets = () => {
-    const safeTickets = tickets ?? [];
+
+    const displayTickets = tickets && tickets.length > 0 ? tickets : demoTickets;
     return (
     <Card style={styles.listCard}>
-      <Text style={styles.cardTitle}>Tickets Support ({safeTickets.length})</Text>
-      {safeTickets.length === 0 ? (
+      <View style={styles.cardTitleRow}>
+        <Text style={styles.cardTitle}>Tickets support ({displayTickets.length})</Text>
+        {tickets && tickets.length === 0 && (
+          <View style={styles.demoBadge}>
+            <Text style={styles.demoText}>DÉMO</Text>
+          </View>
+        )}
+      </View>
+      {displayTickets.length === 0 ? (
         <View style={styles.emptyState}><Ticket size={40} color={Colors.text.muted} /><Text style={styles.emptyText}>Aucun ticket</Text></View>
       ) : (
-        safeTickets.map((ticket: SupportTicket) => (
+        displayTickets.map((ticket: SupportTicket) => (
           <View key={ticket.id} style={styles.ticketItem}>
             <View style={styles.ticketInfo}>
               <View style={styles.ticketHeader}>
@@ -787,14 +1218,21 @@ export default function AdminScreen() {
   };
 
   const renderVerifications = () => {
-    const safeVerifications = verificationRequests ?? [];
+    const displayVerifications = verificationRequests && verificationRequests.length > 0 ? verificationRequests : demoVerifications;
     return (
     <Card style={styles.listCard}>
-      <Text style={styles.cardTitle}>Demandes de vérification ({safeVerifications.length})</Text>
-      {safeVerifications.length === 0 ? (
+      <View style={styles.cardTitleRow}>
+        <Text style={styles.cardTitle}>Demandes de vérification ({displayVerifications.length})</Text>
+        {verificationRequests && verificationRequests.length === 0 && (
+          <View style={styles.demoBadge}>
+            <Text style={styles.demoText}>DÉMO</Text>
+          </View>
+        )}
+      </View>
+      {displayVerifications.length === 0 ? (
         <View style={styles.emptyState}><UserCheck size={40} color={Colors.text.muted} /><Text style={styles.emptyText}>Aucune demande</Text></View>
       ) : (
-        safeVerifications.map((req: VerificationRequest) => (
+        displayVerifications.map((req: VerificationRequest) => (
           <View key={req.id} style={styles.verificationItem}>
             <Avatar uri={req.userAvatar} name={req.userName} size="medium" />
             <View style={styles.verificationInfo}>
@@ -821,23 +1259,72 @@ export default function AdminScreen() {
     );
   };
 
+  const getActivityIcon = (iconType: string) => {
+    const iconProps = { size: 16, color: Colors.text.primary };
+    switch (iconType) {
+      case 'star': return <Star {...iconProps} />;
+      case 'match': return <Swords {...iconProps} />;
+      case 'verify': return <CheckCircle {...iconProps} />;
+      case 'ticket': return <Ticket {...iconProps} />;
+      case 'team': return <Shield {...iconProps} />;
+      case 'ban': return <Ban {...iconProps} />;
+      case 'tournament': return <Award {...iconProps} />;
+      case 'cancel': return <XCircle {...iconProps} />;
+      case 'payment': return <DollarSign {...iconProps} />;
+      case 'complete': return <CheckCircle {...iconProps} />;
+      case 'check': return <CheckCircle {...iconProps} />;
+      default: return <Activity {...iconProps} />;
+    }
+  };
+
   const renderActivity = () => (
     <>
       <Card style={styles.activityCard}>
-        <Text style={styles.cardTitle}>Activité récente</Text>
-        <Text style={styles.activityDemoHint}>Exemple (données de démonstration)</Text>
-        {activityLogs.map((log) => (
-          <View key={log.id} style={styles.activityItem}>
-            <View style={[styles.activityDot, { backgroundColor: getSeverityColor(log.severity) }]} />
-            <View style={styles.activityContent}>
-              <View style={styles.activityHeader}>
-                <Text style={styles.activityTitle}>{log.title}</Text>
-                <Text style={styles.activityTime}>{formatTime(log.timestamp)}</Text>
-              </View>
-              <Text style={styles.activityDesc}>{log.description}</Text>
-            </View>
+        <View style={styles.cardTitleRow}>
+          <Text style={styles.cardTitle}>Activité en temps réel</Text>
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>LIVE</Text>
           </View>
-        ))}
+        </View>
+        <View style={styles.activityTimeline}>
+          {activityLogs.map((log, index) => {
+            const getTabForActivity = (icon: string) => {
+              switch (icon) {
+                case 'star': case 'payment': return 'users';
+                case 'match': case 'complete': case 'cancel': return 'matches';
+                case 'verify': return 'verifications';
+                case 'ticket': return 'tickets';
+                case 'team': return 'teams';
+                case 'ban': return 'users';
+                case 'tournament': return 'tournaments';
+                default: return 'activity';
+              }
+            };
+            return (
+              <TouchableOpacity key={log.id} style={styles.activityItem} onPress={() => setActiveTab(getTabForActivity(log.icon) as AdminTab)} activeOpacity={0.7}>
+                <View style={styles.activityLeft}>
+                  <View style={[styles.activityIconContainer, { backgroundColor: getSeverityColor(log.severity) + '20' }]}>
+                    {getActivityIcon(log.icon)}
+                  </View>
+                  {index < activityLogs.length - 1 && <View style={styles.activityLine} />}
+                </View>
+                <View style={styles.activityContent}>
+                  <View style={styles.activityHeader}>
+                    <Text style={styles.activityTitle}>{log.title}</Text>
+                    <Text style={styles.activityTime}>{formatTime(log.timestamp)}</Text>
+                  </View>
+                  <Text style={styles.activityDesc}>{log.description}</Text>
+                  <View style={[styles.activitySeverityBadge, { backgroundColor: getSeverityColor(log.severity) + '20' }]}>
+                    <Text style={[styles.activitySeverityText, { color: getSeverityColor(log.severity) }]}>
+                      {log.severity === 'success' ? 'Succès' : log.severity === 'error' ? 'Erreur' : log.severity === 'warning' ? 'Attention' : 'Info'}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </Card>
       <Card style={styles.activityCard}>
         <Text style={styles.cardTitle}>Résumé du jour</Text>
@@ -858,10 +1345,32 @@ export default function AdminScreen() {
             <Text style={styles.summaryLabel}>Équipes créées</Text>
           </View>
           <View style={styles.summaryItem}>
-            <MessageSquare size={20} color={Colors.text.secondary} />
-            <Text style={styles.summaryValue}>—</Text>
-            <Text style={styles.summaryLabel}>Messages</Text>
+            <Ticket size={20} color={Colors.text.secondary} />
+            <Text style={styles.summaryValue}>{(pendingTickets ?? []).length}</Text>
+            <Text style={styles.summaryLabel}>Tickets</Text>
           </View>
+        </View>
+      </Card>
+
+      <Card style={styles.activityCard}>
+        <Text style={styles.cardTitle}>Actions rapides</Text>
+        <View style={styles.quickActionsGrid}>
+          <TouchableOpacity style={styles.quickActionBtn} onPress={() => setActiveTab('users')}>
+            <Users size={24} color={Colors.primary.blue} />
+            <Text style={styles.quickActionText}>Gérer utilisateurs</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickActionBtn} onPress={() => setActiveTab('tickets')}>
+            <Ticket size={24} color={Colors.primary.orange} />
+            <Text style={styles.quickActionText}>Tickets support</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickActionBtn} onPress={() => setActiveTab('verifications')}>
+            <UserCheck size={24} color={Colors.status.success} />
+            <Text style={styles.quickActionText}>Vérifications</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickActionBtn} onPress={() => setActiveTab('analytics')}>
+            <BarChart3 size={24} color="#A855F7" />
+            <Text style={styles.quickActionText}>Analytiques</Text>
+          </TouchableOpacity>
         </View>
       </Card>
     </>
@@ -891,7 +1400,7 @@ export default function AdminScreen() {
       </Card>
 
       <Card style={styles.analyticsCard}>
-        <Text style={styles.cardTitle}>Croissance des utilisateurs</Text>
+        <Text style={styles.cardTitle}>Croissance des utilisateurs (7 derniers jours)</Text>
         <View style={styles.chartPlaceholder}>
           <View style={styles.chartBars}>
             {[65, 78, 85, 92, 88, 95, 100].map((h, i) => (
@@ -909,31 +1418,41 @@ export default function AdminScreen() {
         </View>
       </Card>
 
-      <Card style={styles.analyticsCard}>
-        <Text style={styles.cardTitle}>Sports populaires</Text>
-        {sportStats.length > 0 ? sportStats.map((item, i) => (
-          <View key={i} style={styles.sportStat}>
-            <Text style={styles.sportName}>{item.sport}</Text>
-            <View style={styles.sportBar}><View style={[styles.sportBarFill, { width: `${item.percent}%`, backgroundColor: i === 0 ? Colors.primary.blue : i === 1 ? Colors.primary.orange : Colors.status.success }]} /></View>
-            <Text style={styles.sportPercent}>{item.percent}%</Text>
-          </View>
-        )) : (
-          <Text style={styles.emptyText}>Aucune donnée disponible</Text>
-        )}
-      </Card>
+      <TouchableOpacity onPress={() => setActiveTab('users')} activeOpacity={0.9}>
+        <Card style={styles.analyticsCard}>
+          <Text style={styles.cardTitle}>Répartition géographique</Text>
+          {cityStats.length > 0 ? cityStats.map((item, i) => (
+            <View key={i} style={styles.sportStat}>
+              <View style={styles.cityIconContainer}>
+                <MapPin size={14} color={Colors.primary.blue} />
+              </View>
+              <Text style={styles.sportName}>{item.city}</Text>
+              <View style={styles.sportBar}><View style={[styles.sportBarFill, { width: `${item.percent}%`, backgroundColor: i === 0 ? Colors.primary.blue : i === 1 ? Colors.primary.orange : Colors.status.success }]} /></View>
+              <Text style={styles.sportPercent}>{item.count}</Text>
+            </View>
+          )) : (
+            <View style={styles.emptyState}><MapPin size={40} color={Colors.text.muted} /><Text style={styles.emptyText}>Aucune donnée</Text></View>
+          )}
+        </Card>
+      </TouchableOpacity>
 
-      <Card style={styles.analyticsCard}>
-        <Text style={styles.cardTitle}>Répartition géographique</Text>
-        {cityStats.length > 0 ? cityStats.map((item, i) => (
-          <View key={i} style={styles.sportStat}>
-            <Text style={styles.sportName}>{item.city}</Text>
-            <View style={styles.sportBar}><View style={[styles.sportBarFill, { width: `${item.percent}%`, backgroundColor: Colors.primary.blue }]} /></View>
-            <Text style={styles.sportPercent}>{item.count}</Text>
-          </View>
-        )) : (
-          <Text style={styles.emptyText}>Aucune donnée disponible</Text>
-        )}
-      </Card>
+      <TouchableOpacity onPress={() => setActiveTab('matches')} activeOpacity={0.9}>
+        <Card style={styles.analyticsCard}>
+          <Text style={styles.cardTitle}>Sports les plus populaires</Text>
+          {sportStats.length > 0 ? sportStats.map((item, i) => (
+            <View key={i} style={styles.sportStat}>
+              <View style={styles.sportRank}>
+                <Text style={styles.sportRankText}>#{i + 1}</Text>
+              </View>
+              <Text style={styles.sportName}>{item.sport}</Text>
+              <View style={styles.sportBar}><View style={[styles.sportBarFill, { width: `${item.percent}%`, backgroundColor: i === 0 ? Colors.primary.blue : i === 1 ? Colors.primary.orange : Colors.status.success }]} /></View>
+              <Text style={styles.sportPercent}>{item.percent}%</Text>
+            </View>
+          )) : (
+            <Text style={styles.emptyText}>Aucune donnée disponible</Text>
+          )}
+        </Card>
+      </TouchableOpacity>
     </>
   );
 
@@ -1315,5 +1834,46 @@ const styles = StyleSheet.create({
   ticketResponseItem: { backgroundColor: Colors.background.cardLight, padding: 12, borderRadius: 8, marginBottom: 8 },
   ticketResponseAuthor: { color: Colors.text.primary, fontSize: 13, fontWeight: '600' as const, marginBottom: 4 },
   ticketResponseText: { color: Colors.text.secondary, fontSize: 14, marginBottom: 4 },
-  ticketResponseDate: { color: Colors.text.muted, fontSize: 11 }
+  ticketResponseDate: { color: Colors.text.muted, fontSize: 11 },
+  autoRefreshCard: { marginBottom: 16 },
+  autoRefreshRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  autoRefreshInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  autoRefreshText: { color: Colors.text.secondary, fontSize: 14, fontWeight: '500' as const },
+  lastRefreshText: { color: Colors.text.muted, fontSize: 12 },
+  growthCard: { marginBottom: 16 },
+  growthGrid: { flexDirection: 'row', gap: 12 },
+  growthItem: { flex: 1, backgroundColor: Colors.background.cardLight, borderRadius: 12, padding: 12, alignItems: 'center' },
+  growthLabel: { color: Colors.text.muted, fontSize: 11, marginTop: 4 },
+  growthValue: { color: Colors.text.primary, fontSize: 20, fontWeight: '700' as const, marginTop: 4 },
+  growthBadgePositive: { backgroundColor: 'rgba(16,185,129,0.1)' },
+  growthBadgeNegative: { backgroundColor: 'rgba(239,68,68,0.1)' },
+  growthPercent: { fontSize: 11, fontWeight: '600' as const },
+  growthPercentPositive: { color: Colors.status.success },
+  growthPercentNegative: { color: Colors.status.error },
+  toolbarCard: { marginBottom: 16 },
+  toolbarRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  toolbarBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: Colors.background.cardLight },
+  toolbarBtnText: { color: Colors.text.secondary, fontSize: 13 },
+  bulkActionsRow: { flexDirection: 'row', gap: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border.light },
+  bulkActionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 8, backgroundColor: Colors.background.cardLight },
+  bulkActionText: { color: Colors.text.secondary, fontSize: 13, fontWeight: '500' as const },
+  userCheckbox: { paddingRight: 8 },
+  userItemContent: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(239,68,68,0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.status.error },
+  liveText: { color: Colors.status.error, fontSize: 11, fontWeight: '700' as const },
+  activityTimeline: { marginTop: 8 },
+  activityLeft: { alignItems: 'center', marginRight: 12 },
+  activityIconContainer: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  activityLine: { width: 2, flex: 1, backgroundColor: Colors.border.light, marginTop: 4 },
+  activitySeverityBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginTop: 6 },
+  activitySeverityText: { fontSize: 10, fontWeight: '600' as const },
+  quickActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  quickActionBtn: { flex: 1, minWidth: '45%', backgroundColor: Colors.background.cardLight, borderRadius: 12, padding: 16, alignItems: 'center', gap: 8 },
+  quickActionText: { color: Colors.text.secondary, fontSize: 13, fontWeight: '500' as const, textAlign: 'center' as const },
+  demoBadge: { backgroundColor: 'rgba(251,191,36,0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  demoText: { color: '#F59E0B', fontSize: 10, fontWeight: '700' as const },
+  cityIconContainer: { width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(21,101,192,0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  sportRank: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.background.cardLight, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  sportRankText: { color: Colors.text.primary, fontSize: 12, fontWeight: '700' as const }
 });

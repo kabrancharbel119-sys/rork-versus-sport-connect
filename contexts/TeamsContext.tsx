@@ -337,10 +337,11 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
   const deleteTeamMutation = useMutation({
     mutationFn: async ({ teamId, userId, asAdmin }: { teamId: string; userId: string; asAdmin?: boolean }) => {
       if (__DEV__) console.log('[Teams] Deleting team:', teamId, asAdmin ? '(admin)' : '');
-      const team = teams.find(t => t.id === teamId);
-      if (!team) throw new Error('Équipe non trouvée');
-      if (!asAdmin && team.captainId !== userId) throw new Error('Seul le capitaine peut dissoudre l\'équipe');
       
+      // Delete from Supabase database
+      await teamsApi.delete(teamId, userId, asAdmin ?? false);
+      
+      // Update local cache
       const updatedTeams = teams.filter(t => t.id !== teamId);
       await saveTeams(updatedTeams);
     },

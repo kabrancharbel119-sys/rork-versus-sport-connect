@@ -396,4 +396,43 @@ export const teamsApi = {
     
     return { success: true };
   },
+
+  async delete(teamId: string, userId: string, asAdmin: boolean = false) {
+    console.log('[TeamsAPI] Deleting team:', teamId, asAdmin ? '(admin)' : '');
+    
+    if (!asAdmin) {
+      const team = await this.getById(teamId);
+      if (team.captainId !== userId) {
+        throw new Error('Seul le capitaine peut dissoudre l\'équipe');
+      }
+    }
+    
+    // Delete from database
+    const { error } = await supabase
+      .from('teams')
+      .delete()
+      .eq('id', teamId);
+    
+    if (error) throw error;
+    
+    // Remove team from all members' team lists
+    const team = await this.getById(teamId).catch(() => null);
+    if (team) {
+      for (const member of team.members) {
+        const { data: user } = await (supabase
+          .from('users')
+          .select('teams')
+          .eq('id', member.userId)
+          .single() as any);
+        
+        if (user) {
+          const userTeams = user as { teams: string[] | null };
+          const teams = ((userTeams.teams as string[]) || []).filter(id => id !== teamId);
+          await ((supabase.from('users') as any).update({ teams }).eq('id', member.userId));
+        }
+      }
+    }
+    
+    return { success: true };
+  },
 };

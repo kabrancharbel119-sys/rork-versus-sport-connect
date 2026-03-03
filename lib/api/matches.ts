@@ -157,10 +157,15 @@ export const matchesApi = {
     
     // Validation UUID pour venueId
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(matchData.venueId)) {
+    if (matchData.venueId && !uuidRegex.test(matchData.venueId)) {
       throw new Error('VALIDATION: venueId must be a valid UUID');
     }
-    if (userId && !uuidRegex.test(userId)) {
+    if (!userId) {
+      throw new Error('VALIDATION: userId is required');
+    }
+    // Convert to string and trim whitespace
+    const cleanUserId = String(userId).trim();
+    if (!uuidRegex.test(cleanUserId)) {
       throw new Error('VALIDATION: userId must be a valid UUID');
     }
     
@@ -205,7 +210,7 @@ export const matchesApi = {
       ambiance: matchData.ambiance,
       max_players: matchData.maxPlayers,
       registered_players: [],
-      created_by: userId,
+      created_by: cleanUserId,
       home_team_id: matchData.homeTeamId ?? null,
       away_team_id: matchData.awayTeamId ?? null,
       entry_fee: matchData.entryFee ?? 0,
@@ -427,5 +432,26 @@ export const matchesApi = {
     }
 
     return matches;
+  },
+
+  async delete(matchId: string, userId: string, asAdmin: boolean = false) {
+    console.log('[MatchesAPI] Deleting match:', matchId, asAdmin ? '(admin)' : '');
+    
+    if (!asAdmin) {
+      const match = await this.getById(matchId);
+      if (match.createdBy !== userId) {
+        throw new Error('Seul le créateur peut supprimer ce match');
+      }
+    }
+    
+    // Delete from database
+    const { error } = await supabase
+      .from('matches')
+      .delete()
+      .eq('id', matchId);
+    
+    if (error) throw error;
+    
+    return { success: true };
   },
 };

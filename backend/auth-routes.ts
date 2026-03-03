@@ -40,18 +40,24 @@ function verifyPassword(password: string, storedHash: string): boolean {
 }
 
 const loginSchema = z.object({
-  phone: z.string().min(1),
+  email: z.string().optional(),
+  phone: z.string().optional(),
   password: z.string().min(6).max(200),
+}).refine(data => data.email || data.phone, {
+  message: "Email ou téléphone requis",
 });
 
 const registerSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().uuid().optional(),
+  email: z.string().email().optional(),
   username: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/),
   fullName: z.string().min(1).max(120),
-  phone: z.string().min(1),
+  phone: z.string().optional(),
   password: z.string().min(6).max(200),
   city: z.string().max(100).optional(),
   country: z.string().max(100).optional(),
+}).refine(data => data.email || data.phone, {
+  message: "Email ou téléphone requis",
 });
 
 /** Colonnes user sans password_hash pour les réponses */
@@ -138,16 +144,20 @@ authRoutes.post("/login", async (c) => {
       message: "Données invalides",
     });
   }
-  const { phone, password } = parsed.data;
+  const { email, phone, password } = parsed.data;
 
-  const { data: row, error } = await admin
-    .from("users")
-    .select("*, password_hash")
-    .eq("phone", phone)
-    .single();
+  let query = admin.from("users").select("*, password_hash");
+  
+  if (email) {
+    query = query.eq("email", email);
+  } else if (phone) {
+    query = query.eq("phone", phone);
+  }
+  
+  const { data: row, error } = await query.single();
 
   if (error || !row) {
-    throw new HTTPException(401, { message: "Numéro ou mot de passe incorrect" });
+    throw new HTTPException(401, { message: "Email/numéro ou mot de passe incorrect" });
   }
 
   const user = row as DbRow & { password_hash?: string };
@@ -156,7 +166,7 @@ authRoutes.post("/login", async (c) => {
   }
 
   if (!verifyPassword(password, user.password_hash ?? "")) {
-    throw new HTTPException(401, { message: "Numéro ou mot de passe incorrect" });
+    throw new HTTPException(401, { message: "Email/numéro ou mot de passe incorrect" });
   }
 
   const { password_hash: _unused, ...safe } = user;
@@ -181,17 +191,32 @@ authRoutes.post("/register", async (c) => {
       message: "Données invalides",
     });
   }
-  const { id, username, fullName, phone, password, city, country } = parsed.data;
+  const { id, email, username, fullName, phone, password, city, country } = parsed.data;
 
-  const { data: existingPhone } = await admin
-    .from("users")
-    .select("id")
-    .eq("phone", phone)
-    .single();
-  if (existingPhone) {
-    throw new HTTPException(409, {
-      message: "Ce numéro est déjà utilisé. Essayez de vous connecter.",
-    });
+  if (email) {
+    const { data: existingEmail } = await admin
+      .from("users")
+      .select("id")
+      .eq("email", email)
+      .single();
+    if (existingEmail) {
+      throw new HTTPException(409, {
+        message: "Cet email est déjà utilisé. Essayez de vous connecter.",
+      });
+    }
+  }
+
+  if (phone) {
+    const { data: existingPhone } = await admin
+      .from("users")
+      .select("id")
+      .eq("phone", phone)
+      .single();
+    if (existingPhone) {
+      throw new HTTPException(409, {
+        message: "Ce numéro est déjà utilisé. Essayez de vous connecter.",
+      });
+    }
   }
 
   const { data: existingUser } = await admin
@@ -205,19 +230,20 @@ authRoutes.post("/register", async (c) => {
     });
   }
 
-  const referralCode = `VS${id.slice(-6).toUpperCase()}`;
-  const timestamp = Date.now();
-  const fakeEmail = `${String(phone).replace(/\D/g, "")}_${timestamp}@local.app`;
+  const userId = id || crypto.randomUUID();
+  const referralCode = `VS${userId.slice(-6).toUpperCase()}`;
   const passwordHash = hashPasswordBcrypt(password);
+  
+  const finalEmail = email || `${String(phone || '').replace(/\D/g, "")}_${Date.now()}@local.app`;
 
   const { data: inserted, error } = await admin
     .from("users")
     .insert({
-      id,
-      email: fakeEmail,
+      id: userId,
+      email: finalEmail,
       username,
       full_name: fullName,
-      phone,
+      phone: phone || null,
       password_hash: passwordHash,
       city: city ?? "Non spécifié",
       country: country ?? "Non spécifié",

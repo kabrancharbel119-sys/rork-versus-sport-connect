@@ -1,13 +1,12 @@
 import React, { useState, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
-import { User, ArrowLeft, ArrowRight, Lock } from 'lucide-react-native';
+import { User, ArrowLeft, ArrowRight, Lock, Mail } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
-import { PhoneInput } from '@/components/PhoneInput';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function RegisterScreen() {
@@ -15,25 +14,18 @@ export default function RegisterScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   
   const { register, isRegisterLoading, registerError } = useAuth();
-  const [nationalNumber, setNationalNumber] = useState('');
   const [formData, setFormData] = useState({
-    phone: '',
+    email: '',
+    username: '',
     firstName: '',
     lastName: '',
     password: '',
     confirmPassword: '',
     city: 'Abidjan',
-    country: 'Côte d\'Ivoire',
+    referralCode: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handlePhoneChange = (fullNumber: string, national: string) => {
-    setFormData(prev => ({ ...prev, phone: fullNumber }));
-    setNationalNumber(national);
-    if (errors.phone) {
-      setErrors(prev => ({ ...prev, phone: '' }));
-    }
-  };
 
   const updateField = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -45,6 +37,18 @@ export default function RegisterScreen() {
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     
+    if (!formData.email.trim()) {
+      newErrors.email = 'Email requis';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = 'Email invalide';
+    }
+    
+    if (!formData.username.trim()) {
+      newErrors.username = 'Nom d\'utilisateur requis';
+    } else if (formData.username.length < 3) {
+      newErrors.username = 'Minimum 3 caractères';
+    }
+    
     if (!formData.firstName.trim()) {
       newErrors.firstName = 'Prénom requis';
     }
@@ -53,16 +57,10 @@ export default function RegisterScreen() {
       newErrors.lastName = 'Nom requis';
     }
     
-    if (!nationalNumber) {
-      newErrors.phone = 'Numéro de téléphone requis';
-    } else if (nationalNumber.length < 8) {
-      newErrors.phone = 'Numéro invalide (minimum 8 chiffres)';
-    }
-    
     if (!formData.password) {
       newErrors.password = 'Mot de passe requis';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Minimum 6 caractères';
+    } else if (formData.password.length < 8) {
+      newErrors.password = 'Minimum 8 caractères recommandés';
     }
     
     if (formData.password !== formData.confirmPassword) {
@@ -77,23 +75,23 @@ export default function RegisterScreen() {
     if (!validateForm()) return;
     
     setErrors({});
-    const fullName = `${formData.firstName.trim()} ${formData.lastName.trim()}`;
-    const username = `${formData.firstName.toLowerCase()}_${formData.lastName.toLowerCase()}`.replace(/\s/g, '');
     
     try {
-      console.log('[Register] Creating account for:', formData.phone);
+      console.log('[Register] Creating account for:', formData.email);
       await register({
-        phone: formData.phone,
+        email: formData.email.trim(),
         password: formData.password,
-        fullName,
-        username,
+        username: formData.username.trim(),
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
         city: formData.city,
-        country: formData.country,
+        referralCode: formData.referralCode.trim() || undefined,
       });
       console.log('[Register] Registration successful, navigating to home');
       router.replace('/(tabs)/(home)');
     } catch (error: any) {
       console.log('[Register] Error:', error);
+      Alert.alert('Erreur', error.message || 'Erreur inattendue');
       setErrors({ general: error.message || 'Erreur inattendue' });
     }
   };
@@ -137,7 +135,32 @@ export default function RegisterScreen() {
             <View style={styles.form}>
               <Input
                 scrollViewRef={scrollViewRef}
-                testID="input-fullname"
+                testID="input-email"
+                label="Email"
+                placeholder="exemple@email.com"
+                value={formData.email}
+                onChangeText={(v) => updateField('email', v)}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                error={errors.email}
+                icon={<Mail size={20} color={Colors.text.muted} />}
+              />
+
+              <Input
+                scrollViewRef={scrollViewRef}
+                testID="input-username"
+                label="Nom d'utilisateur"
+                placeholder="kouame_yao"
+                value={formData.username}
+                onChangeText={(v) => updateField('username', v)}
+                autoCapitalize="none"
+                error={errors.username}
+                icon={<User size={20} color={Colors.text.muted} />}
+              />
+
+              <Input
+                scrollViewRef={scrollViewRef}
+                testID="input-firstname"
                 label="Prénom"
                 placeholder="Kouamé"
                 value={formData.firstName}
@@ -159,16 +182,8 @@ export default function RegisterScreen() {
                 icon={<User size={20} color={Colors.text.muted} />}
               />
 
-              <PhoneInput
-                testID="input-phone"
-                label="Numéro de téléphone"
-                value={nationalNumber}
-                onChangeText={handlePhoneChange}
-                error={errors.phone}
-                defaultCountry="CI"
-              />
-
               <Input
+                scrollViewRef={scrollViewRef}
                 testID="input-password"
                 label="Mot de passe"
                 placeholder="••••••••"
@@ -181,6 +196,7 @@ export default function RegisterScreen() {
 
               <Input
                 scrollViewRef={scrollViewRef}
+                testID="input-confirm-password"
                 label="Confirmer le mot de passe"
                 placeholder="••••••••"
                 value={formData.confirmPassword}
@@ -188,6 +204,16 @@ export default function RegisterScreen() {
                 secureTextEntry
                 error={errors.confirmPassword}
                 icon={<Lock size={20} color={Colors.text.muted} />}
+              />
+
+              <Input
+                scrollViewRef={scrollViewRef}
+                testID="input-referral"
+                label="Code de parrainage (optionnel)"
+                placeholder="VS123ABC"
+                value={formData.referralCode}
+                onChangeText={(v) => updateField('referralCode', v)}
+                autoCapitalize="characters"
               />
 
               {(errors.general || registerError) && (

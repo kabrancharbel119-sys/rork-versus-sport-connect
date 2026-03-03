@@ -30,6 +30,10 @@ import {
   Zap,
   Target,
   CheckCircle,
+  Flame,
+  Star,
+  Award,
+  Clock,
 } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -111,6 +115,22 @@ export default function HomeScreen() {
     })
     .slice(0, 8);
   const userTournaments = user ? getUserTournaments(user.id).slice(0, 5) : [];
+
+  // User stats
+  const userStats = {
+    matchesPlayed: user?.stats?.matchesPlayed ?? 0,
+    wins: user?.stats?.wins ?? 0,
+    streak: 3, // Demo: consecutive days active
+    rank: user?.isPremium ? 'Premium' : 'Standard',
+    level: Math.floor((user?.stats?.matchesPlayed ?? 0) / 5) + 1,
+  };
+
+  // Recent notifications (last 3)
+  const recentNotifications = [
+    { id: '1', title: 'Match confirmé', desc: 'Football 5v5 demain à 18h', time: '2h', icon: 'check' },
+    { id: '2', title: 'Nouvelle demande', desc: 'Les Lions veulent te recruter', time: '5h', icon: 'users' },
+    { id: '3', title: 'Tournoi bientôt', desc: 'Coupe de Basketball dans 2j', time: '1j', icon: 'trophy' },
+  ].slice(0, unreadNotifs > 0 ? 3 : 0);
 
   useEffect(() => {
     if (__DEV__) {
@@ -453,6 +473,73 @@ export default function HomeScreen() {
             </View>
           </View>
 
+          {/* User Stats Widget */}
+          <View style={styles.statsWidget}>
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <View style={[styles.statIconBg, { backgroundColor: Colors.primary.blue + '15' }]}>
+                  <Swords size={18} color={Colors.primary.blue} strokeWidth={2} />
+                </View>
+                <Text style={styles.statValue}>{userStats.matchesPlayed}</Text>
+                <Text style={styles.statLabel}>Matchs</Text>
+              </View>
+              <View style={styles.statItem}>
+                <View style={[styles.statIconBg, { backgroundColor: Colors.status.success + '15' }]}>
+                  <Trophy size={18} color={Colors.status.success} strokeWidth={2} />
+                </View>
+                <Text style={styles.statValue}>{userStats.wins}</Text>
+                <Text style={styles.statLabel}>Victoires</Text>
+              </View>
+              <View style={styles.statItem}>
+                <View style={[styles.statIconBg, { backgroundColor: Colors.primary.orange + '15' }]}>
+                  <Flame size={18} color={Colors.primary.orange} strokeWidth={2} />
+                </View>
+                <Text style={styles.statValue}>{userStats.streak}</Text>
+                <Text style={styles.statLabel}>Jours</Text>
+              </View>
+              <View style={styles.statItem}>
+                <View style={[styles.statIconBg, { backgroundColor: '#8B5CF6' + '15' }]}>
+                  <Award size={18} color="#8B5CF6" strokeWidth={2} />
+                </View>
+                <Text style={styles.statValue}>Niv. {userStats.level}</Text>
+                <Text style={styles.statLabel}>Niveau</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Recent Notifications Preview */}
+          {recentNotifications.length > 0 && (
+            <TouchableOpacity
+              style={[styles.notifPreview, cardShadow]}
+              onPress={() => router.push('/notifications')}
+              activeOpacity={0.9}
+            >
+              <View style={styles.notifHeader}>
+                <View style={styles.notifTitleRow}>
+                  <Bell size={16} color={Colors.primary.orange} strokeWidth={2} />
+                  <Text style={styles.notifTitle}>Notifications récentes</Text>
+                </View>
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>{unreadNotifs}</Text>
+                </View>
+              </View>
+              {recentNotifications.map((notif, idx) => (
+                <View key={notif.id} style={[styles.notifItem, idx < recentNotifications.length - 1 && styles.notifItemBorder]}>
+                  <View style={styles.notifIconWrap}>
+                    {notif.icon === 'check' && <CheckCircle size={14} color={Colors.status.success} />}
+                    {notif.icon === 'users' && <Users size={14} color={Colors.primary.blue} />}
+                    {notif.icon === 'trophy' && <Trophy size={14} color={Colors.primary.orange} />}
+                  </View>
+                  <View style={styles.notifContent}>
+                    <Text style={styles.notifItemTitle}>{notif.title}</Text>
+                    <Text style={styles.notifItemDesc}>{notif.desc}</Text>
+                  </View>
+                  <Text style={styles.notifTime}>{notif.time}</Text>
+                </View>
+              ))}
+            </TouchableOpacity>
+          )}
+
           {userTournaments.length > 0 && (
             <Section
               title="Mes tournois"
@@ -651,9 +738,9 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: PAD,
-    paddingTop: 8,
-    paddingBottom: 16,
-    marginBottom: 8,
+    paddingTop: 12,
+    paddingBottom: 20,
+    marginBottom: 12,
   },
   headerInner: {
     flexDirection: 'row',
@@ -662,24 +749,34 @@ const styles = StyleSheet.create({
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatarRing: {
-    borderWidth: 2.5,
-    borderColor: Colors.primary.orange + '50',
+    borderWidth: 3,
+    borderColor: Colors.primary.orange + '70',
     borderRadius: 999,
-    padding: 2,
+    padding: 3,
+    shadowColor: Colors.primary.orange,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   headerText: { gap: 1 },
   greeting: { color: Colors.text.muted, fontSize: 13, fontWeight: '500' as const },
-  userName: { color: Colors.text.primary, fontSize: 20, fontWeight: '800' as const, letterSpacing: -0.3 },
+  userName: { color: Colors.text.primary, fontSize: 22, fontWeight: '600' as const, letterSpacing: -0.5 },
   headerRight: { flexDirection: 'row', gap: 8 },
   iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: Colors.background.card + 'DD',
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    backgroundColor: Colors.background.card + 'EE',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border.light + '60',
+    borderWidth: 1.5,
+    borderColor: Colors.border.light + '80',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   badge: {
     position: 'absolute',
@@ -695,18 +792,18 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.background.dark,
   },
-  badgeNum: { color: '#FFF', fontSize: 10, fontWeight: '800' as const },
+  badgeNum: { color: '#FFF', fontSize: 10, fontWeight: '600' as const },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: PAD, paddingTop: 8, paddingBottom: 28 },
   bannerWrap: {
-    borderRadius: RADIUS,
-    marginBottom: 20,
+    borderRadius: RADIUS + 2,
+    marginBottom: 24,
     overflow: 'hidden',
   },
   banner: {
-    borderRadius: RADIUS,
+    borderRadius: RADIUS + 2,
     overflow: 'hidden',
-    minHeight: 160,
+    minHeight: 170,
     position: 'relative',
   },
   bannerGlow: {
@@ -722,8 +819,8 @@ const styles = StyleSheet.create({
   bannerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 22,
-    minHeight: 160,
+    padding: 24,
+    minHeight: 170,
   },
   bannerLeft: { flex: 1, justifyContent: 'center', paddingRight: 16 },
   bannerPill: {
@@ -739,16 +836,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
   },
-  bannerPillText: { color: 'rgba(255,255,255,0.95)', fontSize: 11, fontWeight: '700' as const },
+  bannerPillText: { color: 'rgba(255,255,255,0.95)', fontSize: 11, fontWeight: '500' as const },
   bannerTitle: {
     color: '#FFF',
-    fontSize: 26,
-    fontWeight: '900' as const,
-    marginBottom: 6,
-    letterSpacing: -0.5,
-    lineHeight: 30,
+    fontSize: 28,
+    fontWeight: '600' as const,
+    marginBottom: 8,
+    letterSpacing: -0.7,
+    lineHeight: 32,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
-  bannerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 13, marginBottom: 16 },
+  bannerSub: { color: 'rgba(255,255,255,0.85)', fontSize: 14, marginBottom: 18, fontWeight: '500' as const },
   bannerCta: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -761,57 +861,69 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.15)',
   },
-  bannerCtaText: { color: '#FFF', fontWeight: '700' as const, fontSize: 13 },
+  bannerCtaText: { color: '#FFF', fontWeight: '500' as const, fontSize: 13 },
   bannerRight: { alignItems: 'center', justifyContent: 'center' },
   bannerCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    width: 85,
+    height: 85,
+    borderRadius: 42.5,
+    backgroundColor: 'rgba(255,255,255,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.2)',
+    shadowColor: 'rgba(0,0,0,0.3)',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
   quickWrap: {
-    marginBottom: 26,
+    marginBottom: 32,
   },
-  quickGrid: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
-  quickItem: { flex: 1, alignItems: 'center', gap: 8, backgroundColor: Colors.background.card + 'CC', borderRadius: 16, paddingVertical: 16, paddingHorizontal: 4, borderWidth: 1, borderColor: Colors.border.light + '60', backdropFilter: 'blur(10px)' },
+  quickGrid: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  quickItem: { flex: 1, alignItems: 'center', gap: 9, backgroundColor: Colors.background.card + 'DD', borderRadius: 18, paddingVertical: 18, paddingHorizontal: 6, borderWidth: 1.5, borderColor: Colors.border.light + '70', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 },
   quickIconBg: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
   },
-  quickLabel: { color: Colors.text.primary, fontSize: 12, fontWeight: '700' as const },
+  quickLabel: { color: Colors.text.primary, fontSize: 12, fontWeight: '600' as const, letterSpacing: -0.2 },
   quickDesc: { color: Colors.text.muted, fontSize: 10, fontWeight: '500' as const },
-  section: { marginBottom: 28 },
+  section: { marginBottom: 32 },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: 16,
   },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   sectionIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    backgroundColor: Colors.primary.orange + '18',
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: Colors.primary.orange + '20',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.primary.orange + '30',
+    borderWidth: 1.5,
+    borderColor: Colors.primary.orange + '40',
+    shadowColor: Colors.primary.orange,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
-  sectionTitle: { color: Colors.text.primary, fontSize: 17, fontWeight: '800' as const, letterSpacing: -0.2 },
-  sectionSubtitle: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
-  seeAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: Colors.primary.orange + '12', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
+  sectionTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const, letterSpacing: -0.3 },
+  sectionSubtitle: { color: Colors.text.muted, fontSize: 12, marginTop: 3, fontWeight: '500' as const },
+  seeAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.primary.orange + '15', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 12, borderWidth: 1, borderColor: Colors.primary.orange + '25' },
   seeAllText: { color: Colors.primary.orange, fontSize: 12, fontWeight: '600' as const },
   hScroll: { gap: GAP, paddingRight: PAD },
   tournamentCardWrap: { borderRadius: CARD_R, overflow: 'hidden', width: width * 0.72 },
-  tournamentCard: { padding: 18, borderRadius: CARD_R, minHeight: 165, justifyContent: 'space-between' },
+  tournamentCard: { padding: 20, borderRadius: CARD_R, minHeight: 170, justifyContent: 'space-between' },
   tournamentCardCompleted: { opacity: 0.8 },
   tournamentTop: {
     flexDirection: 'row',
@@ -829,14 +941,14 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   tournamentStatusDot: { width: 7, height: 7, borderRadius: 4 },
-  tournamentStatusText: { color: '#FFF', fontSize: 10, fontWeight: '700' as const },
+  tournamentStatusText: { color: '#FFF', fontSize: 10, fontWeight: '500' as const },
   tournamentCountdownBadge: {
     backgroundColor: 'rgba(255,255,255,0.18)',
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 8,
   },
-  tournamentCountdownText: { color: '#FFF', fontSize: 10, fontWeight: '700' as const },
+  tournamentCountdownText: { color: '#FFF', fontSize: 10, fontWeight: '500' as const },
   tournamentBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
   tournamentProgressWrap: { marginTop: 8, marginBottom: 2 },
   tournamentProgressBg: { height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.15)', overflow: 'hidden' },
@@ -853,21 +965,21 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginTop: 10,
   },
-  tournamentPrizeText: { color: '#FFD700', fontSize: 11, fontWeight: '800' as const },
+  tournamentPrizeText: { color: '#FFD700', fontSize: 11, fontWeight: '600' as const },
   tournamentCompletedBadge: { marginLeft: 4 },
   tournamentLiveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,59,48,0.4)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   tournamentLiveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FF3B30' },
-  tournamentLiveText: { color: '#FFF', fontSize: 9, fontWeight: '800' as const, letterSpacing: 0.8 },
+  tournamentLiveText: { color: '#FFF', fontSize: 9, fontWeight: '600' as const, letterSpacing: 0.8 },
   tournamentVenueRow: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: 100 },
   tournamentVenueText: { color: 'rgba(255,255,255,0.7)', fontSize: 10 },
   tournamentTeams: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   tournamentTeamsText: { color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: '600' as const },
-  tournamentName: { color: '#FFF', fontSize: 17, fontWeight: '800' as const, marginBottom: 6, letterSpacing: -0.3, lineHeight: 22 },
+  tournamentName: { color: '#FFF', fontSize: 18, fontWeight: '600' as const, marginBottom: 7, letterSpacing: -0.4, lineHeight: 23, textShadowColor: 'rgba(0,0,0,0.2)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
   tournamentInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4, flexWrap: 'wrap' },
   tournamentInfoChip: { color: 'rgba(255,255,255,0.8)', fontSize: 10, fontWeight: '600' as const, backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
   tournamentDateRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   tournamentDate: { color: 'rgba(255,255,255,0.85)', fontSize: 11 },
-  teamCard: { marginBottom: 10, borderRadius: 16, overflow: 'hidden', backgroundColor: Colors.background.card, flexDirection: 'row', borderWidth: 1, borderColor: Colors.border.light, position: 'relative' },
+  teamCard: { marginBottom: 12, borderRadius: 18, overflow: 'hidden', backgroundColor: Colors.background.card, flexDirection: 'row', borderWidth: 1.5, borderColor: Colors.border.light + '90', position: 'relative' },
   teamCardGradient: {
     position: 'absolute',
     top: 0,
@@ -875,33 +987,33 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  teamCardAccent: { width: 4, backgroundColor: Colors.primary.blue, zIndex: 1 },
+  teamCardAccent: { width: 5, backgroundColor: Colors.primary.blue, zIndex: 1, shadowColor: Colors.primary.blue, shadowOffset: { width: 2, height: 0 }, shadowOpacity: 0.4, shadowRadius: 4 },
   teamRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 14,
+    gap: 14,
+    padding: 16,
     flex: 1,
   },
   teamInfo: { flex: 1, minWidth: 0, gap: 4 },
-  teamName: { color: Colors.text.primary, fontSize: 15, fontWeight: '700' as const },
+  teamName: { color: Colors.text.primary, fontSize: 16, fontWeight: '600' as const, letterSpacing: -0.2 },
   teamMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   teamMetaChip: { backgroundColor: Colors.background.cardLight, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
   teamMetaChipText: { color: Colors.text.secondary, fontSize: 10, fontWeight: '600' as const },
   teamLocation: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   teamLocationText: { color: Colors.text.muted, fontSize: 11, flex: 1 },
   teamStats: { alignItems: 'center', flexDirection: 'row' },
-  teamMembersNum: { color: Colors.primary.orange, fontSize: 18, fontWeight: '800' as const },
+  teamMembersNum: { color: Colors.primary.orange, fontSize: 20, fontWeight: '600' as const, letterSpacing: -0.5 },
   teamMembersLabel: { color: Colors.text.muted, fontSize: 12 },
-  matchCard: { marginBottom: 10, borderRadius: 16, overflow: 'hidden' },
-  matchCardRanked: { borderLeftWidth: 4, borderLeftColor: Colors.primary.orange },
+  matchCard: { marginBottom: 12, borderRadius: 18, overflow: 'hidden' },
+  matchCardRanked: { borderLeftWidth: 5, borderLeftColor: Colors.primary.orange, shadowColor: Colors.primary.orange, shadowOffset: { width: -2, height: 0 }, shadowOpacity: 0.3, shadowRadius: 6 },
   matchTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   matchBadge: { backgroundColor: Colors.primary.blue + '20', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   matchBadgeRanked: { backgroundColor: Colors.primary.orange + '20' },
-  matchBadgeText: { color: Colors.primary.blue, fontSize: 10, fontWeight: '700' as const },
+  matchBadgeText: { color: Colors.primary.blue, fontSize: 10, fontWeight: '500' as const },
   matchLevel: { color: Colors.text.muted, fontSize: 11, fontWeight: '500' as const },
   rankedTagline: { color: Colors.primary.orange, fontSize: 10, fontWeight: '600' as const, marginBottom: 4 },
-  matchSport: { color: Colors.text.primary, fontSize: 15, fontWeight: '700' as const, marginBottom: 10 },
+  matchSport: { color: Colors.text.primary, fontSize: 16, fontWeight: '600' as const, marginBottom: 10, letterSpacing: -0.2 },
   matchMeta: { gap: 6, marginBottom: 12 },
   matchMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   matchMetaText: { color: Colors.text.secondary, fontSize: 13, flex: 1 },
@@ -914,39 +1026,45 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.border.light,
   },
   matchPlayers: { color: Colors.text.muted, fontSize: 12 },
-  matchPrize: { color: Colors.primary.orange, fontSize: 12, fontWeight: '700' as const },
-  rankedLabel: { color: Colors.primary.orange, fontSize: 11, fontWeight: '700' as const },
+  matchPrize: { color: Colors.primary.orange, fontSize: 12, fontWeight: '500' as const },
+  rankedLabel: { color: Colors.primary.orange, fontSize: 11, fontWeight: '500' as const },
   emptyCard: {
-    borderRadius: 18,
+    borderRadius: 20,
     overflow: 'hidden',
     alignItems: 'center',
-    paddingVertical: 36,
-    paddingHorizontal: 24,
+    paddingVertical: 40,
+    paddingHorizontal: 28,
     position: 'relative',
   },
   emptyIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: Colors.primary.blue + '15',
+    width: 70,
+    height: 70,
+    borderRadius: 22,
+    backgroundColor: Colors.primary.blue + '18',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 18,
+    borderWidth: 2,
+    borderColor: Colors.primary.blue + '30',
   },
-  emptyTitle: { color: Colors.text.primary, fontSize: 17, fontWeight: '700' as const, marginBottom: 6 },
-  emptyText: { color: Colors.text.muted, fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 18 },
+  emptyTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const, marginBottom: 8, letterSpacing: -0.3 },
+  emptyText: { color: Colors.text.muted, fontSize: 14, textAlign: 'center', lineHeight: 21, marginBottom: 20, fontWeight: '500' as const },
   emptyCta: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: Colors.primary.orange + '15',
-    paddingVertical: 12,
-    paddingHorizontal: 22,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.primary.orange + '25',
+    gap: 10,
+    backgroundColor: Colors.primary.orange + '18',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: Colors.primary.orange + '30',
+    shadowColor: Colors.primary.orange,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
-  emptyCtaText: { color: Colors.primary.orange, fontSize: 13, fontWeight: '700' as const },
+  emptyCtaText: { color: Colors.primary.orange, fontSize: 14, fontWeight: '600' as const, letterSpacing: -0.2 },
   emptyCardSmall: {
     backgroundColor: Colors.background.card,
     borderRadius: 16,
@@ -960,4 +1078,56 @@ const styles = StyleSheet.create({
   emptyTextSmall: { color: Colors.text.muted, fontSize: 13, marginBottom: 10 },
   emptyLink: { color: Colors.primary.orange, fontSize: 13, fontWeight: '600' as const },
   spacer: { height: 40 },
+  statsWidget: {
+    backgroundColor: Colors.background.card + 'DD',
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 24,
+    borderWidth: 1.5,
+    borderColor: Colors.border.light + '70',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 6 },
+      android: { elevation: 3 },
+    }),
+  },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+  statItem: { flex: 1, alignItems: 'center', gap: 6 },
+  statIconBg: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  statValue: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const, letterSpacing: -0.5 },
+  statLabel: { color: Colors.text.muted, fontSize: 10, fontWeight: '600' as const },
+  notifPreview: {
+    backgroundColor: Colors.background.card,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 1.5,
+    borderColor: Colors.border.light + '80',
+  },
+  notifHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  notifTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  notifTitle: { color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const, letterSpacing: -0.2 },
+  notifBadge: {
+    backgroundColor: Colors.primary.orange,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  notifBadgeText: { color: '#FFF', fontSize: 11, fontWeight: '600' as const },
+  notifItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+  notifItemBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border.light },
+  notifIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    backgroundColor: Colors.background.cardLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifContent: { flex: 1, gap: 2 },
+  notifItemTitle: { color: Colors.text.primary, fontSize: 13, fontWeight: '500' as const },
+  notifItemDesc: { color: Colors.text.muted, fontSize: 11 },
+  notifTime: { color: Colors.text.muted, fontSize: 10, fontWeight: '500' as const },
 });

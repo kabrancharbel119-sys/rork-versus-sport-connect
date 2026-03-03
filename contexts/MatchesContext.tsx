@@ -6,6 +6,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { Match, Sport, SkillLevel, PlayStyle, Venue, UserLocation, MatchPlayerStats } from '@/types';
 import { matchesApi } from '@/lib/api/matches';
 import { venuesApi } from '@/lib/api/venues';
+import { useAuth } from './AuthContext';
 
 const MATCHES_REFETCH_INTERVAL_MS = 15_000;
 
@@ -34,6 +35,7 @@ interface CreateMatchData {
 
 export const [MatchesProvider, useMatches] = createContextHook(() => {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [matches, setMatches] = useState<Match[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [isAppActive, setIsAppActive] = useState(true);
@@ -108,8 +110,15 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
   const createMatchMutation = useMutation({
     mutationFn: async (data: CreateMatchData) => {
       console.log('[Matches] Creating match...');
+      
+      // Validate user is authenticated
+      const userId = user?.id || data.createdBy;
+      if (!userId) {
+        throw new Error('Utilisateur non connecté');
+      }
+      
       try {
-        const result = await matchesApi.create(data.createdBy, {
+        const result = await matchesApi.create({
           sport: data.sport,
           format: data.format,
           type: data.type,
@@ -128,7 +137,7 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
           needsPlayers: data.needsPlayers ?? true,
           lat: data.location?.latitude,
           lng: data.location?.longitude,
-        });
+        }, userId);
         queryClient.invalidateQueries({ queryKey: ['matches'] });
         return result;
       } catch (err: any) {
@@ -202,10 +211,11 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
   const deleteMatchMutation = useMutation({
     mutationFn: async ({ matchId, userId, asAdmin }: { matchId: string; userId: string; asAdmin?: boolean }) => {
       if (__DEV__) console.log('[Matches] Deleting match:', matchId, asAdmin ? '(admin)' : '');
-      const match = matches.find(m => m.id === matchId);
-      if (!match) throw new Error('Match non trouvé');
-      if (!asAdmin && match.createdBy !== userId) throw new Error('Seul le créateur peut supprimer ce match');
       
+      // Delete from Supabase database
+      await matchesApi.delete(matchId, userId, asAdmin ?? false);
+      
+      // Update local cache
       const updatedMatches = matches.filter(m => m.id !== matchId);
       await saveMatches(updatedMatches);
     },
