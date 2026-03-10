@@ -12,7 +12,8 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:e2e": "jest --config jest.config.e2e.js --runInBand",
-    "test:e2e:report": "jest --config jest.config.e2e.js --runInBand --json --outputFile=test-report.json && node __tests__/e2e/runner.js"
+    "test:e2e:report": "jest --config jest.config.e2e.js --runInBand --json --outputFile=test-report.json && node __tests__/e2e/runner.js",
+    "verify:production": "node scripts/verify-production-ready.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
