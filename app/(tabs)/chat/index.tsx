@@ -220,8 +220,13 @@ export default function ChatScreen() {
                               style={[styles.requestBtn, styles.requestBtnAccept]} 
                               onPress={async () => {
                                 try {
-                                  await respondToChatRequest({ requestId: request.id, action: 'accept' });
-                                  Alert.alert('Succès', 'Demande acceptée ! La conversation est maintenant disponible.');
+                                  const result = await respondToChatRequest({ requestId: request.id, action: 'accept' }) as any;
+                                  const roomId = result?.roomId as string | undefined;
+                                  if (roomId) {
+                                    router.push(`/chat/${roomId}`);
+                                  } else {
+                                    Alert.alert('Succès', 'Demande acceptée ! La conversation est maintenant disponible.');
+                                  }
                                 } catch (error: any) {
                                   Alert.alert('Erreur', error.message || 'Impossible d\'accepter la demande');
                                 }

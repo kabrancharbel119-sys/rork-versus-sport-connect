@@ -136,16 +136,37 @@ export const chatApi = {
     participants: string[];
   }) {
     console.log('[ChatAPI] Creating room:', roomData.name);
-    
-    const q = supabase.from('chat_rooms').select('*').eq('name', roomData.name);
-    const query = roomData.teamId != null ? q.eq('team_id', roomData.teamId) : q.is('team_id', null);
-    const { data: existing } = await (query.maybeSingle() as any);
-    
-    if (existing) {
-      return mapChatRoomRowToRoom(existing as ChatRoomRow);
-    }
 
     const participantIds = [...new Set([userId, ...roomData.participants])];
+
+    if (roomData.type === 'direct') {
+      const { data: directRooms } = await (supabase
+        .from('chat_rooms')
+        .select('*')
+        .eq('type', 'direct') as any);
+
+      const existingDirect = ((directRooms || []) as ChatRoomRow[]).find((row) => {
+        const rowParticipants = getRoomParticipants(row);
+        return (
+          rowParticipants.length === 2 &&
+          participantIds.length === 2 &&
+          rowParticipants.includes(participantIds[0]) &&
+          rowParticipants.includes(participantIds[1])
+        );
+      });
+
+      if (existingDirect) {
+        return mapChatRoomRowToRoom(existingDirect);
+      }
+    } else {
+      const q = supabase.from('chat_rooms').select('*').eq('name', roomData.name);
+      const query = roomData.teamId != null ? q.eq('team_id', roomData.teamId) : q.is('team_id', null);
+      const { data: existing } = await (query.maybeSingle() as any);
+
+      if (existing) {
+        return mapChatRoomRowToRoom(existing as ChatRoomRow);
+      }
+    }
 
     const { data, error } = await (supabase
       .from('chat_rooms')
@@ -511,25 +532,21 @@ export const chatApi = {
 
     console.log('[ChatAPI] Request successfully updated:', requestId, 'new status:', status);
     
-    // If accepted, create a direct chat room
+    let directRoom: ChatRoom | null = null;
+
+    // If accepted, create (or reuse) direct chat room
     if (action === 'accept') {
-      // Check if room already exists
-      const { data: existingRooms } = await (supabase
-        .from('chat_rooms')
-        .select('*')
-        .eq('type', 'direct')
-        .contains('participants', [request.requester_id, request.recipient_id]) as any);
-      
-      if (!existingRooms || existingRooms.length === 0) {
-        // Create direct chat room
-        await this.createRoom(recipientId, {
-          name: `Conversation directe`,
-          type: 'direct',
-          participants: [request.requester_id, request.recipient_id],
-        });
-      }
+      directRoom = await this.createRoom(recipientId, {
+        name: 'Conversation directe',
+        type: 'direct',
+        participants: [request.requester_id, request.recipient_id],
+      });
     }
-    
-    return data;
+
+    return {
+      request: data,
+      room: directRoom || undefined,
+      roomId: directRoom?.id,
+    };
   },
 };

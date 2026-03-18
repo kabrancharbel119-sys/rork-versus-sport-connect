@@ -601,16 +601,14 @@ export const [ChatProvider, useChat] = createContextHook(() => {
         const result = await chatApi.respondToChatRequest(requestId, currentUserId, action);
         
         if (action === 'accept') {
-          const directRoom: ChatRoom = {
-            id: `direct-${Date.now()}`,
-            name: `Conversation directe`,
-            type: 'direct',
-            participants: [request.requesterId, request.recipientId],
-            unreadCount: 0,
-            createdAt: new Date(),
-          };
-          const updatedRooms = [...chatRooms, directRoom];
-          await saveRooms(updatedRooms);
+          const acceptedRoom = (result as any)?.room as ChatRoom | undefined;
+          if (acceptedRoom) {
+            const alreadyExists = chatRooms.some(r => r.id === acceptedRoom.id);
+            if (!alreadyExists) {
+              const updatedRooms = [...chatRooms, acceptedRoom];
+              await saveRooms(updatedRooms);
+            }
+          }
           queryClient.invalidateQueries({ queryKey: ['chats'] });
           setChatRequests(prev => {
             const next = prev.filter(r => r.id !== requestId);
@@ -635,6 +633,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
           };
           const updatedRooms = [...chatRooms, directRoom];
           await saveRooms(updatedRooms);
+          return { success: true, room: directRoom, roomId: directRoom.id };
         }
         queryClient.invalidateQueries({ queryKey: ['chatRequests'] });
         return { success: true };
