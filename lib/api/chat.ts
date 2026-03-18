@@ -464,7 +464,6 @@ export const chatApi = {
           status: 'pending',
           message: message || null,
           created_at: new Date().toISOString(),
-          responded_at: null,
         })
         .eq('id', existing.id)
         .select()
