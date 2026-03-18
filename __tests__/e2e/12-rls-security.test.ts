@@ -44,7 +44,7 @@ describe('RLS — Isolation des données', () => {
         title: 'Test',
         message: 'Test',
         data: {},
-        read: false
+        is_read: false
       })
       .select()
       .single();

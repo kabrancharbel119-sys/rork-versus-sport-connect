@@ -17,6 +17,13 @@ type TabType = 'global' | 'sport' | 'city' | 'my-stats';
 export default function RankingsScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/(tabs)/(home)' as any);
+  };
   const [activeTab, setActiveTab] = useState<TabType>('global');
   const [selectedSport, setSelectedSport] = useState<Sport>('football');
   const [globalLeaderboard, setGlobalLeaderboard] = useState<Leaderboard | null>(null);
@@ -270,7 +277,7 @@ export default function RankingsScreen() {
 
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <View style={styles.headerTitleWrap}>
@@ -292,7 +299,7 @@ export default function RankingsScreen() {
                 style={[styles.tab, activeTab === key && styles.tabActive]}
                 onPress={() => setActiveTab(key as TabType)}
               >
-                {React.cloneElement(icon as React.ReactElement, { color: activeTab === key ? '#FFFFFF' : Colors.text.secondary })}
+                {React.cloneElement(icon as React.ReactElement<any>, { color: activeTab === key ? '#FFFFFF' : Colors.text.secondary } as any)}
                 <Text style={[styles.tabText, activeTab === key && styles.tabTextActive]}>{label}</Text>
               </TouchableOpacity>
             ))}

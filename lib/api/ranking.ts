@@ -170,7 +170,7 @@ class RankingApi {
       previousRank: 0,
       rankChange: 0,
       stats: newRanking.stats,
-      sportRankings: {},
+      sportRankings: {} as Record<Sport, SportRanking>,
       achievements: [],
       badges: [],
       updatedAt: new Date(),
@@ -654,8 +654,7 @@ class RankingApi {
       message += `\n🏆 ${update.achievementsUnlocked.length} achievement(s) débloqué(s) !`;
     }
 
-    await notificationsApi.addNotification({
-      userId,
+    await notificationsApi.send(userId, {
       type: 'match',
       title: 'Classement mis à jour',
       message,

@@ -76,6 +76,12 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="my-venues"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: t('tabs.profile'),

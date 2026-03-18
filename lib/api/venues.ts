@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import type { Venue } from '@/types';
+import type { Venue, Booking, BookingStatus } from '@/types';
+import { notificationsApi } from './notifications';
 
 export interface VenueRow {
   id: string;
@@ -13,6 +14,30 @@ export interface VenueRow {
   amenities: string[];
   latitude: number | null;
   longitude: number | null;
+  owner_id: string | null;
+  description: string | null;
+  phone: string | null;
+  email: string | null;
+  opening_hours: any | null;
+  auto_approve: boolean;
+  is_active: boolean;
+  capacity: number | null;
+  surface_type: string | null;
+  rules: string | null;
+  created_at: string;
+}
+
+export interface BookingRow {
+  id: string;
+  venue_id: string;
+  user_id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  total_amount: number;
+  status: string;
+  match_id: string | null;
+  notes: string | null;
   created_at: string;
 }
 
@@ -30,7 +55,44 @@ export const mapVenueRowToVenue = (row: VenueRow): Venue => ({
     latitude: row.latitude,
     longitude: row.longitude
   } : undefined,
+  ownerId: row.owner_id ?? undefined,
+  description: row.description ?? undefined,
+  phone: row.phone ?? undefined,
+  email: row.email ?? undefined,
+  openingHours: row.opening_hours ?? undefined,
+  autoApprove: row.auto_approve ?? true,
+  isActive: row.is_active ?? true,
+  capacity: row.capacity ?? undefined,
+  surfaceType: row.surface_type ?? undefined,
+  rules: row.rules ?? undefined,
 });
+
+export const mapBookingRowToBooking = (row: BookingRow): Booking => ({
+  id: row.id,
+  venueId: row.venue_id,
+  userId: row.user_id,
+  date: row.date,
+  startTime: row.start_time,
+  endTime: row.end_time,
+  totalPrice: row.total_amount,
+  status: row.status as BookingStatus,
+  matchId: row.match_id ?? undefined,
+  notes: row.notes ?? undefined,
+  createdAt: new Date(row.created_at),
+});
+
+// Extract hour from a TIMESTAMPTZ string or a plain time string
+// Handles: '2026-03-16T18:00:00+00:00', '2026-03-16T18:00:00', '18:00:00', '18:00'
+const parseHourFromTimestamp = (val: string): number => {
+  if (!val) return 0;
+  // If it contains 'T', it's a full timestamp — parse the time part after T
+  if (val.includes('T')) {
+    const timePart = val.split('T')[1]; // '18:00:00+00:00'
+    return parseInt(timePart.split(':')[0], 10) || 0;
+  }
+  // Otherwise treat as plain time string
+  return parseInt(val.split(':')[0], 10) || 0;
+};
 
 const getDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
   const R = 6371;
@@ -45,10 +107,36 @@ export const venuesApi = {
     console.log('[VenuesAPI] Getting all venues');
     const { data, error } = await (supabase
       .from('venues')
-      .select('*')
+      .select(`
+        id,
+        name,
+        address,
+        city,
+        sport,
+        price_per_hour,
+        images,
+        rating,
+        amenities,
+        latitude,
+        longitude,
+        owner_id,
+        description,
+        phone,
+        email,
+        opening_hours,
+        auto_approve,
+        is_active,
+        capacity,
+        surface_type,
+        rules,
+        created_at
+      `)
       .order('rating', { ascending: false }) as any);
     
-    if (error) throw error;
+    if (error) {
+      console.error('[VenuesAPI] Error getting all venues:', error);
+      throw error;
+    }
     return ((data || []) as VenueRow[]).map(row => mapVenueRowToVenue(row));
   },
 
@@ -110,22 +198,55 @@ export const venuesApi = {
     console.log('[VenuesAPI] Getting availability for:', venueId, date);
     
     const venue = await this.getById(venueId);
+    const selectedDayOfWeek = new Date(`${date}T00:00:00`).getDay();
+    const openingHours = Array.isArray(venue.openingHours) ? venue.openingHours : [];
+    const dayHours = openingHours.find((d: any) => Number(d?.dayOfWeek) === selectedDayOfWeek);
 
-    const { data: bookings } = await (supabase
+    if (dayHours?.isClosed) {
+      return [];
+    }
+
+    let openHour = 8;
+    let closeHour = 22;
+    if (dayHours && !dayHours.isClosed) {
+      const parsedOpen = parseInt(String(dayHours.openTime || '').split(':')[0], 10);
+      const parsedClose = parseInt(String(dayHours.closeTime || '').split(':')[0], 10);
+      if (!isNaN(parsedOpen) && !isNaN(parsedClose) && parsedOpen < parsedClose) {
+        openHour = parsedOpen;
+        closeHour = parsedClose;
+      }
+    }
+
+    const { data: bookings, error: bookingsError } = await (supabase
       .from('bookings')
       .select('start_time, end_time')
       .eq('venue_id', venueId)
       .eq('date', date)
       .neq('status', 'cancelled') as any);
 
+    if (bookingsError) {
+      console.error('[VenuesAPI] Error fetching bookings:', bookingsError);
+    }
+
     const bookingsData = (bookings || []) as { start_time: string; end_time: string }[];
+
+    // Parse booked hour ranges — start_time/end_time are TIMESTAMPTZ
+    const bookedHours = new Set<number>();
+    for (const b of bookingsData) {
+      const startH = parseHourFromTimestamp(b.start_time);
+      const endH = parseHourFromTimestamp(b.end_time);
+      for (let h = startH; h < endH; h++) {
+        bookedHours.add(h);
+      }
+    }
+
     const slots = [];
-    for (let hour = 8; hour < 22; hour++) {
-      const hourStr = `${hour}:00`;
-      const isBooked = bookingsData.some(b => 
-        b.start_time <= hourStr && b.end_time > hourStr
-      );
-      slots.push({ hour, available: !isBooked, price: venue.pricePerHour });
+    for (let hour = openHour; hour < closeHour; hour++) {
+      slots.push({
+        hour,
+        available: !bookedHours.has(hour),
+        price: venue.pricePerHour ?? 0,
+      });
     }
 
     return slots;
@@ -138,48 +259,150 @@ export const venuesApi = {
     endTime: string;
     matchId?: string;
   }) {
-    console.log('[VenuesAPI] Creating booking');
+    console.log('[VenuesAPI] Creating booking:', booking);
     
     const venue = await this.getById(booking.venueId);
+    const selectedDayOfWeek = new Date(`${booking.date}T00:00:00`).getDay();
+    const openingHours = Array.isArray(venue.openingHours) ? venue.openingHours : [];
+    const dayHours = openingHours.find((d: any) => Number(d?.dayOfWeek) === selectedDayOfWeek);
 
-    const { data: existingBookings } = await (supabase
+    // Validate input
+    const startHour = parseInt(booking.startTime.split(':')[0], 10);
+    const endHour = parseInt(booking.endTime.split(':')[0], 10);
+    if (isNaN(startHour) || isNaN(endHour) || startHour >= endHour) {
+      throw new Error('Heures de début et fin invalides. Vérifiez votre sélection.');
+    }
+
+    if (dayHours?.isClosed) {
+      throw new Error('Ce terrain est fermé le jour sélectionné.');
+    }
+
+    let minHour = 8;
+    let maxHour = 22;
+    if (dayHours && !dayHours.isClosed) {
+      const parsedOpen = parseInt(String(dayHours.openTime || '').split(':')[0], 10);
+      const parsedClose = parseInt(String(dayHours.closeTime || '').split(':')[0], 10);
+      if (!isNaN(parsedOpen) && !isNaN(parsedClose) && parsedOpen < parsedClose) {
+        minHour = parsedOpen;
+        maxHour = parsedClose;
+      }
+    }
+
+    if (startHour < minHour || endHour > maxHour) {
+      throw new Error(`Les réservations sont possibles entre ${minHour}h et ${maxHour}h.`);
+    }
+
+    // Check for conflicts using numeric comparison
+    const { data: existingBookings, error: fetchErr } = await (supabase
       .from('bookings')
       .select('start_time, end_time')
       .eq('venue_id', booking.venueId)
       .eq('date', booking.date)
       .neq('status', 'cancelled') as any);
 
-    const existingData = (existingBookings || []) as { start_time: string; end_time: string }[];
-    const hasConflict = existingData.some(b =>
-      (booking.startTime >= b.start_time && booking.startTime < b.end_time) ||
-      (booking.endTime > b.start_time && booking.endTime <= b.end_time)
-    );
-
-    if (hasConflict) {
-      throw new Error('Créneau déjà réservé');
+    if (fetchErr) {
+      console.error('[VenuesAPI] Error checking existing bookings:', fetchErr);
+      throw new Error('Impossible de vérifier la disponibilité. Réessayez.');
     }
 
-    const startHour = parseInt(booking.startTime.split(':')[0]);
-    const endHour = parseInt(booking.endTime.split(':')[0]);
+    const existingData = (existingBookings || []) as { start_time: string; end_time: string }[];
+    const bookedHours = new Set<number>();
+    for (const b of existingData) {
+      const bStart = parseHourFromTimestamp(b.start_time);
+      const bEnd = parseHourFromTimestamp(b.end_time);
+      for (let h = bStart; h < bEnd; h++) {
+        bookedHours.add(h);
+      }
+    }
+
+    // Check each requested hour
+    const conflictHours: number[] = [];
+    for (let h = startHour; h < endHour; h++) {
+      if (bookedHours.has(h)) conflictHours.push(h);
+    }
+    if (conflictHours.length > 0) {
+      const conflictStr = conflictHours.map(h => `${h}h-${h + 1}h`).join(', ');
+      throw new Error(`Créneaux déjà réservés : ${conflictStr}. Choisissez d'autres horaires.`);
+    }
+
     const duration = endHour - startHour;
-    const totalPrice = duration * venue.pricePerHour;
+    const totalPrice = duration * (venue.pricePerHour ?? 0);
+
+    // Format as full ISO timestamps for TIMESTAMPTZ columns
+    const startTimestamp = `${booking.date}T${String(startHour).padStart(2, '0')}:00:00`;
+    const endTimestamp = `${booking.date}T${String(endHour).padStart(2, '0')}:00:00`;
+
+    const insertPayload = {
+      venue_id: booking.venueId,
+      user_id: userId,
+      date: booking.date,
+      start_time: startTimestamp,
+      end_time: endTimestamp,
+      total_amount: totalPrice,
+      match_id: booking.matchId || null,
+      status: venue.autoApprove === false ? 'pending' : 'confirmed',
+    };
+    console.log('[VenuesAPI] Booking insert payload:', JSON.stringify(insertPayload));
 
     const { data, error } = await (supabase
       .from('bookings')
-      .insert({
-        venue_id: booking.venueId,
-        user_id: userId,
-        date: booking.date,
-        start_time: booking.startTime,
-        end_time: booking.endTime,
-        total_price: totalPrice,
-        match_id: booking.matchId,
-        status: 'confirmed',
-      } as any)
+      .insert(insertPayload as any)
       .select()
       .single() as any);
 
-    if (error) throw error;
+    if (error) {
+      console.error('[VenuesAPI] Booking insert error:', JSON.stringify(error));
+      throw new Error(`Erreur lors de la réservation : ${error.message || 'Erreur inconnue'} (code: ${error.code || '?'})`);
+    }
+
+    // Send notification to venue owner
+    if (venue.ownerId) {
+      try {
+        const bookingStatus = venue.autoApprove === false ? 'pending' : 'confirmed';
+        const formattedDate = booking.date; // YYYY-MM-DD
+        const timeRange = `${startHour}h-${endHour}h`;
+        
+        if (bookingStatus === 'pending') {
+          // Notification for manual approval required
+          await notificationsApi.send(venue.ownerId, {
+            type: 'booking',
+            title: '🏟️ Nouvelle demande de réservation',
+            message: `${venue.name} - ${formattedDate} à ${timeRange} (${totalPrice.toLocaleString()} FCFA)`,
+            data: {
+              bookingId: data.id,
+              venueId: venue.id,
+              venueName: venue.name,
+              date: booking.date,
+              startTime: startTimestamp,
+              endTime: endTimestamp,
+              status: 'pending',
+            },
+          });
+          console.log('[VenuesAPI] Notification sent to owner for pending booking');
+        } else {
+          // Notification for auto-confirmed booking
+          await notificationsApi.send(venue.ownerId, {
+            type: 'booking',
+            title: '✅ Nouvelle réservation confirmée',
+            message: `${venue.name} - ${formattedDate} à ${timeRange} (${totalPrice.toLocaleString()} FCFA)`,
+            data: {
+              bookingId: data.id,
+              venueId: venue.id,
+              venueName: venue.name,
+              date: booking.date,
+              startTime: startTimestamp,
+              endTime: endTimestamp,
+              status: 'confirmed',
+            },
+          });
+          console.log('[VenuesAPI] Notification sent to owner for auto-confirmed booking');
+        }
+      } catch (notifError) {
+        console.error('[VenuesAPI] Failed to send notification:', notifError);
+        // Don't fail the booking if notification fails
+      }
+    }
+
     return data;
   },
 
@@ -191,7 +414,10 @@ export const venuesApi = {
       .eq('id', bookingId)
       .eq('user_id', userId));
 
-    if (error) throw error;
+    if (error) {
+      console.error('[VenuesAPI] Cancel booking error:', error);
+      throw new Error('Impossible d\'annuler cette réservation. Veuillez réessayer.');
+    }
     return { success: true };
   },
 
@@ -202,11 +428,13 @@ export const venuesApi = {
       .from('bookings')
       .select('*')
       .eq('user_id', userId)
-      .neq('status', 'cancelled')
-      .order('date', { ascending: true }) as any);
+      .order('date', { ascending: false }) as any);
 
-    if (error) throw error;
-    return data || [];
+    if (error) {
+      console.error('[VenuesAPI] Get user bookings error:', error);
+      throw new Error('Impossible de charger vos réservations. Vérifiez votre connexion.');
+    }
+    return ((data || []) as BookingRow[]).map(mapBookingRowToBooking);
   },
 
   async getNearby(lat: number, lng: number, radiusKm: number = 20) {
@@ -225,5 +453,251 @@ export const venuesApi = {
       })
       .filter(v => v.distance !== null && v.distance <= radiusKm)
       .sort((a, b) => (a.distance || 0) - (b.distance || 0));
+  },
+
+  // ── Venue Manager CRUD ──
+
+  async getByOwner(ownerId: string) {
+    console.log('[VenuesAPI] Getting venues for owner:', ownerId);
+    const { data, error } = await (supabase
+      .from('venues')
+      .select('*')
+      .eq('owner_id', ownerId)
+      .order('created_at', { ascending: false }) as any);
+    if (error) throw error;
+    return ((data || []) as VenueRow[]).map(mapVenueRowToVenue);
+  },
+
+  async create(ownerId: string, venue: {
+    name: string;
+    address: string;
+    city: string;
+    sport: string[];
+    pricePerHour: number;
+    description?: string;
+    phone?: string;
+    email?: string;
+    amenities?: string[];
+    images?: string[];
+    latitude?: number;
+    longitude?: number;
+    openingHours?: any;
+    autoApprove?: boolean;
+    capacity?: number;
+    surfaceType?: string;
+    rules?: string;
+  }) {
+    console.log('[VenuesAPI] Creating venue for owner:', ownerId);
+    const { data, error } = await (supabase
+      .from('venues')
+      .insert({
+        owner_id: ownerId,
+        name: venue.name,
+        address: venue.address,
+        city: venue.city,
+        sport: venue.sport,
+        price_per_hour: venue.pricePerHour,
+        description: venue.description || null,
+        phone: venue.phone || null,
+        email: venue.email || null,
+        amenities: venue.amenities || [],
+        images: venue.images || [],
+        latitude: venue.latitude || null,
+        longitude: venue.longitude || null,
+        opening_hours: venue.openingHours || null,
+        auto_approve: venue.autoApprove ?? true,
+        is_active: true,
+        rating: 4.0,
+        capacity: venue.capacity || null,
+        surface_type: venue.surfaceType || null,
+        rules: venue.rules || null,
+      } as any)
+      .select()
+      .single() as any);
+    if (error) throw error;
+    return mapVenueRowToVenue(data as VenueRow);
+  },
+
+  async update(venueId: string, ownerId: string, updates: Partial<{
+    name: string;
+    address: string;
+    city: string;
+    sport: string[];
+    pricePerHour: number;
+    description: string;
+    phone: string;
+    email: string;
+    amenities: string[];
+    images: string[];
+    latitude: number;
+    longitude: number;
+    openingHours: any;
+    autoApprove: boolean;
+    isActive: boolean;
+    capacity: number;
+    surfaceType: string;
+    rules: string;
+  }>) {
+    console.log('[VenuesAPI] Updating venue:', venueId);
+    const payload: Record<string, unknown> = {};
+    if (updates.name !== undefined) payload.name = updates.name;
+    if (updates.address !== undefined) payload.address = updates.address;
+    if (updates.city !== undefined) payload.city = updates.city;
+    if (updates.sport !== undefined) payload.sport = updates.sport;
+    if (updates.pricePerHour !== undefined) payload.price_per_hour = updates.pricePerHour;
+    if (updates.description !== undefined) payload.description = updates.description;
+    if (updates.phone !== undefined) payload.phone = updates.phone;
+    if (updates.email !== undefined) payload.email = updates.email;
+    if (updates.amenities !== undefined) payload.amenities = updates.amenities;
+    if (updates.images !== undefined) payload.images = updates.images;
+    if (updates.latitude !== undefined) payload.latitude = updates.latitude;
+    if (updates.longitude !== undefined) payload.longitude = updates.longitude;
+    if (updates.openingHours !== undefined) payload.opening_hours = updates.openingHours;
+    if (updates.autoApprove !== undefined) payload.auto_approve = updates.autoApprove;
+    if (updates.isActive !== undefined) payload.is_active = updates.isActive;
+    if (updates.capacity !== undefined) payload.capacity = updates.capacity;
+    if (updates.surfaceType !== undefined) payload.surface_type = updates.surfaceType;
+    if (updates.rules !== undefined) payload.rules = updates.rules;
+
+    const { data, error } = await (supabase
+      .from('venues')
+      .update(payload as any)
+      .eq('id', venueId)
+      .eq('owner_id', ownerId)
+      .select()
+      .single() as any);
+    if (error) throw error;
+    return mapVenueRowToVenue(data as VenueRow);
+  },
+
+  async delete(venueId: string, ownerId: string) {
+    console.log('[VenuesAPI] Deleting venue:', venueId);
+    const { error } = await (supabase
+      .from('venues')
+      .delete()
+      .eq('id', venueId)
+      .eq('owner_id', ownerId) as any);
+    if (error) throw error;
+    return { success: true };
+  },
+
+  // ── Booking Management (for venue managers) ──
+
+  async getVenueBookings(venueId: string) {
+    console.log('[VenuesAPI] Getting bookings for venue:', venueId);
+    const { data, error } = await (supabase
+      .from('bookings')
+      .select('*')
+      .eq('venue_id', venueId)
+      .order('date', { ascending: true }) as any);
+    if (error) throw error;
+    return ((data || []) as BookingRow[]).map(mapBookingRowToBooking);
+  },
+
+  async getOwnerBookings(ownerId: string) {
+    console.log('[VenuesAPI] Getting all bookings for owner:', ownerId);
+    
+    // First get owner's venues
+    const venues = await this.getByOwner(ownerId);
+    console.log('[VenuesAPI] Owner has', venues.length, 'venues');
+    
+    const venueIds = venues.map(v => v.id);
+    if (venueIds.length === 0) {
+      console.log('[VenuesAPI] No venues found for owner, returning empty bookings');
+      return [];
+    }
+    
+    console.log('[VenuesAPI] Fetching bookings for venue IDs:', venueIds);
+
+    const { data, error } = await (supabase
+      .from('bookings')
+      .select('*')
+      .in('venue_id', venueIds)
+      .order('date', { ascending: false }) as any);
+    
+    if (error) {
+      console.error('[VenuesAPI] Error fetching owner bookings:', error);
+      throw error;
+    }
+    
+    console.log('[VenuesAPI] Found', (data || []).length, 'bookings for owner');
+    const mapped = ((data || []) as BookingRow[]).map(mapBookingRowToBooking);
+    console.log('[VenuesAPI] Mapped bookings:', mapped.length);
+    return mapped;
+  },
+
+  async updateBookingStatus(bookingId: string, status: BookingStatus) {
+    console.log('[VenuesAPI] Updating booking status:', bookingId, status);
+    let { data, error } = await (supabase
+      .from('bookings')
+      .update({ status } as any)
+      .eq('id', bookingId)
+      .select()
+      .single() as any);
+
+    let resolvedStatus = status;
+
+    if (error && status === 'rejected') {
+      console.warn('[VenuesAPI] Rejected status update failed, retrying with cancelled for compatibility:', error?.message || error);
+      const fallback = await (supabase
+        .from('bookings')
+        .update({ status: 'cancelled' } as any)
+        .eq('id', bookingId)
+        .select()
+        .single() as any);
+
+      if (!fallback.error) {
+        data = fallback.data;
+        error = null;
+        resolvedStatus = 'cancelled';
+      }
+    }
+
+    if (error) throw error;
+
+    const booking = mapBookingRowToBooking(data as BookingRow);
+
+    // Send notification to user about status change
+    try {
+      const venue = await this.getById(booking.venueId);
+      const startH = parseHourFromTimestamp(booking.startTime);
+      const endH = parseHourFromTimestamp(booking.endTime);
+      const timeRange = `${startH}h-${endH}h`;
+
+      if (resolvedStatus === 'confirmed') {
+        await notificationsApi.send(booking.userId, {
+          type: 'booking',
+          title: '✅ Réservation confirmée',
+          message: `Votre réservation pour ${venue.name} le ${booking.date} à ${timeRange} a été approuvée !`,
+          data: {
+            bookingId: booking.id,
+            venueId: venue.id,
+            venueName: venue.name,
+            date: booking.date,
+            status: 'confirmed',
+          },
+        });
+        console.log('[VenuesAPI] Confirmation notification sent to user');
+      } else if (status === 'rejected') {
+        await notificationsApi.send(booking.userId, {
+          type: 'booking',
+          title: '❌ Réservation refusée',
+          message: `Votre demande de réservation pour ${venue.name} le ${booking.date} à ${timeRange} a été refusée.`,
+          data: {
+            bookingId: booking.id,
+            venueId: venue.id,
+            venueName: venue.name,
+            date: booking.date,
+            status: 'rejected',
+          },
+        });
+        console.log('[VenuesAPI] Rejection notification sent to user');
+      }
+    } catch (notifError) {
+      console.error('[VenuesAPI] Failed to send status update notification:', notifError);
+      // Don't fail the status update if notification fails
+    }
+
+    return booking;
   },
 };

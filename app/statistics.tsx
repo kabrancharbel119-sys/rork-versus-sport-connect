@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useMatches } from '@/contexts/MatchesContext';
 import { Card } from '@/components/Card';
 import { BarChart, ProgressRing, StatComparison, MatchHistoryReal } from '@/components/StatisticsChart';
+import { EmptyState } from '@/components/EmptyState';
 import { sportLabels } from '@/mocks/data';
 
 export default function StatisticsScreen() {
@@ -64,48 +65,51 @@ export default function StatisticsScreen() {
           </View>
 
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-            <View style={styles.ringRow}>
-              <View style={styles.ringItem}>
-                <ProgressRing progress={winRate} size={100} color={Colors.status.success} label="Victoires" />
-              </View>
-              <View style={styles.ringItem}>
-                <ProgressRing progress={Math.min(stats.fairPlayScore * 10, 100)} size={100} color={Colors.primary.orange} label="Fair-Play" />
-              </View>
-              <View style={styles.ringItem}>
-                <ProgressRing progress={Math.min((user?.reputation || 5) * 10, 100)} size={100} color={Colors.primary.blue} label="Réputation" />
-              </View>
-            </View>
-
-            <Text style={styles.sectionTitle}>Performance globale</Text>
-            <Card style={styles.chartCard}><BarChart data={performanceData} height={140} /></Card>
-
-            <Text style={styles.sectionTitle}>Évolution mensuelle</Text>
-            <Card style={styles.chartCard}><BarChart data={monthlyData} height={120} /></Card>
-
-            <Text style={styles.sectionTitle}>Comparaison</Text>
-            <StatComparison label="Buts par match" userValue={parseFloat(goalsPerMatch)} avgValue={1.2} />
-            <View style={styles.spacer} />
-            <StatComparison label="Passes par match" userValue={parseFloat(assistsPerMatch)} avgValue={0.8} />
-
-            {(stats.matchesPlayed > 0 || historyItems.length > 0) && (
+            {completedMatches.length === 0 ? (
+              <EmptyState
+                icon={<Target size={64} color={Colors.text.muted} />}
+                title="Pas encore de statistiques"
+                message="Jouez votre premier match pour voir vos statistiques ici"
+              />
+            ) : (
               <>
-                <Text style={styles.sectionTitle}>Matchs joués (résultats réels)</Text>
-                <MatchHistoryReal items={historyItems} />
+                <View style={styles.ringRow}>
+                  <View style={styles.ringItem}>
+                    <ProgressRing progress={winRate} size={100} color={Colors.status.success} label="Victoires" />
+                  </View>
+                  <View style={styles.ringItem}>
+                    <ProgressRing progress={Math.min(stats.fairPlayScore * 10, 100)} size={100} color={Colors.primary.orange} label="Fair-Play" />
+                  </View>
+                  <View style={styles.ringItem}>
+                    <ProgressRing progress={Math.min((user?.reputation || 5) * 10, 100)} size={100} color={Colors.primary.blue} label="Réputation" />
+                  </View>
+                </View>
+
+                <Text style={styles.sectionTitle}>Performance globale</Text>
+                <Card style={styles.chartCard}><BarChart data={performanceData} height={140} /></Card>
+
+                <Text style={styles.sectionTitle}>Évolution mensuelle</Text>
+                <Card style={styles.chartCard}><BarChart data={monthlyData} height={120} /></Card>
+
+                <Text style={styles.sectionTitle}>Comparaison</Text>
+                <StatComparison label="Buts par match" userValue={parseFloat(goalsPerMatch)} avgValue={1.2} />
+                <View style={styles.spacer} />
+                <StatComparison label="Passes par match" userValue={parseFloat(assistsPerMatch)} avgValue={0.8} />
+
+                {(stats.matchesPlayed > 0 || historyItems.length > 0) && (
+                  <>
+                    <Text style={styles.sectionTitle}>Matchs joués (résultats réels)</Text>
+                    <MatchHistoryReal items={historyItems} />
+                  </>
+                )}
+
+                <Text style={styles.sectionTitle}>Détails</Text>
+                <Card style={styles.detailsCard}>
+                  <View style={styles.detailRow}><View style={styles.detailIcon}><Zap size={18} color={Colors.primary.blue} /></View><Text style={styles.detailLabel}>Matchs joués</Text><Text style={styles.detailValue}>{stats.matchesPlayed}</Text></View>
+                  <View style={styles.detailRow}><View style={styles.detailIcon}><Star size={18} color='#8B5CF6' /></View><Text style={styles.detailLabel}>Tournois gagnés</Text><Text style={styles.detailValue}>{stats.tournamentWins}</Text></View>
+                </Card>
               </>
             )}
-
-            <Text style={styles.sectionTitle}>Détails</Text>
-            <Card style={styles.detailsCard}>
-              <View style={styles.detailRow}><View style={styles.detailIcon}><Zap size={18} color={Colors.primary.blue} /></View><Text style={styles.detailLabel}>Matchs joués</Text><Text style={styles.detailValue}>{stats.matchesPlayed}</Text></View>
-              <View style={styles.detailRow}><View style={styles.detailIcon}><TrendingUp size={18} color={Colors.status.success} /></View><Text style={styles.detailLabel}>Victoires</Text><Text style={styles.detailValue}>{stats.wins}</Text></View>
-              <View style={styles.detailRow}><View style={styles.detailIcon}><Target size={18} color={Colors.status.error} /></View><Text style={styles.detailLabel}>Défaites</Text><Text style={styles.detailValue}>{stats.losses}</Text></View>
-              <View style={styles.detailRow}><View style={styles.detailIcon}><Users size={18} color={Colors.text.muted} /></View><Text style={styles.detailLabel}>Nuls</Text><Text style={styles.detailValue}>{stats.draws}</Text></View>
-              <View style={styles.detailRow}><View style={styles.detailIcon}><Target size={18} color={Colors.primary.blue} /></View><Text style={styles.detailLabel}>Buts marqués</Text><Text style={styles.detailValue}>{stats.goalsScored}</Text></View>
-              <View style={styles.detailRow}><View style={styles.detailIcon}><Users size={18} color={Colors.primary.orange} /></View><Text style={styles.detailLabel}>Passes décisives</Text><Text style={styles.detailValue}>{stats.assists}</Text></View>
-              <View style={styles.detailRow}><View style={styles.detailIcon}><Award size={18} color={Colors.primary.orange} /></View><Text style={styles.detailLabel}>Prix MVP</Text><Text style={styles.detailValue}>{stats.mvpAwards}</Text></View>
-              <View style={styles.detailRow}><View style={styles.detailIcon}><Star size={18} color={Colors.primary.orange} /></View><Text style={styles.detailLabel}>Score Fair-Play</Text><Text style={styles.detailValue}>{stats.fairPlayScore.toFixed(1)}/10</Text></View>
-            </Card>
-            <View style={styles.bottomSpacer} />
           </ScrollView>
         </SafeAreaView>
       </View>

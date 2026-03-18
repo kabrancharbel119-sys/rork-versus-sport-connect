@@ -17,7 +17,7 @@ import { setNotificationsEnabled, getNotificationsEnabled } from '@/lib/notifica
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { user, logout, deleteAccount, isAdmin, makeAdmin, isDeleteLoading } = useAuth();
+  const { user, logout, deleteAccount, isAdmin, isVenueManager, upgradeToVenueManager, makeAdmin, isDeleteLoading } = useAuth();
   const { getUnlockedCount, getTotalXP, checkAndUnlockTrophies } = useTrophies();
   const { clearAll: clearNotifications, getUnreadCount } = useNotifications();
   

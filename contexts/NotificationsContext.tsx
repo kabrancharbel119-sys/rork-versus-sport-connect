@@ -1,12 +1,18 @@
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { Notification } from '@/types';
-import { sendLocalNotification, addNotificationReceivedListener, addNotificationResponseReceivedListener, setBadgeCount } from '@/lib/push-notifications';
-import { emitRealtimeEvent, useRealtime } from '@/lib/realtime';
+import type { Notification } from '@/types';
 import { notificationsApi } from '@/lib/api/notifications';
+import {
+  addNotificationReceivedListener,
+  addNotificationResponseReceivedListener,
+} from 'expo-notifications';
+import { setBadgeCountAsync as setBadgeCount } from 'expo-notifications';
+import { sendLocalNotification } from '@/lib/push-notifications';
+import { logger } from '@/lib/logger';
+import { emitRealtimeEvent, useRealtime } from '@/lib/realtime';
 import { rankingApi } from '@/lib/api/ranking';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,7 +38,7 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
   const notificationListenerRef = useRef<any>(null);
   const responseListenerRef = useRef<any>(null);
 
-  const currentUserId = supabaseUserId || authUser?.id || null;
+  const currentUserId = authUser?.id || supabaseUserId || null;
 
   useEffect(() => {
     const getCurrentUser = async () => {
@@ -52,7 +58,7 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
 
   useEffect(() => {
     notificationListenerRef.current = addNotificationReceivedListener((notification) => {
-      if (__DEV__) console.log('[Notifications] Received push notification:', notification.request.content.title);
+      logger.debug('Notifications', 'Received push notification:', notification.request.content.title);
       const newNotif: Notification = {
         id: `notif-push-${Date.now()}`,
         userId: 'all',
@@ -72,10 +78,10 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
     });
 
     responseListenerRef.current = addNotificationResponseReceivedListener((response) => {
-      if (__DEV__) console.log('[Notifications] User tapped notification:', response.notification.request.content.title);
+      logger.debug('Notifications', 'User tapped notification:', response.notification.request.content.title);
       const data = response.notification.request.content.data;
       if (data?.route) {
-        if (__DEV__) console.log('[Notifications] Navigate to:', data.route);
+        logger.debug('Notifications', 'Navigate to:', data.route);
       }
     });
 
@@ -109,16 +115,18 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
   const notificationsQuery = useQuery({
     queryKey: ['notifications', currentUserId],
     queryFn: async () => {
-      if (__DEV__) console.log('[Notifications] Loading notifications...');
+      logger.debug('Notifications', 'Loading notifications...');
       
       if (currentUserId) {
         try {
           const serverNotifications = await notificationsApi.getAll(currentUserId);
+          console.log('[Notifications] Server notifications:', serverNotifications.length);
+          console.log('[Notifications] Chat notifications:', serverNotifications.filter(n => n.type === 'chat').length);
           const key = getNotificationsStorageKey(currentUserId);
           await AsyncStorage.setItem(key, JSON.stringify(serverNotifications));
           return serverNotifications;
         } catch (e) {
-          if (__DEV__) console.warn('[Notifications] Server fetch failed, using local storage:', (e as Error)?.message ?? e);
+          logger.warn('Notifications', 'Server fetch failed, using local storage:', (e as Error)?.message ?? e);
         }
       }
 
@@ -157,7 +165,7 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
 
   const addNotificationMutation = useMutation({
     mutationFn: async (notification: Omit<Notification, 'id' | 'createdAt' | 'isRead'> & { sendPush?: boolean }) => {
-      if (__DEV__) console.log('[Notifications] Adding notification:', notification.title);
+      logger.debug('Notifications', 'Adding notification:', notification.title);
       const userId = notification.userId;
       if (userId && userId !== 'all') {
         try {
@@ -169,7 +177,7 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
           });
           queryClient.invalidateQueries({ queryKey: ['notifications'] });
         } catch (e) {
-          if (__DEV__) console.warn('[Notifications] API send failed for user', userId, e);
+          logger.warn('Notifications', 'API send failed for user', userId, e);
         }
         return { id: `sent-${Date.now()}`, ...notification, isRead: false, createdAt: new Date() } as Notification;
       }
@@ -190,13 +198,13 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
 
   const markAsReadMutation = useMutation({
     mutationFn: async (notificationId: string) => {
-      if (__DEV__) console.log('[Notifications] Marking as read:', notificationId);
+      logger.debug('Notifications', 'Marking as read:', notificationId);
       
       if (currentUserId) {
         try {
           await notificationsApi.markAsRead(notificationId, currentUserId);
         } catch (e) {
-          if (__DEV__) console.log('[Notifications] Supabase markAsRead failed');
+          logger.debug('Notifications', 'Supabase markAsRead failed');
         }
       }
       
@@ -206,13 +214,13 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
 
   const markAllAsReadMutation = useMutation({
     mutationFn: async () => {
-      if (__DEV__) console.log('[Notifications] Marking all as read');
+      logger.debug('Notifications', 'Marking all as read');
       
       if (currentUserId) {
         try {
           await notificationsApi.markAllAsRead(currentUserId);
         } catch (e) {
-          if (__DEV__) console.log('[Notifications] Supabase markAllAsRead failed');
+          logger.debug('Notifications', 'Supabase markAllAsRead failed');
         }
       }
       
@@ -222,13 +230,13 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
 
   const deleteNotificationMutation = useMutation({
     mutationFn: async (notificationId: string) => {
-      if (__DEV__) console.log('[Notifications] Deleting notification:', notificationId);
+      logger.debug('Notifications', 'Deleting notification:', notificationId);
       
       if (currentUserId) {
         try {
           await notificationsApi.delete(notificationId, currentUserId);
         } catch (e) {
-          if (__DEV__) console.log('[Notifications] Supabase delete failed');
+          logger.debug('Notifications', 'Supabase delete failed');
         }
       }
       
@@ -238,13 +246,13 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
 
   const clearAllMutation = useMutation({
     mutationFn: async () => {
-      if (__DEV__) console.log('[Notifications] Clearing all notifications');
+      logger.debug('Notifications', 'Clearing all notifications...');
       
       if (currentUserId) {
         try {
           await notificationsApi.deleteAll(currentUserId);
         } catch (e) {
-          if (__DEV__) console.log('[Notifications] Supabase deleteAll failed');
+          logger.debug('Notifications', 'Supabase deleteAll failed');
         }
       }
       
@@ -326,7 +334,7 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
         }
       }
     } catch (error) {
-      console.error('Error checking ranking changes:', error);
+      logger.error('Notifications', 'Error checking ranking changes:', error);
     }
   }, [previousRanking, rankingNotification]);
 

@@ -13,6 +13,13 @@ import { Avatar } from '@/components/Avatar';
 
 export default function VerificationScreen() {
   const router = useRouter();
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/(tabs)/profile' as any);
+  };
   const { user, isAdmin } = useAuth();
   const { submitVerification, getUserVerificationStatus, isSubmittingVerification } = useSupport();
   const [reason, setReason] = useState('');
@@ -58,7 +65,7 @@ export default function VerificationScreen() {
           <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
-              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
+              <TouchableOpacity style={styles.backButton} onPress={handleBack}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
               <Text style={styles.headerTitle}>Vérification</Text>
               <View style={styles.placeholder} />
             </View>
@@ -88,7 +95,7 @@ export default function VerificationScreen() {
           <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
-              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
+              <TouchableOpacity style={styles.backButton} onPress={handleBack}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
               <Text style={styles.headerTitle}>Vérification</Text>
               <View style={styles.placeholder} />
             </View>
@@ -115,7 +122,7 @@ export default function VerificationScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
+            <TouchableOpacity style={styles.backButton} onPress={handleBack}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
             <Text style={styles.headerTitle}>Demande de vérification</Text>
             <View style={styles.placeholder} />
           </View>

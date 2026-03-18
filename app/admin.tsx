@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Users, Swords, Shield, Ban, Search, ChevronRight, TrendingUp, Settings, BarChart3, Calendar, MapPin, Star, CheckCircle, XCircle, Eye, RefreshCw, Globe, Database, DollarSign, Ticket, UserCheck, Activity, Clock, AlertTriangle, Zap, Server, HardDrive, Send, Lock, Trash2, FileText, Download, MessageSquare, Award, Target, PieChart, Bell, X, Plus, Filter, ArrowUpDown, CheckSquare, Square, TrendingDown } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -21,11 +21,12 @@ import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { sportLabels } from '@/mocks/data';
 import { notificationsApi } from '@/lib/api/notifications';
+import { tournamentPayoutRequestsApi, tournamentPaymentsApi } from '@/lib/api/tournament-payments';
 import { offlineManager } from '@/lib/offline';
 
 const CACHE_KEYS_TO_PURGE = ['vs_tournaments', 'vs_teams', 'vs_matches', 'vs_all_users', 'vs_follows', 'vs_notifications', 'vs_offline_queue', 'vs_last_sync'];
 
-type AdminTab = 'overview' | 'users' | 'teams' | 'matches' | 'tournaments' | 'tickets' | 'verifications' | 'analytics' | 'activity' | 'settings';
+type AdminTab = 'overview' | 'users' | 'teams' | 'matches' | 'tournaments' | 'tickets' | 'verifications' | 'payments' | 'payouts' | 'analytics' | 'activity' | 'settings';
 
 interface ActivityLog {
   id: string;
@@ -62,6 +63,20 @@ export default function AdminScreen() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
+  const pendingPayoutRequestsQuery = useQuery({
+    queryKey: ['pending-payout-requests'],
+    queryFn: () => tournamentPayoutRequestsApi.getPendingRequests(),
+    enabled: !!isAdmin,
+  });
+  const pendingPayoutRequests = pendingPayoutRequestsQuery.data ?? [];
+
+  const pendingPaymentsQuery = useQuery({
+    queryKey: ['pendingPayments'],
+    queryFn: () => tournamentPaymentsApi.getPendingPayments(),
+    enabled: !!isAdmin,
+  });
+  const pendingPayments = pendingPaymentsQuery.data ?? [];
+
   const doRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -72,6 +87,8 @@ export default function AdminScreen() {
         queryClient.invalidateQueries({ queryKey: ['allUsers'] }),
         queryClient.invalidateQueries({ queryKey: ['support'] }),
         queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+        queryClient.invalidateQueries({ queryKey: ['pending-payout-requests'] }),
+        queryClient.invalidateQueries({ queryKey: ['pendingPayments'] }),
       ]);
       setLastRefresh(new Date());
     } catch (e) {
@@ -690,10 +707,54 @@ export default function AdminScreen() {
     { key: 'tournaments', label: 'Tournois', icon: <Award size={16} color={activeTab === 'tournaments' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'tickets', label: 'Tickets', icon: <Ticket size={16} color={activeTab === 'tickets' ? '#FFF' : Colors.text.secondary} />, badge: (pendingTickets ?? []).length },
     { key: 'verifications', label: 'Vérifications', icon: <UserCheck size={16} color={activeTab === 'verifications' ? '#FFF' : Colors.text.secondary} />, badge: (pendingVerifications ?? []).length },
+    { key: 'payments', label: 'Paiements', icon: <DollarSign size={16} color={activeTab === 'payments' ? '#FFF' : Colors.text.secondary} />, badge: pendingPayments.length },
+    { key: 'payouts', label: 'Avances', icon: <FileText size={16} color={activeTab === 'payouts' ? '#FFF' : Colors.text.secondary} />, badge: pendingPayoutRequests.length },
     { key: 'activity', label: 'Activité', icon: <Activity size={16} color={activeTab === 'activity' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'analytics', label: 'Analytiques', icon: <TrendingUp size={16} color={activeTab === 'analytics' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'settings', label: 'Paramètres', icon: <Settings size={16} color={activeTab === 'settings' ? '#FFF' : Colors.text.secondary} /> },
-  ], [activeTab, pendingTickets, pendingVerifications]);
+  ], [activeTab, pendingTickets, pendingVerifications, pendingPayments.length, pendingPayoutRequests.length]);
+
+  const renderPaymentsTab = () => (
+    <Card style={styles.listCard}>
+      <Text style={styles.cardTitle}>Gestion des paiements tournois</Text>
+      <Text style={styles.cardDesc}>Valider ou rejeter les preuves de paiement soumises par les équipes.</Text>
+      <View style={[styles.summaryGrid, { marginTop: 12 }]}>
+        <View style={styles.summaryItem}>
+          <DollarSign size={20} color={Colors.primary.orange} />
+          <Text style={styles.summaryValue}>{pendingPayments.length}</Text>
+          <Text style={styles.summaryLabel}>En attente</Text>
+        </View>
+      </View>
+      <Button
+        title="Ouvrir le gestionnaire des paiements"
+        onPress={() => router.push('/admin/payments' as any)}
+        variant="orange"
+        size="large"
+        style={{ marginTop: 12 }}
+      />
+    </Card>
+  );
+
+  const renderPayoutsTab = () => (
+    <Card style={styles.listCard}>
+      <Text style={styles.cardTitle}>Demandes d’avance organisateurs</Text>
+      <Text style={styles.cardDesc}>Approuver ou rejeter les demandes de reversement anticipé des organisateurs.</Text>
+      <View style={[styles.summaryGrid, { marginTop: 12 }]}>
+        <View style={styles.summaryItem}>
+          <FileText size={20} color={Colors.status.warning} />
+          <Text style={styles.summaryValue}>{pendingPayoutRequests.length}</Text>
+          <Text style={styles.summaryLabel}>En attente</Text>
+        </View>
+      </View>
+      <Button
+        title="Ouvrir le gestionnaire des avances"
+        onPress={() => router.push('/admin/payout-requests' as any)}
+        variant="primary"
+        size="large"
+        style={{ marginTop: 12 }}
+      />
+    </Card>
+  );
 
   const renderOverview = () => (
     <>
@@ -1355,6 +1416,19 @@ export default function AdminScreen() {
       <Card style={styles.activityCard}>
         <Text style={styles.cardTitle}>Actions rapides</Text>
         <View style={styles.quickActionsGrid}>
+          <TouchableOpacity style={styles.quickActionBtn} onPress={() => router.push('/admin/payments' as any)}>
+            <DollarSign size={24} color={Colors.primary.orange} />
+            <Text style={styles.quickActionText}>Paiements tournois</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickActionBtn} onPress={() => router.push('/admin/payout-requests' as any)}>
+            <FileText size={24} color={Colors.status.warning} />
+            <Text style={styles.quickActionText}>Demandes d'avance</Text>
+            {pendingPayoutRequests.length > 0 && (
+              <View style={styles.quickBadge}>
+                <Text style={styles.quickBadgeText}>{pendingPayoutRequests.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
           <TouchableOpacity style={styles.quickActionBtn} onPress={() => setActiveTab('users')}>
             <Users size={24} color={Colors.primary.blue} />
             <Text style={styles.quickActionText}>Gérer utilisateurs</Text>
@@ -1602,6 +1676,8 @@ export default function AdminScreen() {
             {activeTab === 'tournaments' && renderTournaments()}
             {activeTab === 'tickets' && renderTickets()}
             {activeTab === 'verifications' && renderVerifications()}
+            {activeTab === 'payments' && renderPaymentsTab()}
+            {activeTab === 'payouts' && renderPayoutsTab()}
             {activeTab === 'activity' && renderActivity()}
             {activeTab === 'analytics' && renderAnalytics()}
             {activeTab === 'settings' && renderSettings()}
@@ -1869,8 +1945,10 @@ const styles = StyleSheet.create({
   activitySeverityBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginTop: 6 },
   activitySeverityText: { fontSize: 10, fontWeight: '600' as const },
   quickActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  quickActionBtn: { flex: 1, minWidth: '45%', backgroundColor: Colors.background.cardLight, borderRadius: 12, padding: 16, alignItems: 'center', gap: 8 },
+  quickActionBtn: { flex: 1, minWidth: '45%', backgroundColor: Colors.background.cardLight, borderRadius: 12, padding: 16, alignItems: 'center', gap: 8, position: 'relative' as const },
   quickActionText: { color: Colors.text.secondary, fontSize: 13, fontWeight: '500' as const, textAlign: 'center' as const },
+  quickBadge: { position: 'absolute' as const, top: 8, right: 8, backgroundColor: Colors.status.error, borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  quickBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' as const },
   demoBadge: { backgroundColor: 'rgba(251,191,36,0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   demoText: { color: '#F59E0B', fontSize: 10, fontWeight: '700' as const },
   cityIconContainer: { width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(21,101,192,0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 8 },

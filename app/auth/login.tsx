@@ -52,9 +52,13 @@ export default function LoginScreen() {
     
     try {
       console.log('[Login] Attempting login for:', email);
-      await login({ email: email.trim(), password });
-      console.log('[Login] Login successful, navigating to home');
-      router.replace('/(tabs)/(home)');
+      const loggedInUser = await login({ email: email.trim(), password });
+      console.log('[Login] Login successful, role:', loggedInUser?.role);
+      if (loggedInUser?.role === 'venue_manager') {
+        router.replace('/(manager-tabs)/dashboard' as any);
+      } else {
+        router.replace('/(tabs)/(home)');
+      }
     } catch (err: any) {
       console.error('[Login] Error:', err);
       const errorMsg = err.message || 'Erreur de connexion';

@@ -1,15 +1,18 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl, ActivityIndicator } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Settings, Edit2, Trophy, Star, Users, ChevronRight, Shield, Award, TrendingUp, Zap, MapPin, History, CheckCircle, Plus, Compass, Crown, Medal } from 'lucide-react-native';
+import { Settings, Edit2, Trophy, Star, Users, ChevronRight, Shield, Award, TrendingUp, Zap, MapPin, History, CheckCircle, Plus, Compass, Calendar } from 'lucide-react-native';
+import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSupport } from '@/contexts/SupportContext';
 import { useMatches } from '@/contexts/MatchesContext';
 import { useTeams } from '@/contexts/TeamsContext';
 import { useTrophies, ALL_TROPHIES, RARITY_COLORS } from '@/contexts/TrophiesContext';
+import { venuesApi } from '@/lib/api/venues';
 import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
 import { StatCard } from '@/components/StatCard';
@@ -17,10 +20,22 @@ import { sportLabels, levelLabels } from '@/mocks/data';
 import { rankingApi } from '@/lib/api/ranking';
 import { PlayerRanking, Badge } from '@/types/ranking';
 
+const BOOKING_STATUS_UI: Record<string, { label: string; color: string }> = {
+  pending: { label: 'En attente', color: Colors.status.warning },
+  confirmed: { label: 'Confirmée', color: Colors.status.success },
+  rejected: { label: 'Refusée', color: Colors.status.error },
+  cancelled: { label: 'Annulée', color: Colors.text.muted },
+  completed: { label: 'Terminée', color: Colors.primary.blue },
+};
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, isAdmin, refreshUser } = useAuth();
-  const effectiveVerified = user?.isVerified || isAdmin;
+  const { verificationRequests } = useSupport();
+  const hasApprovedVerification = !!user && verificationRequests.some(
+    (request) => (request.userId === user.id || request.oderId === user.id) && request.status === 'approved'
+  );
+  const effectiveVerified = user?.isVerified || hasApprovedVerification || isAdmin;
   const effectivePremium = user?.isPremium || isAdmin;
   const { getUserMatches } = useMatches();
   const { getUserTeams, teams } = useTeams();
@@ -36,29 +51,81 @@ export default function ProfileScreen() {
 
   // États pour le ranking
   const [playerRanking, setPlayerRanking] = useState<PlayerRanking | null>(null);
-  const [loadingRanking, setLoadingRanking] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const bookingsQuery = useQuery({
+    queryKey: ['userBookings', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      try {
+        return await venuesApi.getUserBookings(user.id);
+      } catch (e: any) {
+        console.error('[Profile] Failed to load user bookings:', e?.message || e);
+        return [];
+      }
+    },
+    enabled: !!user?.id,
+  });
+
+  const venuesQuery = useQuery({
+    queryKey: ['venues'],
+    queryFn: async () => {
+      try {
+        return await venuesApi.getAll();
+      } catch {
+        return [];
+      }
+    },
+  });
+
+  const venueMap = useMemo(() => {
+    const map: Record<string, { name: string; city: string }> = {};
+    for (const v of (venuesQuery.data || [])) {
+      map[v.id] = { name: v.name, city: v.city };
+    }
+    return map;
+  }, [venuesQuery.data]);
+
+  const bookingPreview = useMemo(() => {
+    const bookings = bookingsQuery.data || [];
+    if (bookings.length === 0) return [];
+
+    const today = new Date().toISOString().split('T')[0];
+    const upcoming = bookings
+      .filter((b) => (b.status === 'pending' || b.status === 'confirmed') && b.date >= today)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+
+    const source = upcoming.length > 0
+      ? upcoming
+      : [...bookings].sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
+
+    return source.slice(0, 2);
+  }, [bookingsQuery.data]);
 
   // Charger le classement du joueur
   const loadPlayerRanking = async () => {
     if (!user) return;
-    
-    setLoadingRanking(true);
+
     try {
       const ranking = await rankingApi.getPlayerRanking(user.id);
       setPlayerRanking(ranking);
     } catch (error) {
       console.error('Error loading player ranking:', error);
-    } finally {
-      setLoadingRanking(false);
     }
   };
 
   // Rafraîchir le classement
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadPlayerRanking();
-    setRefreshing(false);
+    try {
+      await Promise.all([
+        refreshUser(),
+        loadPlayerRanking(),
+        bookingsQuery.refetch(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   useFocusEffect(
@@ -122,7 +189,11 @@ export default function ProfileScreen() {
                 <Edit2 size={16} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
-            <Text style={styles.profileName}>{user?.fullName || 'Joueur'}</Text>
+            <View style={styles.profileNameRow}>
+              <Text style={styles.profileName}>{user?.fullName || 'Joueur'}</Text>
+              {effectiveVerified && <CheckCircle size={18} color={Colors.status.success} />}
+              {effectivePremium && !isAdmin && <Star size={18} color="#F59E0B" />}
+            </View>
             <Text style={styles.profileUsername}>@{user?.username || 'username'}</Text>
             {user?.city && (
               <View style={styles.locationRow}>
@@ -202,112 +273,9 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Section Classement ELO */}
-          <TouchableOpacity style={styles.rankingCard} onPress={() => router.push('/rankings')} activeOpacity={0.8}>
-            <View style={styles.rankingHeader}>
-              <Trophy size={18} color={Colors.primary.orange} />
-              <Text style={styles.rankingTitle}>Classement ELO</Text>
-              <ChevronRight size={16} color={Colors.text.muted} />
-            </View>
-            
-            {loadingRanking ? (
-              <View style={styles.rankingLoading}>
-                <ActivityIndicator size="small" color={Colors.primary.orange} />
-                <Text style={styles.rankingLoadingText}>Chargement...</Text>
-              </View>
-            ) : playerRanking ? (
-              <View style={styles.rankingContent}>
-                <View style={styles.rankingMain}>
-                  <View style={styles.rankingElo}>
-                    <Text style={styles.rankingEloValue}>{playerRanking.eloRating}</Text>
-                    <Text style={styles.rankingEloLabel}>ELO</Text>
-                    {playerRanking.eloChange !== 0 && (
-                      <View style={styles.rankingChange}>
-                        <Text style={[styles.rankingChangeText, { color: playerRanking.eloChange > 0 ? Colors.status.success : Colors.status.error }]}>
-                          {playerRanking.eloChange > 0 ? '+' : ''}{playerRanking.eloChange}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  <View style={styles.rankingRank}>
-                    <View style={styles.rankingRankBadge}>
-                      {playerRanking.rank === 1 && <Crown size={16} color="#FFD700" />}
-                      {playerRanking.rank === 2 && <Medal size={16} color="#C0C0C0" />}
-                      {playerRanking.rank === 3 && <Medal size={16} color="#CD7F32" />}
-                      <Text style={styles.rankingRankValue}>#{playerRanking.rank}</Text>
-                    </View>
-                    <Text style={styles.rankingRankLabel}>Rang mondial</Text>
-                  </View>
-                </View>
-                
-                <View style={styles.rankingStats}>
-                  <View style={styles.rankingStatItem}>
-                    <Text style={styles.rankingStatValue}>{playerRanking.stats.totalMatches}</Text>
-                    <Text style={styles.rankingStatLabel}>Matchs</Text>
-                  </View>
-                  <View style={styles.rankingStatItem}>
-                    <Text style={styles.rankingStatValue}>{playerRanking.stats.wins}</Text>
-                    <Text style={styles.rankingStatLabel}>Victoires</Text>
-                  </View>
-                  <View style={styles.rankingStatItem}>
-                    <Text style={styles.rankingStatValue}>{playerRanking.stats.winRate.toFixed(0)}%</Text>
-                    <Text style={styles.rankingStatLabel}>Taux</Text>
-                  </View>
-                  <View style={styles.rankingStatItem}>
-                    <Text style={styles.rankingStatValue}>{playerRanking.stats.currentWinStreak}</Text>
-                    <Text style={styles.rankingStatLabel}>Série</Text>
-                  </View>
-                </View>
-
-                {/* Badges */}
-                {playerRanking.badges.length > 0 && (
-                  <View style={styles.rankingBadges}>
-                    {playerRanking.badges.slice(0, 4).map((badge, index) => (
-                      <View key={badge.id} style={[styles.rankingBadge, { backgroundColor: badge.color + '20' }]}>
-                        <Text style={styles.rankingBadgeIcon}>{badge.icon}</Text>
-                      </View>
-                    ))}
-                    {playerRanking.badges.length > 4 && (
-                      <View style={styles.moreBadgesBadge}>
-                        <Text style={styles.moreBadgesText}>+{playerRanking.badges.length - 4}</Text>
-                      </View>
-                    )}
-                  </View>
-                )}
-
-                {/* Forme récente */}
-                {playerRanking.stats.recentForm.length > 0 && (
-                  <View style={styles.recentForm}>
-                    <Text style={styles.recentFormLabel}>Forme récente</Text>
-                    <View style={styles.recentFormRow}>
-                      {playerRanking.stats.recentForm.slice(0, 5).map((result, index) => (
-                        <View
-                          key={index}
-                          style={[
-                            styles.formBadge,
-                            result === 'W' && styles.formWin,
-                            result === 'L' && styles.formLoss,
-                            result === 'D' && styles.formDraw,
-                          ]}
-                        >
-                          <Text style={styles.formText}>{result}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                )}
-              </View>
-            ) : (
-              <View style={styles.rankingEmpty}>
-                <Trophy size={24} color={Colors.text.muted} />
-                <Text style={styles.rankingEmptyText}>Commencez à jouer pour obtenir un classement</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-
           {/* Section Achievements */}
           {playerRanking && playerRanking.achievements.length > 0 && (
-            <TouchableOpacity style={styles.achievementsCard} onPress={() => router.push('/achievements')} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.achievementsCard} onPress={() => router.push('/achievements' as any)} activeOpacity={0.8}>
               <View style={styles.achievementsHeader}>
                 <Award size={18} color={Colors.primary.orange} />
                 <Text style={styles.achievementsTitle}>Succès ({playerRanking.achievements.length})</Text>
@@ -318,7 +286,7 @@ export default function ProfileScreen() {
                 <View style={styles.achievementsGrid}>
                   {playerRanking.achievements.slice(0, 6).map((achievement, index) => (
                     <View key={achievement.id} style={styles.achievementItem}>
-                      <View style={[styles.achievementIcon, { backgroundColor: achievement.color + '20' }]}>
+                      <View style={[styles.achievementIcon, { backgroundColor: Colors.primary.orange + '20' }]}>
                         <Text style={styles.achievementIconText}>{achievement.icon}</Text>
                       </View>
                       <Text style={styles.achievementName}>{achievement.name}</Text>
@@ -341,7 +309,54 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           )}
 
-          
+          {/* Mes réservations */}
+          <TouchableOpacity style={styles.rankingCard} onPress={() => router.push('/my-bookings' as any)} activeOpacity={0.8}>
+            <View style={styles.rankingHeader}>
+              <Calendar size={18} color={Colors.primary.orange} />
+              <Text style={styles.rankingTitle}>Mes réservations</Text>
+              <ChevronRight size={16} color={Colors.text.muted} />
+            </View>
+            {bookingsQuery.isLoading ? (
+              <View style={styles.rankingLoading}>
+                <Text style={styles.rankingLoadingText}>Chargement des réservations...</Text>
+              </View>
+            ) : bookingPreview.length > 0 ? (
+              <View style={styles.bookingPreviewList}>
+                {bookingPreview.map((booking) => {
+                  const status = BOOKING_STATUS_UI[booking.status] || BOOKING_STATUS_UI.pending;
+                  const venue = venueMap[booking.venueId];
+                  const startH = parseInt((booking.startTime || '0').split(':')[0], 10);
+                  const endH = parseInt((booking.endTime || '0').split(':')[0], 10);
+
+                  return (
+                    <View key={booking.id} style={styles.bookingPreviewItem}>
+                      <View style={styles.bookingPreviewTop}>
+                        <Text style={styles.bookingPreviewVenue} numberOfLines={1}>{venue?.name || 'Terrain'}</Text>
+                        <View style={[styles.bookingPreviewStatusBadge, { backgroundColor: status.color + '22' }]}>
+                          <Text style={[styles.bookingPreviewStatusText, { color: status.color }]}>{status.label}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.bookingPreviewMetaRow}>
+                        <Calendar size={12} color={Colors.text.muted} />
+                        <Text style={styles.bookingPreviewMetaText}>{booking.date} • {startH}h-{endH}h</Text>
+                      </View>
+                      {venue?.city ? (
+                        <View style={styles.bookingPreviewMetaRow}>
+                          <MapPin size={12} color={Colors.text.muted} />
+                          <Text style={styles.bookingPreviewMetaText}>{venue.city}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={styles.rankingEmpty}>
+                <MapPin size={24} color={Colors.text.muted} />
+                <Text style={styles.rankingEmptyText}>Aucune réservation pour le moment</Text>
+              </View>
+            )}
+          </TouchableOpacity>
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -446,6 +461,7 @@ const styles = StyleSheet.create({
   avatarWithBadge: { position: 'relative' },
   verifiedBadge: { position: 'absolute', bottom: 0, left: 0, width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.background.dark, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.status.success },
   editButton: { position: 'absolute', bottom: 0, right: 0, width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.primary.orange, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: Colors.primary.blue },
+  profileNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   profileName: { color: '#FFFFFF', fontSize: 24, fontWeight: '700' as const },
   profileUsername: { color: 'rgba(255,255,255,0.7)', fontSize: 14, marginTop: 4 },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
@@ -536,6 +552,21 @@ const styles = StyleSheet.create({
   formText: { fontSize: 11, fontWeight: '700', color: Colors.text.primary },
   rankingEmpty: { alignItems: 'center', paddingVertical: 30, gap: 8 },
   rankingEmptyText: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' },
+  bookingPreviewList: { gap: 10 },
+  bookingPreviewItem: {
+    backgroundColor: Colors.background.cardLight,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    padding: 10,
+    gap: 5,
+  },
+  bookingPreviewTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  bookingPreviewVenue: { flex: 1, color: Colors.text.primary, fontSize: 13, fontWeight: '600' as const },
+  bookingPreviewStatusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
+  bookingPreviewStatusText: { fontSize: 10, fontWeight: '700' as const },
+  bookingPreviewMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  bookingPreviewMetaText: { color: Colors.text.muted, fontSize: 12 },
 
   // Styles pour la section Achievements
   achievementsCard: { backgroundColor: Colors.background.card, borderRadius: 16, padding: 16, marginBottom: 20 },

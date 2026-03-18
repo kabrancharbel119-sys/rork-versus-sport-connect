@@ -15,6 +15,13 @@ type CategoryType = 'all' | 'matches' | 'wins' | 'goals' | 'assists' | 'mvp' | '
 
 export default function TrophiesScreen() {
   const router = useRouter();
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/(tabs)/(home)' as any);
+  };
   const { user } = useAuth();
   const { getUserTrophies, getUnlockedCount, getTotalXP, checkAndUnlockTrophies } = useTrophies();
   const { teams } = useTeams();
@@ -85,7 +92,7 @@ export default function TrophiesScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
+            <TouchableOpacity style={styles.backButton} onPress={handleBack}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
             <Text style={styles.headerTitle}>Trophées & Récompenses</Text>
             <View style={styles.placeholder} />
           </View>

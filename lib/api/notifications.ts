@@ -147,7 +147,7 @@ export const notificationsApi = {
   },
 
   async send(targetUserId: string, notification: {
-    type: 'match' | 'team' | 'tournament' | 'chat' | 'system';
+    type: 'match' | 'team' | 'tournament' | 'chat' | 'system' | 'booking';
     title: string;
     message: string;
     data?: Record<string, string>;
@@ -182,7 +182,7 @@ export const notificationsApi = {
   },
 
   async sendToMany(userIds: string[], notification: {
-    type: 'match' | 'team' | 'tournament' | 'chat' | 'system';
+    type: 'match' | 'team' | 'tournament' | 'chat' | 'system' | 'booking';
     title: string;
     message: string;
     data?: Record<string, string>;

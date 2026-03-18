@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { usersApi } from './users';
 
 export async function signUp(data: {
   email: string;
@@ -8,6 +9,7 @@ export async function signUp(data: {
   lastName: string;
   city?: string;
   referralCode?: string;
+  role?: 'user' | 'venue_manager';
 }) {
   const { data: authData, error: authError } = await supabase.auth.signUp({
     email: data.email,
@@ -31,7 +33,7 @@ export async function signUp(data: {
 
   const referralCode = `VS${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 
-  const { data: profile, error: profileError } = await (supabase
+  const { error: profileError } = await (supabase
     .from('users')
     .insert({
       id: userId,
@@ -42,7 +44,7 @@ export async function signUp(data: {
       country: 'Côte d\'Ivoire',
       referral_code: referralCode,
       referred_by: referredBy,
-      role: 'user',
+      role: data.role || 'user',
       is_verified: false,
       is_premium: false,
       bio: '',
@@ -59,12 +61,10 @@ export async function signUp(data: {
         tournamentsWon: 0,
         cashPrizesTotal: 0,
       },
-    } as any)
-    .select()
-    .single() as any);
+    } as any));
 
   if (profileError) throw new Error(profileError.message);
-  return profile;
+  return usersApi.getById(userId);
 }
 
 export async function signIn(email: string, password: string) {
@@ -92,12 +92,5 @@ export async function resetPassword(email: string) {
 export async function getCurrentUser() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
-
-  const { data: profile } = await (supabase
-    .from('users')
-    .select('*')
-    .eq('id', user.id)
-    .single() as any);
-
-  return profile;
+  return usersApi.getById(user.id);
 }

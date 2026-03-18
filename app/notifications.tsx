@@ -15,23 +15,19 @@ import type { Notification } from '@/types';
 export default function NotificationsScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { notifications, markAsRead, markAllAsRead, deleteNotification, getUnreadCount, refetchNotifications } = useNotifications();
-  const { teams, getPendingRequests } = useTeams();
+  const { notifications, markAsRead, markAllAsRead, deleteNotification, getUnreadCount, refetchNotifications, notifyTeamRequest } = useNotifications();
+  const { teams, getPendingRequests, handleRequest, refetchTeams } = useTeams();
   const { getUserById } = useUsers();
   const [refreshing, setRefreshing] = React.useState(false);
+  const [processingRequestId, setProcessingRequestId] = React.useState<string | null>(null);
 
   const notificationsWithTeamRequests = useMemo(() => {
-    const list: (Notification & { _synthetic?: boolean })[] = [...notifications];
+    const list: (Notification & { _synthetic?: boolean; _teamId?: string; _requestId?: string; _requestUserId?: string })[] = [...notifications];
     if (!user) return list;
-    const teamRoutesWithRealNotif = new Set<string>();
-    for (const n of notifications) {
-      if (n.type === 'team' && n.data?.route?.startsWith('/team/')) teamRoutesWithRealNotif.add(n.data.route);
-    }
     for (const team of teams) {
-      const isCaptainOrCo = team.captainId === user.id || (team.coCaptainIds ?? []).includes(user.id);
-      if (!isCaptainOrCo) continue;
+      const isCaptain = team.captainId === user.id;
+      if (!isCaptain) continue;
       const route = `/team/${team.id}`;
-      if (teamRoutesWithRealNotif.has(route)) continue;
       const pending = getPendingRequests(team.id);
       for (const req of pending) {
         const requesterName = getUserById(req.userId)?.fullName || getUserById(req.userId)?.username || 'Un joueur';
@@ -45,6 +41,9 @@ export default function NotificationsScreen() {
           isRead: false,
           createdAt: req.createdAt instanceof Date ? req.createdAt : new Date(req.createdAt),
           _synthetic: true,
+          _teamId: team.id,
+          _requestId: req.id,
+          _requestUserId: req.userId,
         });
       }
     }
@@ -106,8 +105,103 @@ export default function NotificationsScreen() {
     if (!('_synthetic' in notification) || !notification._synthetic) {
       if (!notification.isRead) await markAsRead(notification.id);
     }
+    if (isActionableJoinRequest(notification) && notification._requestUserId) {
+      router.push({
+        pathname: '/user/[id]',
+        params: {
+          id: notification._requestUserId,
+          fromTeamRequest: '1',
+          teamId: notification._teamId!,
+          requestId: notification._requestId!,
+        },
+      } as any);
+      return;
+    }
+    if (
+      notification.type === 'team' &&
+      notification.title === 'Nouvelle demande'
+    ) {
+      const teamIdFromData = notification.data?.teamId;
+      const requestIdFromData = notification.data?.requestId;
+      const requesterIdFromData = notification.data?.requesterId;
+      
+      let targetUserId: string | undefined;
+      let targetTeamId: string | undefined;
+      let targetRequestId: string | undefined;
+
+      if (requesterIdFromData) {
+        targetUserId = requesterIdFromData;
+        targetTeamId = teamIdFromData;
+        targetRequestId = requestIdFromData;
+      }
+
+      if (typeof notification.data?.route === 'string' && notification.data.route.includes('/user/')) {
+        const url = new URL(notification.data.route, 'http://dummy.com');
+        const pathParts = url.pathname.split('/');
+        targetUserId = pathParts[pathParts.length - 1];
+        targetTeamId = url.searchParams.get('teamId') || teamIdFromData;
+        targetRequestId = url.searchParams.get('requestId') || requestIdFromData;
+      }
+
+      if (!targetUserId || !targetTeamId) {
+        const teamIdFromRoute = typeof notification.data?.route === 'string' && notification.data.route.startsWith('/team/')
+          ? notification.data.route.replace('/team/', '').split('?')[0].trim()
+          : teamIdFromData;
+        const team = teams.find((t) => t.id === teamIdFromRoute);
+        if (team) {
+          const pending = getPendingRequests(team.id);
+          const requesterName = notification.message.split(' souhaite rejoindre')[0]?.trim();
+          const matched = pending.find((req) => {
+            if (requestIdFromData && req.id === requestIdFromData) return true;
+            const u = getUserById(req.userId);
+            const fullName = u?.fullName?.trim();
+            const username = u?.username?.trim();
+            return requesterName && (fullName === requesterName || username === requesterName);
+          });
+          if (matched) {
+            targetUserId = matched.userId;
+            targetTeamId = team.id;
+            targetRequestId = matched.id;
+          }
+        }
+      }
+
+      if (targetUserId && targetTeamId) {
+        router.push({
+          pathname: '/user/[id]',
+          params: {
+            id: targetUserId,
+            fromTeamRequest: '1',
+            teamId: targetTeamId,
+            requestId: targetRequestId || '',
+          },
+        } as any);
+        return;
+      }
+      return;
+    }
     if (notification.data?.route) {
       router.push(notification.data.route as any);
+    }
+  };
+
+  const isActionableJoinRequest = (notification: (typeof notificationsWithTeamRequests)[0]) => {
+    return notification.type === 'team' && !!notification._synthetic && !!notification._teamId && !!notification._requestId;
+  };
+
+  const handleJoinRequestAction = async (notification: (typeof notificationsWithTeamRequests)[0], action: 'accept' | 'reject') => {
+    if (!user || !notification._teamId || !notification._requestId) return;
+    try {
+      setProcessingRequestId(notification._requestId);
+      await handleRequest({ teamId: notification._teamId, requestId: notification._requestId, action, handlerId: user.id });
+      const team = teams.find((t) => t.id === notification._teamId);
+      if (team && notification._requestUserId) {
+        await notifyTeamRequest(team.name, action === 'accept' ? 'accepted' : 'rejected', team.id, notification._requestUserId);
+      }
+      await refetchTeams();
+      await refetchNotifications();
+    } finally {
+      setProcessingRequestId(null);
     }
   };
 
@@ -166,6 +260,24 @@ export default function NotificationsScreen() {
                     </View>
                     <Text style={styles.notificationMessage} numberOfLines={2}>{notification.message}</Text>
                     <Text style={styles.notificationTime}>{formatTime(notification.createdAt)}</Text>
+                    {isActionableJoinRequest(notification) && (
+                      <View style={styles.requestActionsRow}>
+                        <TouchableOpacity
+                          style={[styles.requestActionBtn, styles.acceptBtn]}
+                          disabled={processingRequestId === notification._requestId}
+                          onPress={() => handleJoinRequestAction(notification, 'accept')}
+                        >
+                          <Text style={styles.requestActionText}>Accepter</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.requestActionBtn, styles.rejectBtn]}
+                          disabled={processingRequestId === notification._requestId}
+                          onPress={() => handleJoinRequestAction(notification, 'reject')}
+                        >
+                          <Text style={styles.requestActionText}>Refuser</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
                   {!('_synthetic' in notification && notification._synthetic) && (
                     <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteNotification(notification.id)}>
@@ -215,6 +327,11 @@ const styles = StyleSheet.create({
   unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.primary.blue },
   notificationMessage: { color: Colors.text.secondary, fontSize: 14, lineHeight: 20, marginBottom: 6 },
   notificationTime: { color: Colors.text.muted, fontSize: 12 },
+  requestActionsRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  requestActionBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
+  requestActionText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' as const },
+  acceptBtn: { backgroundColor: Colors.status.success },
+  rejectBtn: { backgroundColor: Colors.status.error },
   deleteBtn: { padding: 8 },
   emptyState: { alignItems: 'center', paddingVertical: 80 },
   emptyIcon: { width: 100, height: 100, borderRadius: 50, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },

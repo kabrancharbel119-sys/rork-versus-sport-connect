@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, Modal, TextInput, Switch, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,20 +12,55 @@ import { useTeams } from '@/contexts/TeamsContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { useNotifications } from '@/contexts/NotificationsContext';
 import { teamsApi } from '@/lib/api/teams';
+import { usersApi } from '@/lib/api/users';
+import { uploadTeamImage } from '@/lib/uploadImage';
 import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { StatCard } from '@/components/StatCard';
 import { sportLabels, levelLabels, ambianceLabels, TEAM_ROLES, DEFAULT_POSITIONS } from '@/mocks/data';
 import { SkillLevel, PlayStyle } from '@/types';
-import type { Team } from '@/types';
+import type { Team, User } from '@/types';
+
+const pickImageFromLibrary = async (): Promise<string | null> => {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 0.8,
+  });
+  
+  if (!result.canceled && result.assets[0]) {
+    return result.assets[0].uri;
+  }
+  return null;
+};
+
+const takePhoto = async (): Promise<string | null> => {
+  const { status } = await ImagePicker.requestCameraPermissionsAsync();
+  if (status !== 'granted') {
+    Alert.alert('Permission requise', 'Autorisez l\'accès à la caméra pour prendre une photo.');
+    return null;
+  }
+  
+  const result = await ImagePicker.launchCameraAsync({
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 0.8,
+  });
+  
+  if (!result.canceled && result.assets[0]) {
+    return result.assets[0].uri;
+  }
+  return null;
+};
 
 export default function TeamDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const { getTeamById, sendJoinRequest, leaveTeam, handleRequest, updateMemberRole, addCustomRole, promoteMember, removeMember, getPendingRequests, updateTeam, deleteTeam, transferCaptaincy, followTeam, unfollowTeam, isUpdating, refetchTeams, getUserTeams } = useTeams();
-  const { getUserById } = useUsers();
+  const { getUserById, addUser } = useUsers();
   const { addNotification, notifyTeamRequest } = useNotifications();
   const fromContext = getTeamById(id || '');
   const [fetchedTeam, setFetchedTeam] = useState<Team | null>(null);
@@ -35,6 +71,8 @@ export default function TeamDetailScreen() {
   const [showAddRoleModal, setShowAddRoleModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [memberUsers, setMemberUsers] = useState<Record<string, User>>({});
+  const hydratedTeamMembersRef = useRef<Record<string, boolean>>({});
   const [selectedMember, setSelectedMember] = useState<string | null>(null);
   const [newRoleName, setNewRoleName] = useState('');
   const [showPendingAlert, setShowPendingAlert] = useState(false);
@@ -72,11 +110,76 @@ export default function TeamDetailScreen() {
   const isCaptain = team?.captainId === user?.id;
   const isCoCaptain = team?.coCaptainIds.includes(user?.id || '') ?? false;
   const canManage = isCaptain || isCoCaptain;
-  const hasRequested = team?.joinRequests.some(r => r.userId === user?.id && r.status === 'pending') ?? false;
+  const canHandleRequests = isCaptain;
+  const myJoinRequest = user
+    ? [...(team?.joinRequests ?? [])]
+        .filter(r => r.userId === user.id)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+    : undefined;
+  const hasRequested = myJoinRequest?.status === 'pending' || myJoinRequest?.status === 'waiting';
   const memberRole = team?.members.find(m => m.userId === user?.id)?.role;
   const pendingRequests = team ? getPendingRequests(team.id) : [];
   const allRoles = team ? [...TEAM_ROLES, ...team.customRoles.map(r => r.name)] : [...TEAM_ROLES];
   const positions = team ? (DEFAULT_POSITIONS[team.sport] || DEFAULT_POSITIONS.default) : DEFAULT_POSITIONS.default;
+  const resolveMemberUser = (memberUserId: string) => memberUsers[memberUserId] || getUserById(memberUserId);
+
+  useEffect(() => {
+    if (team) {
+      console.log('[Team] Team object loaded:', {
+        id: team.id,
+        name: team.name,
+        logo: team.logo,
+        hasLogo: !!team.logo
+      });
+    }
+  }, [team?.id, team?.logo]);
+
+  useEffect(() => {
+    const loadMissingUsers = async () => {
+      if (!team || !team.members) return;
+      if (hydratedTeamMembersRef.current[team.id]) return;
+      hydratedTeamMembersRef.current[team.id] = true;
+
+      const cachedUsers = team.members.reduce<Record<string, User>>((acc, member) => {
+        const cached = getUserById(member.userId);
+        if (cached) acc[member.userId] = cached;
+        return acc;
+      }, {});
+      if (Object.keys(cachedUsers).length > 0) {
+        setMemberUsers((prev) => ({ ...prev, ...cachedUsers }));
+      }
+      
+      const missingUserIds = team.members
+        .map(m => m.userId)
+        .filter(userId => !getUserById(userId) && !memberUsers[userId]);
+      
+      if (missingUserIds.length === 0) return;
+      
+      console.log('[Team] Loading', missingUserIds.length, 'missing users');
+      
+      const loadPromises = missingUserIds.map(async (userId) => {
+        try {
+          const fetchedUser = await usersApi.getById(userId);
+          if (fetchedUser) {
+            await addUser(fetchedUser);
+            setMemberUsers((prev) => ({ ...prev, [userId]: fetchedUser }));
+            return fetchedUser.fullName || fetchedUser.username;
+          }
+        } catch (e) {
+          console.log('[Team] Failed to load user:', userId);
+        }
+        return null;
+      });
+      
+      const results = await Promise.all(loadPromises);
+      const loaded = results.filter(Boolean);
+      if (loaded.length > 0) {
+        console.log('[Team] Loaded users:', loaded.join(', '));
+      }
+    };
+    
+    loadMissingUsers();
+  }, [team?.id, getUserById, addUser]);
 
   useEffect(() => {
     if (team) {
@@ -91,7 +194,7 @@ export default function TeamDetailScreen() {
   }, [team]);
 
   useEffect(() => {
-    if (team && canManage && pendingRequests.length > 0 && !showPendingAlert) {
+    if (team && canHandleRequests && pendingRequests.length > 0 && !showPendingAlert) {
       setShowPendingAlert(true);
       Alert.alert(
         'Demandes en attente',
@@ -99,7 +202,7 @@ export default function TeamDetailScreen() {
         [{ text: 'Voir', onPress: () => setShowRequestsModal(true) }, { text: 'Plus tard', style: 'cancel' }]
       );
     }
-  }, [team, canManage, pendingRequests.length, showPendingAlert]);
+  }, [team, canHandleRequests, pendingRequests.length, showPendingAlert]);
 
   if (loadingTeam && !team) {
     return (
@@ -138,14 +241,7 @@ export default function TeamDetailScreen() {
     setIsRequesting(true);
     try {
       await sendJoinRequest({ teamId: team.id, userId: user.id });
-      const msg = `${user.fullName || user.username} souhaite rejoindre ${team.name}`;
-      const payload = { type: 'team' as const, title: 'Nouvelle demande', message: msg, data: { route: `/team/${team.id}` } };
-      await addNotification({ userId: team.captainId, ...payload });
-      for (const coId of team.coCaptainIds || []) {
-        if (coId && coId !== team.captainId) {
-          await addNotification({ userId: coId, ...payload });
-        }
-      }
+      await notifyTeamRequest(team.name, 'sent', team.id, user.id);
       await refetchTeams();
       Alert.alert(
         'Demande envoyée',
@@ -237,12 +333,40 @@ export default function TeamDetailScreen() {
 
   const handleSaveSettings = async () => {
     try {
+      console.log('[Team] ========== SAVE SETTINGS START ==========');
+      console.log('[Team] editLogo value:', editLogo);
+      console.log('[Team] editLogo type:', typeof editLogo);
+      console.log('[Team] editLogo length:', editLogo?.length);
+      
+      let logoUrl = editLogo.trim();
+      console.log('[Team] logoUrl after trim:', logoUrl);
+      const shouldUploadLogo =
+        !!logoUrl &&
+        !logoUrl.startsWith('http://') &&
+        !logoUrl.startsWith('https://');
+      console.log('[Team] shouldUploadLogo?', shouldUploadLogo);
+      
+      if (shouldUploadLogo) {
+        console.log('[Team] Uploading local image to Supabase Storage...');
+        console.log('[Team] Calling uploadTeamImage with:', logoUrl, team.id);
+        try {
+          logoUrl = await uploadTeamImage(logoUrl, team.id);
+          console.log('[Team] Image uploaded successfully, new URL:', logoUrl);
+        } catch (uploadError) {
+          console.error('[Team] Failed to upload image:', uploadError);
+          Alert.alert('Erreur', 'Impossible d\'uploader l\'image. Vérifiez votre connexion.');
+          return;
+        }
+      } else {
+        console.log('[Team] Skipping upload - logoUrl:', logoUrl);
+      }
+      
       await updateTeam({
         teamId: team.id,
         updates: {
           name: editName.trim() || team.name,
           description: editDescription.trim(),
-          logo: editLogo.trim() || undefined,
+          logo: logoUrl || undefined,
           isRecruiting: editIsRecruiting,
           maxMembers: editMaxMembers,
           level: editLevel,
@@ -252,6 +376,7 @@ export default function TeamDetailScreen() {
       setShowSettingsModal(false);
       Alert.alert('Succès', 'Équipe mise à jour');
     } catch (e: any) {
+      console.error('[Team] Erreur sauvegarde:', e);
       Alert.alert('Erreur', e.message);
     }
   };
@@ -332,7 +457,7 @@ export default function TeamDetailScreen() {
             <View style={styles.header}>
               <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
               <View style={styles.headerActions}>
-                {!previewForNonMember && canManage && pendingRequests.length > 0 && (
+                {!previewForNonMember && canHandleRequests && pendingRequests.length > 0 && (
                   <TouchableOpacity style={styles.requestsBadge} onPress={() => setShowRequestsModal(true)}>
                     <UserPlus size={18} color="#FFFFFF" /><Text style={styles.requestsCount}>{pendingRequests.length}</Text>
                   </TouchableOpacity>
@@ -385,7 +510,11 @@ export default function TeamDetailScreen() {
                   </Text>
                 </Card>
                 <View style={styles.actions}>
-                  {hasRequested ? (
+                  {myJoinRequest?.status === 'waiting' ? (
+                    <Button title="En liste d'attente" onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
+                  ) : myJoinRequest?.status === 'rejected' ? (
+                    <Button title="Redemander à rejoindre" onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
+                  ) : hasRequested ? (
                     <Button title="Demande envoyée au capitaine" onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
                   ) : team.isRecruiting && team.members.length < team.maxMembers ? (
                     <Button title="Demander à rejoindre" onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
@@ -421,9 +550,9 @@ export default function TeamDetailScreen() {
               {team.members.map((member, i) => (
                 <Card key={i} style={styles.memberCard}>
                   <TouchableOpacity style={styles.memberRow} onPress={() => canManage && member.userId !== team.captainId && (setSelectedMember(member.userId), setShowRoleModal(true))} disabled={!canManage || member.userId === team.captainId}>
-                    <Avatar uri={member.userId === user?.id ? user?.avatar : getUserById(member.userId)?.avatar} name={member.userId === user?.id ? user?.fullName : getUserById(member.userId)?.fullName || getUserById(member.userId)?.username} size="medium" />
+                    <Avatar uri={member.userId === user?.id ? user?.avatar : resolveMemberUser(member.userId)?.avatar} name={member.userId === user?.id ? user?.fullName : resolveMemberUser(member.userId)?.fullName || resolveMemberUser(member.userId)?.username} size="medium" />
                     <View style={styles.memberInfo}>
-                      <Text style={styles.memberName}>{member.userId === user?.id ? user?.fullName : getUserById(member.userId)?.fullName || getUserById(member.userId)?.username || 'Membre'}</Text>
+                      <Text style={styles.memberName}>{member.userId === user?.id ? user?.fullName : resolveMemberUser(member.userId)?.fullName || resolveMemberUser(member.userId)?.username || 'Membre'}</Text>
                       <Text style={styles.memberPosition}>{member.customRole || member.position || 'Membre'}</Text>
                     </View>
                     {member.role !== 'member' && <View style={[styles.roleBadge, member.role === 'captain' && styles.captainRole]}><Text style={styles.roleText}>{member.role === 'captain' ? 'Cap' : 'Co'}</Text></View>}
@@ -464,9 +593,9 @@ export default function TeamDetailScreen() {
               {isMember && (
                 <Button title="Chat d'équipe" onPress={() => router.push('/(tabs)/chat')} variant="primary" icon={<MessageCircle size={18} color="#FFFFFF" />} style={styles.actionButton} />
               )}
-              {!isMember && !hasRequested && !isFan && (
+              {!isMember && !hasRequested && !isFan && myJoinRequest?.status !== 'waiting' && (
                 <>
-                  <Button title="Demander à rejoindre" onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
+                  <Button title={myJoinRequest?.status === 'rejected' ? 'Redemander à rejoindre' : 'Demander à rejoindre'} onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
                   <Button title="Suivre l'équipe" onPress={async () => {
                     if (!user || !team) return;
                     try {
@@ -497,7 +626,7 @@ export default function TeamDetailScreen() {
           </ScrollView>
         </SafeAreaView>
 
-        <Modal visible={showRequestsModal} animationType="slide" transparent>
+        <Modal visible={showRequestsModal && canHandleRequests} animationType="slide" transparent>
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}><Text style={styles.modalTitle}>Demandes ({pendingRequests.length})</Text><TouchableOpacity onPress={() => setShowRequestsModal(false)}><X size={24} color={Colors.text.primary} /></TouchableOpacity></View>
@@ -586,17 +715,45 @@ export default function TeamDetailScreen() {
                     numberOfLines={4}
                   />
 
-                  <Text style={styles.settingLabel}>URL du logo</Text>
-                  <View style={styles.settingInputRow}>
-                    <Image size={18} color={Colors.text.muted} />
-                    <TextInput 
-                      style={styles.settingInput} 
-                      value={editLogo} 
-                      onChangeText={setEditLogo} 
-                      placeholder="https://example.com/logo.png"
-                      placeholderTextColor={Colors.text.muted}
-                      autoCapitalize="none"
-                    />
+                  <Text style={styles.settingLabel}>Logo de l'équipe</Text>
+                  {editLogo && (
+                    <View style={{ alignItems: 'center', marginVertical: 12 }}>
+                      <Avatar uri={editLogo} name={editName || 'Équipe'} size="large" />
+                    </View>
+                  )}
+                  <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+                    <TouchableOpacity 
+                      style={{ flex: 1, backgroundColor: Colors.background.cardLight, padding: 16, borderRadius: 12, alignItems: 'center', gap: 8 }}
+                      onPress={async () => {
+                        console.log('[Team] Opening image picker...');
+                        const uri = await pickImageFromLibrary();
+                        console.log('[Team] Image picker result:', uri);
+                        if (uri) {
+                          console.log('[Team] Photo sélectionnée depuis galerie:', uri);
+                          console.log('[Team] Setting editLogo to:', uri);
+                          setEditLogo(uri);
+                          console.log('[Team] editLogo state updated');
+                        } else {
+                          console.log('[Team] No image selected');
+                        }
+                      }}
+                    >
+                      <Image size={24} color={Colors.primary.blue} />
+                      <Text style={{ color: Colors.text.primary, fontSize: 14, fontWeight: '500' }}>Galerie</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={{ flex: 1, backgroundColor: Colors.background.cardLight, padding: 16, borderRadius: 12, alignItems: 'center', gap: 8 }}
+                      onPress={async () => {
+                        const uri = await takePhoto();
+                        if (uri) {
+                          console.log('[Team] Photo prise avec caméra:', uri);
+                          setEditLogo(uri);
+                        }
+                      }}
+                    >
+                      <Text style={{ fontSize: 24 }}>📷</Text>
+                      <Text style={{ color: Colors.text.primary, fontSize: 14, fontWeight: '500' }}>Photo</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
 

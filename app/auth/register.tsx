@@ -3,7 +3,7 @@ import { StyleSheet, View, Text, TouchableOpacity, KeyboardAvoidingView, Platfor
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
-import { User, ArrowLeft, ArrowRight, Lock, Mail } from 'lucide-react-native';
+import { User, ArrowLeft, ArrowRight, Lock, Mail, MapPin } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
@@ -23,6 +23,7 @@ export default function RegisterScreen() {
     confirmPassword: '',
     city: 'Abidjan',
     referralCode: '',
+    role: 'user' as const,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -86,8 +87,9 @@ export default function RegisterScreen() {
         lastName: formData.lastName.trim(),
         city: formData.city,
         referralCode: formData.referralCode.trim() || undefined,
+        role: 'user',
       });
-      console.log('[Register] Registration successful, navigating to home');
+      console.log('[Register] Registration successful');
       router.replace('/(tabs)/(home)');
     } catch (error: any) {
       console.log('[Register] Error:', error);
@@ -305,6 +307,54 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     marginTop: 16,
+  },
+  roleSelector: {
+    marginBottom: 20,
+  },
+  roleSelectorLabel: {
+    color: Colors.text.primary,
+    fontSize: 16,
+    fontWeight: '600' as const,
+    marginBottom: 12,
+  },
+  roleOptions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  roleOption: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    borderRadius: 12,
+    backgroundColor: Colors.background.card,
+    borderWidth: 2,
+    borderColor: Colors.border.light,
+  },
+  roleOptionActive: {
+    borderColor: Colors.primary.blue,
+    backgroundColor: Colors.primary.blue + '20',
+  },
+  roleOptionActiveOrange: {
+    borderColor: Colors.primary.orange,
+    backgroundColor: Colors.primary.orange + '20',
+  },
+  roleOptionText: {
+    color: Colors.text.muted,
+    fontSize: 13,
+    fontWeight: '600' as const,
+    textAlign: 'center',
+  },
+  roleOptionTextActive: {
+    color: '#FFFFFF',
+  },
+  roleHint: {
+    color: Colors.primary.orange,
+    fontSize: 12,
+    marginTop: 8,
+    textAlign: 'center',
   },
   footer: {
     flexDirection: 'row',

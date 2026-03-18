@@ -23,7 +23,9 @@ import { ReferralProvider } from "@/contexts/ReferralContext";
 import { Colors } from "@/constants/colors";
 import { logger } from "@/lib/logger";
 
-SplashScreen.preventAutoHideAsync();
+void SplashScreen.preventAutoHideAsync().catch(() => {
+  // No-op: native splash may be unavailable in some dev reload states.
+});
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,7 +46,7 @@ const queryClient = new QueryClient({
 function AuthGateInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, isVenueManager } = useAuth();
 
   useEffect(() => {
     if (isLoading) return;
@@ -52,14 +54,28 @@ function AuthGateInner({ children }: { children: React.ReactNode }) {
     const inAuthGroup = segments[0] === 'auth';
     const inSplash = segments[0] === 'splash';
     const inVerifyEmail = segments[0] === 'verify-email';
+    const inManagerTabs = segments[0] === '(manager-tabs)';
+    const inUserTabs = segments[0] === '(tabs)';
 
-    logger.debug('AuthGate', 'Segments:', segments, 'isAuth:', isAuthenticated);
+    logger.debug('AuthGate', 'Segments:', segments, 'isAuth:', isAuthenticated, 'isManager:', isVenueManager);
 
     if (!isAuthenticated && !inAuthGroup && !inSplash && !inVerifyEmail) {
       logger.debug('AuthGate', 'Redirecting to welcome...');
       router.replace('/auth/welcome');
+      return;
     }
-  }, [isLoading, isAuthenticated, segments, router]);
+
+    if (isAuthenticated && !inAuthGroup && !inSplash && !inVerifyEmail) {
+      if (isVenueManager && inUserTabs) {
+        router.replace('/(manager-tabs)/dashboard' as any);
+        return;
+      }
+      if (!isVenueManager && inManagerTabs) {
+        router.replace('/(tabs)/(home)');
+        return;
+      }
+    }
+  }, [isLoading, isAuthenticated, isVenueManager, segments, router]);
 
   if (isLoading) {
     return (
@@ -95,11 +111,14 @@ function RootLayoutNav() {
         <Stack.Screen name="splash" />
         <Stack.Screen name="auth" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="(manager-tabs)" />
         <Stack.Screen name="create-team" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="create-match" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="edit-profile" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="settings" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="admin" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="admin/payments" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="admin/payout-requests" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="team/[id]" />
         <Stack.Screen name="match/[id]" />
         <Stack.Screen name="chat/[roomId]" />
@@ -117,7 +136,13 @@ function RootLayoutNav() {
         <Stack.Screen name="create-tournament" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="tournaments" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="tournament/[id]" />
+        <Stack.Screen name="tournament/[id]/advance-payout-request" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="edit-tournament/[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="venues" />
+        <Stack.Screen name="venue/[id]" />
+        <Stack.Screen name="create-venue" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="edit-venue/[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="venue-manager" />
       </Stack>
     </View>
   );
@@ -135,7 +160,11 @@ export default function RootLayout() {
       } catch (error) {
         logger.error('RootLayout', 'Error preparing app:', error);
       } finally {
-        await SplashScreen.hideAsync();
+        try {
+          await SplashScreen.hideAsync();
+        } catch (error) {
+          logger.warn('RootLayout', 'SplashScreen.hideAsync failed (ignored):', error);
+        }
       }
     }
 

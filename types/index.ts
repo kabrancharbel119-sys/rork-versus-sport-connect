@@ -3,7 +3,14 @@ export type Sport = 'football' | 'basketball' | 'volleyball' | 'tennis' | 'handb
 export type SkillLevel = 'beginner' | 'intermediate' | 'advanced' | 'expert';
 export type PlayStyle = 'competitive' | 'casual' | 'mixed';
 export type Position = string;
-export type UserRole = 'user' | 'admin';
+export type UserRole = 'user' | 'admin' | 'venue_manager';
+
+export type PaymentMethod = 'wave' | 'orange';
+export type PaymentStatus = 'pending' | 'submitted' | 'approved' | 'rejected';
+export type PayoutStatus = 'pending' | 'sent';
+export type TournamentTeamStatus = 'pending_payment' | 'payment_submitted' | 'confirmed' | 'rejected' | 'cancelled';
+export type PayoutRequestStatus = 'pending' | 'approved' | 'rejected';
+export type PayoutPurposeCategory = 'venue' | 'referees' | 'logistics' | 'communication' | 'prize' | 'other';
 
 export const DEFAULT_ROLES = ['Capitaine', 'Co-Capitaine', 'Coach', 'Gardien', 'Défenseur', 'Milieu', 'Attaquant', 'Ailier', 'Pivot', 'Meneur', 'Arrière', 'Libero', 'Passeur', 'Central', 'Remplaçant'] as const;
 
@@ -178,6 +185,13 @@ export interface MatchScore {
   away: number;
 }
 
+export interface VenueOpeningHours {
+  dayOfWeek: number; // 0=Dimanche, 1=Lundi, ..., 6=Samedi
+  openTime: string;  // "08:00"
+  closeTime: string; // "22:00"
+  isClosed: boolean;
+}
+
 export interface Venue {
   id: string;
   name: string;
@@ -189,6 +203,45 @@ export interface Venue {
   rating: number;
   amenities: string[];
   coordinates?: { latitude: number; longitude: number };
+  ownerId?: string;
+  description?: string;
+  phone?: string;
+  email?: string;
+  openingHours?: VenueOpeningHours[];
+  autoApprove?: boolean;
+  isActive?: boolean;
+  capacity?: number;
+  surfaceType?: string;
+  rules?: string;
+}
+
+export interface VenueReview {
+  id: string;
+  venueId: string;
+  userId: string;
+  rating: number;
+  comment?: string;
+  authorName?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'rejected' | 'completed';
+
+export interface Booking {
+  id: string;
+  venueId: string;
+  venue?: Venue;
+  userId: string;
+  user?: User;
+  date: string;
+  startTime: string;
+  endTime: string;
+  totalPrice: number;
+  status: BookingStatus;
+  matchId?: string;
+  notes?: string;
+  createdAt: Date;
 }
 
 export interface Tournament {
@@ -215,6 +268,69 @@ export interface Tournament {
   managers?: string[];
   createdBy: string;
   createdAt: Date;
+}
+
+export interface TournamentPayment {
+  id: string;
+  tournamentId: string;
+  teamId: string;
+  amount: number;
+  method: PaymentMethod;
+  receiver: string;
+  status: PaymentStatus;
+  screenshotUrl?: string;
+  transactionRef?: string;
+  expectedSenderName?: string;
+  validatedBy?: string;
+  createdAt: Date;
+  validatedAt?: Date;
+  paymentDeadline?: Date;
+  payoutStatus: PayoutStatus;
+  organizerAmount: number;
+  platformFee: number;
+}
+
+export interface PaymentLog {
+  id: string;
+  paymentId: string;
+  action: string;
+  performedBy?: string;
+  details: Record<string, any>;
+  timestamp: Date;
+}
+
+export interface TournamentTeam {
+  id: string;
+  tournamentId: string;
+  teamId: string;
+  status: TournamentTeamStatus;
+  registeredAt: Date;
+  confirmedAt?: Date;
+  team?: Team;
+  payment?: TournamentPayment;
+}
+
+export interface TournamentPayoutRequest {
+  id: string;
+  tournamentId: string;
+  organizerId: string;
+  requestedAmount: number;
+  purposeCategory: PayoutPurposeCategory;
+  reason: string;
+  useOfFunds: string;
+  budgetBreakdown: string;
+  amountAlreadySpent: number;
+  neededBy?: Date;
+  supportingEvidence?: string;
+  fallbackContact?: string;
+  urgency: 'low' | 'medium' | 'high';
+  payoutPhone: string;
+  status: PayoutRequestStatus;
+  adminNote?: string;
+  reviewedBy?: string;
+  reviewedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface TournamentPrize {
@@ -259,7 +375,7 @@ export interface ChatMessage {
 export interface Notification {
   id: string;
   userId: string;
-  type: 'match' | 'team' | 'tournament' | 'chat' | 'system';
+  type: 'match' | 'team' | 'tournament' | 'chat' | 'system' | 'booking';
   title: string;
   message: string;
   data?: Record<string, string>;

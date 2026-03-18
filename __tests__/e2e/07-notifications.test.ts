@@ -17,7 +17,7 @@ describe('NOTIFICATIONS — Création automatique', () => {
       title: 'Nouveau joueur',
       message: 'Un joueur a rejoint votre match',
       data: { matchId: 'test-match-id', matchTitle: 'Test Match' },
-      read: false
+      is_read: false
     };
 
     const { data, error } = await supabaseAdmin
@@ -43,7 +43,7 @@ describe('NOTIFICATIONS — Création automatique', () => {
       title: 'Invitation équipe',
       message: 'Vous avez été invité à rejoindre une équipe',
       data: { teamId: 'test-team-id', teamName: 'Test Team' },
-      read: false
+      is_read: false
     };
 
     const { data, error } = await supabaseAdmin
@@ -68,7 +68,7 @@ describe('NOTIFICATIONS — Création automatique', () => {
       title: 'Inscription validée',
       message: 'Votre équipe a été acceptée au tournoi',
       data: { tournamentId: 'test-tournament-id' },
-      read: false
+      is_read: false
     };
 
     const { data, error } = await supabaseAdmin
@@ -93,7 +93,7 @@ describe('NOTIFICATIONS — Création automatique', () => {
       title: 'Nouveau badge',
       message: 'Vous avez atteint le niveau Gold!',
       data: { badge: 'Gold', elo: 1200 },
-      read: false
+      is_read: false
     };
 
     const { data, error } = await supabaseAdmin
@@ -144,7 +144,7 @@ describe('NOTIFICATIONS — Structure', () => {
     expect(data.title).toBeDefined();
     expect(data.message).toBeDefined();
     expect(data.data).toBeDefined();
-    expect(data.read).toBe(false);
+    expect(data.is_read).toBe(false);
     expect(data.created_at).toBeDefined();
   });
 
@@ -212,18 +212,18 @@ describe('NOTIFICATIONS — Gestion', () => {
 
     const { error } = await supabaseAdmin
       .from('notifications')
-      .update({ read: true })
+      .update({ is_read: true })
       .eq('id', notification.id);
 
     expect(error).toBeNull();
 
     const { data } = await supabaseAdmin
       .from('notifications')
-      .select('read')
+      .select('is_read')
       .eq('id', notification.id)
       .single();
 
-    expect(data?.read).toBe(true);
+    expect(data?.is_read).toBe(true);
   });
 
   test('✅ Supprimer une notification → retirée de la BDD', async () => {
@@ -297,10 +297,10 @@ describe('NOTIFICATIONS — Gestion', () => {
       .from('notifications')
       .select('*')
       .eq('user_id', user.id)
-      .eq('read', false);
+      .eq('is_read', false);
 
     expect(data?.length).toBeGreaterThan(0);
-    expect(data?.every(n => n.read === false)).toBe(true);
+    expect(data?.every(n => n.is_read === false)).toBe(true);
   });
 
   test('✅ Notifications triées par created_at DESC', async () => {

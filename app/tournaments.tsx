@@ -17,14 +17,12 @@ import type { Tournament } from '@/types';
 const statusGradients: Record<string, [string, string]> = {
   registration: [Colors.gradient.orangeStart, Colors.gradient.orangeEnd],
   in_progress: ['#1E6B3A', '#0F4A26'],
-  ongoing: ['#1E6B3A', '#0F4A26'],
   completed: ['#1A1A2E', '#16213E'],
 };
 
 const statusConfig: Record<string, { label: string; color: string; icon: string }> = {
   registration: { label: 'Inscriptions', color: Colors.status.success, icon: 'zap' },
   in_progress: { label: 'En cours', color: Colors.primary.orange, icon: 'flame' },
-  ongoing: { label: 'En cours', color: Colors.primary.orange, icon: 'flame' },
   completed: { label: 'Terminé', color: Colors.text.muted, icon: 'check' },
 };
 
@@ -49,16 +47,16 @@ export default function TournamentsScreen() {
   const counts = useMemo(() => ({
     all: tournaments.length,
     registration: tournaments.filter(t => t.status === 'registration').length,
-    in_progress: tournaments.filter(t => t.status === 'in_progress' || t.status === 'ongoing').length,
+    in_progress: tournaments.filter(t => t.status === 'in_progress').length,
     completed: tournaments.filter(t => t.status === 'completed').length,
   }), [tournaments]);
 
   const filteredAndSorted = useMemo(() => {
     let list = tournaments;
     if (filter !== 'all') {
-      list = list.filter(t => t.status === filter || (filter === 'in_progress' && t.status === 'ongoing'));
+      list = list.filter(t => t.status === filter);
     }
-    const order: Record<string, number> = { in_progress: 0, ongoing: 0, registration: 1, completed: 2 };
+    const order: Record<string, number> = { in_progress: 0, registration: 1, completed: 2 };
     return [...list].sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [tournaments, filter]);
 

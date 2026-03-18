@@ -17,6 +17,7 @@ export interface TournamentRow {
   entry_fee: number;
   prize_pool: number;
   prizes: unknown;
+  venue_id: string | null;
   venue_data: { id: string; name: string; address: string; city: string } | null;
   start_date: string;
   end_date: string;
@@ -96,6 +97,30 @@ export const tournamentsApi = {
     return ((data || []) as TournamentRow[]).map(mapTournamentRowToTournament);
   },
 
+  async getByVenue(venueId: string) {
+    console.log('[TournamentsAPI] Getting tournaments for venue:', venueId);
+    const { data, error } = await (supabase
+      .from('tournaments')
+      .select('*')
+      .eq('venue_id', venueId)
+      .order('created_at', { ascending: false }) as any);
+
+    if (error) throw error;
+    return ((data || []) as TournamentRow[]).map(mapTournamentRowToTournament);
+  },
+
+  async getByCreator(userId: string) {
+    console.log('[TournamentsAPI] Getting tournaments created by user:', userId);
+    const { data, error } = await (supabase
+      .from('tournaments')
+      .select('*')
+      .eq('created_by', userId)
+      .order('created_at', { ascending: false }) as any);
+
+    if (error) throw error;
+    return ((data || []) as TournamentRow[]).map(mapTournamentRowToTournament);
+  },
+
   async getById(id: string) {
     console.log('[TournamentsAPI] Getting tournament by id:', id);
     const { data, error } = await (supabase
@@ -142,6 +167,7 @@ export const tournamentsApi = {
         entry_fee: data.entryFee,
         prize_pool: data.prizePool,
         prizes: data.prizes,
+        venue_id: data.venue?.id || null,
         venue_data: data.venue
           ? {
               id: data.venue.id,
@@ -274,45 +300,111 @@ export const tournamentsApi = {
 
   async registerTeam(tournamentId: string, teamId: string) {
     if (!tournamentId?.trim() || !teamId?.trim()) throw new Error('Données invalides');
-    const { data: row, error } = await (supabase
+    
+    // Vérifier que le tournoi existe et accepte les inscriptions
+    const { data: tournament, error: tournamentError } = await (supabase
       .from('tournaments')
-      .select('registered_teams, max_teams, status')
+      .select('status, max_teams, entry_fee')
       .eq('id', tournamentId)
       .single() as any);
-    if (error || !row) throw new Error('Tournoi non trouvé');
-    const status = (row as { status?: string }).status;
-    if (status && status !== 'registration') throw new Error('Inscriptions fermées');
-    const current = (row.registered_teams as string[]) || [];
-    if (current.includes(teamId)) throw new Error('Équipe déjà inscrite');
-    const maxTeams = (row as { max_teams?: number }).max_teams ?? 16;
-    if (current.length >= maxTeams) throw new Error('Tournoi complet');
-    const updated = [...current, teamId];
-    const { error: updateError } = await (supabase
+    
+    if (tournamentError || !tournament) throw new Error('Tournoi non trouvé');
+    if (tournament.status !== 'registration') throw new Error('Inscriptions fermées');
+    
+    // Vérifier si l'équipe est déjà inscrite
+    const { data: existing } = await supabase
+      .from('tournament_teams')
+      .select('id')
+      .eq('tournament_id', tournamentId)
+      .eq('team_id', teamId)
+      .single();
+    
+    if (existing) throw new Error('Équipe déjà inscrite');
+    
+    // Vérifier les places disponibles via la fonction SQL
+    const { data: hasSpots, error: spotsError } = await (supabase
+      .rpc('has_available_spots', { p_tournament_id: tournamentId }) as any);
+    
+    if (spotsError) throw spotsError;
+    if (!hasSpots) throw new Error('Tournoi complet');
+    
+    // Inscrire l'équipe avec statut pending_payment
+    const { error: insertError } = await supabase
+      .from('tournament_teams')
+      .insert({
+        tournament_id: tournamentId,
+        team_id: teamId,
+        status: 'pending_payment',
+      });
+    
+    if (insertError) throw insertError;
+    
+    // Aussi mettre à jour registered_teams pour compatibilité (sera déprécié)
+    const { data: row } = await supabase
       .from('tournaments')
-      .update({ registered_teams: updated } as any)
-      .eq('id', tournamentId) as any);
-    if (updateError) throw updateError;
-    return { success: true };
+      .select('registered_teams')
+      .eq('id', tournamentId)
+      .single();
+    
+    const current = (row?.registered_teams as string[]) || [];
+    if (!current.includes(teamId)) {
+      await supabase
+        .from('tournaments')
+        .update({ registered_teams: [...current, teamId] } as any)
+        .eq('id', tournamentId);
+    }
+    
+    return { success: true, requiresPayment: tournament.entry_fee > 0 };
   },
 
   async unregisterTeam(tournamentId: string, teamId: string) {
     if (!tournamentId?.trim() || !teamId?.trim()) throw new Error('Données invalides');
-    const { data: row, error } = await (supabase
+    
+    // Vérifier que le tournoi accepte les désinscriptions
+    const { data: tournament, error: tournamentError } = await (supabase
       .from('tournaments')
-      .select('registered_teams, status')
+      .select('status')
       .eq('id', tournamentId)
       .single() as any);
-    if (error || !row) throw new Error('Tournoi non trouvé');
-    const status = (row as { status?: string }).status;
-    if (status && status !== 'registration') throw new Error('Impossible de se désinscrire : inscriptions fermées');
-    const current = (row.registered_teams as string[]) || [];
+    
+    if (tournamentError || !tournament) throw new Error('Tournoi non trouvé');
+    if (tournament.status !== 'registration') throw new Error('Impossible de se désinscrire : inscriptions fermées');
+    
+    // Vérifier le statut de l'équipe (peut être absent si données legacy désynchronisées)
+    const { data: teamStatus } = await supabase
+      .from('tournament_teams')
+      .select('status')
+      .eq('tournament_id', tournamentId)
+      .eq('team_id', teamId)
+      .maybeSingle();
+
+    if (teamStatus?.status === 'confirmed') {
+      throw new Error('Impossible de se désinscrire : paiement déjà validé');
+    }
+    
+    // Supprimer l'inscription (le paiement sera supprimé automatiquement via CASCADE)
+    const { error: deleteError } = await supabase
+      .from('tournament_teams')
+      .delete()
+      .eq('tournament_id', tournamentId)
+      .eq('team_id', teamId);
+    
+    if (deleteError) throw deleteError;
+    
+    // Aussi mettre à jour registered_teams pour compatibilité
+    const { data: row } = await supabase
+      .from('tournaments')
+      .select('registered_teams')
+      .eq('id', tournamentId)
+      .single();
+    
+    const current = (row?.registered_teams as string[]) || [];
     const updated = current.filter((id) => id !== teamId);
-    if (updated.length === current.length) throw new Error('Équipe non inscrite');
-    const { error: updateError } = await (supabase
+    await supabase
       .from('tournaments')
       .update({ registered_teams: updated } as any)
-      .eq('id', tournamentId) as any);
-    if (updateError) throw updateError;
+      .eq('id', tournamentId);
+    
     return { success: true };
   },
 

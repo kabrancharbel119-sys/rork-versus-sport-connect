@@ -2,7 +2,6 @@ import { supabase } from '@/lib/supabase';
 import { getApiBaseUrl } from '@/lib/api-base-url';
 import { logger } from '@/lib/logger';
 import type { User, UserSport, UserStats } from '@/types';
-import * as Crypto from 'expo-crypto';
 
 /** Colonnes user sans password_hash : à utiliser pour tout select exposé au client */
 const USER_PUBLIC_COLUMNS =
@@ -33,13 +32,6 @@ function normalizeBackendUser(raw: Record<string, unknown>): User {
   } as User;
 }
 
-async function hashPassword(password: string): Promise<string> {
-  const hash = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    password + 'vs_salt_2024'
-  );
-  return hash;
-}
 
 export interface UserRow {
   id: string;
@@ -108,15 +100,28 @@ export const mapUserRowToUser = (row: UserRow): User => ({
 });
 
 export const usersApi = {
-  async getAll() {
-    logger.debug('UsersAPI', 'Getting all users');
-    const { data, error } = await (supabase
+  async getAll(options?: { page?: number; limit?: number }) {
+    const page = options?.page ?? 1;
+    const limit = options?.limit ?? 50;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    
+    logger.debug('UsersAPI', 'Getting all users', { page, limit });
+    const { data, error, count } = await (supabase
       .from('users')
-      .select(USER_PUBLIC_COLUMNS)
-      .eq('is_banned', false) as any);
+      .select(USER_PUBLIC_COLUMNS, { count: 'exact' })
+      .eq('is_banned', false)
+      .range(from, to)
+      .order('created_at', { ascending: false }) as any);
     
     if (error) throw error;
-    return ((data || []) as UserRow[]).map(row => mapUserRowToUser(row));
+    return {
+      users: ((data || []) as UserRow[]).map(row => mapUserRowToUser(row)),
+      total: count ?? 0,
+      page,
+      limit,
+      hasMore: count ? (page * limit) < count : false,
+    };
   },
 
   async getById(id: string) {
@@ -149,7 +154,6 @@ export const usersApi = {
     username: string;
     fullName: string;
     phone: string;
-    password: string;
     city?: string;
     country?: string;
   }) {
@@ -165,7 +169,6 @@ export const usersApi = {
             username: userData.username,
             fullName: userData.fullName,
             phone: userData.phone,
-            password: userData.password,
             city: userData.city,
             country: userData.country,
           }),
@@ -205,15 +208,12 @@ export const usersApi = {
     const timestamp = Date.now();
     const fakeEmail = `${userData.phone.replace(/\D/g, '')}_${timestamp}@local.app`;
     
-    const passwordHash = await hashPassword(userData.password);
-    
     const insertData: Record<string, unknown> = {
       id: userData.id,
       email: fakeEmail,
       username: userData.username,
       full_name: userData.fullName,
       phone: userData.phone,
-      password_hash: passwordHash,
       city: userData.city || 'Non spécifié',
       country: userData.country || 'Non spécifié',
       referral_code: referralCode,
@@ -259,58 +259,8 @@ export const usersApi = {
     return mapUserRowToUser(data as UserRow);
   },
 
-  async authenticate(phone: string, password: string) {
-    logger.debug('UsersAPI', 'Authenticating by phone');
-    if (useBackendAuth()) {
-      try {
-        const base = getAuthBaseUrl().replace(/\/$/, '');
-        const res = await fetch(`${base}/api/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone, password }),
-        });
-        const json = (await res.json().catch(() => ({}))) as { user?: Record<string, unknown>; message?: string };
-        if (!res.ok) throw new Error(json.message ?? 'Numéro ou mot de passe incorrect');
-        if (!json.user) throw new Error('Réponse invalide');
-        return normalizeBackendUser(json.user);
-      } catch (e) {
-        if (e instanceof Error) throw e;
-        throw new Error('Service d’authentification indisponible');
-      }
-    }
-    const { data, error } = await (supabase
-      .from('users')
-      .select('*')
-      .eq('phone', phone)
-      .single() as any);
-    
-    if (error || !data) {
-      logger.debug('UsersAPI', 'User not found for phone');
-      throw new Error('Numéro ou mot de passe incorrect');
-    }
-    
-    const user = data as UserRow & { password_hash?: string };
-    
-    if (user.is_banned) {
-      throw new Error('Ce compte a été suspendu');
-    }
-    
-    const passwordHash = await hashPassword(password);
-    
-    if (user.password_hash && user.password_hash !== passwordHash) {
-      logger.debug('UsersAPI', 'Password mismatch');
-      throw new Error('Numéro ou mot de passe incorrect');
-    }
-    
-    if (!user.password_hash) {
-      logger.debug('UsersAPI', 'No server password, updating');
-      await ((supabase.from('users') as any)
-        .update({ password_hash: passwordHash })
-        .eq('id', user.id));
-    }
-    
-    logger.debug('UsersAPI', 'Authentication successful');
-    return mapUserRowToUser(user);
+  async authenticate(_phone: string, _password: string) {
+    throw new Error('[usersApi.authenticate] Déprécié — utiliser supabase.auth.signInWithPassword() via lib/api/auth.ts');
   },
 
   async updateProfile(id: string, updates: Partial<{

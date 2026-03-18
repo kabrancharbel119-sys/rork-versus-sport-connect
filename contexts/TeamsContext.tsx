@@ -6,7 +6,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { Team, JoinRequest, TeamRole, Sport, SkillLevel, PlayStyle, UserLocation } from '@/types';
 import { teamsApi } from '@/lib/api/teams';
 
-const TEAMS_REFETCH_INTERVAL_MS = 15_000;
+const TEAMS_REFETCH_INTERVAL_MS = 60_000;
 
 const TEAMS_STORAGE_KEY = 'vs_teams';
 
@@ -61,7 +61,8 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
       const stored = await AsyncStorage.getItem(TEAMS_STORAGE_KEY);
       const localTeams = stored ? parseTeamDates(JSON.parse(stored)) : [];
       try {
-        const serverTeams = await teamsApi.getAll();
+        const result = await teamsApi.getAll();
+        const serverTeams = result.teams ?? result;
         const serverParsed = parseTeamDates(serverTeams);
         const localOnly = localTeams.filter(lt => !serverParsed.some(st => st.id === lt.id));
         const merged = [...serverParsed, ...localOnly];
@@ -191,26 +192,35 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
       console.log('[Teams] Handling request:', requestId, action);
       try {
         await teamsApi.handleJoinRequest(teamId, requestId, action, handlerId);
+        await queryClient.invalidateQueries({ queryKey: ['teams'] });
+        return;
       } catch (err: any) {
         console.log('[Teams] Supabase error:', err.message);
       }
       
       const teamIndex = teams.findIndex(t => t.id === teamId);
       if (teamIndex === -1) throw new Error('Équipe non trouvée');
+      if (teams[teamIndex].captainId !== handlerId) throw new Error('Non autorisé');
       
       const requestIndex = teams[teamIndex].joinRequests.findIndex(r => r.id === requestId);
       if (requestIndex === -1) throw new Error('Demande non trouvée');
       
       const updatedTeams = [...teams];
       const request = updatedTeams[teamIndex].joinRequests[requestIndex];
+      if (request.status !== 'pending' && request.status !== 'waiting') throw new Error('Cette demande a déjà été traitée');
       
       if (action === 'accept') {
+        if (updatedTeams[teamIndex].members.some(m => m.userId === request.userId)) throw new Error('Ce joueur est déjà membre');
+        if (updatedTeams[teamIndex].members.length >= updatedTeams[teamIndex].maxMembers) throw new Error('Équipe complète');
+        const userAlreadyMemberOfAnotherTeam = teams.some(t => t.id !== teamId && t.members.some(m => m.userId === request.userId));
+        if (userAlreadyMemberOfAnotherTeam) throw new Error('Ce joueur est déjà membre d\'une autre équipe');
         updatedTeams[teamIndex].members.push({ userId: request.userId, role: 'member', joinedAt: new Date() });
         updatedTeams[teamIndex].joinRequests[requestIndex] = { ...request, status: 'accepted', respondedAt: new Date() };
+        updatedTeams[teamIndex].fans = (updatedTeams[teamIndex].fans ?? []).filter(id => id !== request.userId);
       } else if (action === 'reject') {
         updatedTeams[teamIndex].joinRequests[requestIndex] = { ...request, status: 'rejected', respondedAt: new Date() };
       } else {
-        updatedTeams[teamIndex].joinRequests[requestIndex] = { ...request, status: 'waiting' };
+        updatedTeams[teamIndex].joinRequests[requestIndex] = { ...request, status: 'waiting', respondedAt: new Date() };
       }
       
       await saveTeams(updatedTeams);
@@ -324,10 +334,14 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
       const teamIndex = teams.findIndex(t => t.id === teamId);
       if (teamIndex === -1) throw new Error('Équipe non trouvée');
       
+      // Update in Supabase database
+      const updatedTeam = await teamsApi.update(teamId, updates);
+      
+      // Update local cache
       const updatedTeams = [...teams];
       updatedTeams[teamIndex] = {
         ...updatedTeams[teamIndex],
-        ...updates,
+        ...updatedTeam,
       };
       await saveTeams(updatedTeams);
       return updatedTeams[teamIndex];

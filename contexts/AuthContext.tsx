@@ -10,6 +10,7 @@ import { registerForPushNotifications } from '@/lib/push-notifications';
 import { signUp, signIn, signOut, getCurrentUser } from '@/lib/api/auth';
 import { supabase } from '@/lib/supabase';
 import { usersApi } from '@/lib/api/users';
+import { logger } from '@/lib/logger';
 
 const AUTH_STORAGE_KEY = 'vs_auth';
 const USER_STORAGE_KEY = 'vs_user';
@@ -28,6 +29,7 @@ interface RegisterData {
   lastName: string;
   city?: string;
   referralCode?: string;
+  role?: 'user' | 'venue_manager';
 }
 
 interface LoginData {
@@ -59,7 +61,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const authQuery = useQuery({
     queryKey: ['auth'],
     queryFn: async () => {
-      if (__DEV__) console.log('[Auth] Checking auth state...');
+      logger.debug('Auth', 'Checking auth state...');
       
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -71,11 +73,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
       }
 
-      const userData = await AsyncStorage.getItem(USER_STORAGE_KEY);
-      if (userData) {
-        return { isAuthenticated: true, user: JSON.parse(userData) as User };
-      }
-
+      // Session invalide ou expirée - vider AsyncStorage immédiatement
+      await AsyncStorage.multiRemove([USER_STORAGE_KEY, AUTH_STORAGE_KEY]);
       return { isAuthenticated: false, user: null };
     },
     staleTime: Infinity,
@@ -100,16 +99,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       const token = await registerForPushNotifications();
       if (token && token !== 'local-only') {
         await notificationsApi.registerPushToken(userId, token, Platform.OS as 'ios' | 'android' | 'web');
-        if (__DEV__) console.log('[Auth] Push token registered');
+        logger.debug('Auth', 'Push token registered');
       }
     } catch (e) {
-      if (__DEV__) console.log('[Auth] Push token registration failed:', e);
+      logger.debug('Auth', 'Push token registration failed', e);
     }
   }, []);
 
   const loginMutation = useMutation({
     mutationFn: async (data: LoginData) => {
-      if (__DEV__) console.log('[Auth] Attempting login for:', data.email);
+      logger.debug('Auth', 'Attempting login for:', data.email);
       
       if (!data.password) {
         throw new Error('Mot de passe requis');
@@ -134,7 +133,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const registerMutation = useMutation({
     mutationFn: async (data: RegisterData) => {
-      if (__DEV__) console.log('[Auth] Attempting registration for:', data.email);
+      logger.debug('Auth', 'Attempting registration for:', data.email);
 
       if (!data.password) {
         throw new Error('Mot de passe requis');
@@ -148,6 +147,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         lastName: data.lastName,
         city: data.city,
         referralCode: data.referralCode,
+        role: data.role,
       });
 
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(true));
@@ -164,7 +164,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: UpdateProfileData) => {
-      if (__DEV__) console.log('[Auth] Updating profile...');
+      logger.debug('Auth', 'Updating profile...');
       if (!authState.user) throw new Error('Non authentifié');
 
       try {
@@ -193,7 +193,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       try {
         await usersApi.update(authState.user.id, { stats: updatedStats });
       } catch (e) {
-        if (__DEV__) console.log('[Auth] Stats update to server failed, saving locally');
+        logger.debug('Auth', 'Stats update to server failed, saving locally');
       }
       
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
@@ -239,20 +239,20 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      if (__DEV__) console.log('[Auth] Starting logout process...');
+      logger.debug('Auth', 'Starting logout process...');
       await signOut();
       await AsyncStorage.multiRemove([
         AUTH_STORAGE_KEY,
         USER_STORAGE_KEY,
       ]);
-      if (__DEV__) console.log('[Auth] Logout complete');
+      logger.debug('Auth', 'Logout complete');
     },
     onSuccess: () => {
       setAuthState({ isAuthenticated: false, isLoading: false, user: null });
       queryClient.clear();
     },
     onError: (error) => {
-      console.error('[Auth] Logout error:', error);
+      logger.error('Auth', 'Logout error:', error);
       setAuthState({ isAuthenticated: false, isLoading: false, user: null });
       queryClient.clear();
     },
@@ -260,7 +260,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const deleteAccountMutation = useMutation({
     mutationFn: async (confirmText: string) => {
-      if (__DEV__) console.log('[Auth] Starting account deletion...');
+      logger.debug('Auth', 'Starting account deletion...');
       if (confirmText !== 'SUPPRIMER') {
         throw new Error('Confirmation invalide');
       }
@@ -269,7 +269,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         try {
           await usersApi.delete(authState.user.id);
         } catch (e) {
-          if (__DEV__) console.log('[Auth] Backend deletion failed:', e);
+          logger.debug('Auth', 'Backend deletion failed', e);
         }
       }
 
@@ -278,7 +278,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         USER_STORAGE_KEY,
         'vs_settings',
       ]);
-      if (__DEV__) console.log('[Auth] Account deletion complete');
+      logger.debug('Auth', 'Account deletion complete');
     },
     onSuccess: () => {
       setAuthState({ isAuthenticated: false, isLoading: false, user: null });
@@ -322,7 +322,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updated));
       }
     } catch (error) {
-      console.error('[AuthContext] refreshUser error:', error);
+      logger.error('AuthContext', 'refreshUser error:', error);
     }
   }, [authState.user]);
 
@@ -333,13 +333,29 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     try {
       await usersApi.update(authState.user.id, { role: 'admin' });
     } catch (e) {
-      if (__DEV__) console.log('[Auth] Admin promotion to server failed');
+      logger.debug('Auth', 'Admin promotion to server failed');
     }
     
     await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
     setAuthState(prev => ({ ...prev, user: updatedUser }));
     queryClient.invalidateQueries({ queryKey: ['auth'] });
-        if (__DEV__) console.log('[Auth] User promoted to admin');
+        logger.debug('Auth', 'User promoted to admin');
+  }, [authState.user, queryClient]);
+
+  const upgradeToVenueManager = useCallback(async () => {
+    if (!authState.user) return;
+    const updatedUser: User = { ...authState.user, role: 'venue_manager' };
+    
+    try {
+      await usersApi.update(authState.user.id, { role: 'venue_manager' });
+    } catch (e) {
+      logger.debug('Auth', 'Venue manager upgrade to server failed');
+    }
+    
+    await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
+    setAuthState(prev => ({ ...prev, user: updatedUser }));
+    queryClient.invalidateQueries({ queryKey: ['auth'] });
+    logger.debug('Auth', 'User upgraded to venue_manager');
   }, [authState.user, queryClient]);
 
   return {
@@ -355,7 +371,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     pickAvatar,
     refreshUser,
     makeAdmin,
+    upgradeToVenueManager,
     isAdmin: authState.user?.role === 'admin',
+    isVenueManager: authState.user?.role === 'venue_manager',
     isLoginLoading: loginMutation.isPending,
     isRegisterLoading: registerMutation.isPending,
     isUpdateLoading: updateProfileMutation.isPending,

@@ -46,7 +46,8 @@ export const [UsersProvider, useUsers] = createContextHook(() => {
       console.log('[Users] Loading users...');
       
       try {
-        const serverUsers = await usersApi.getAll();
+        const result = await usersApi.getAll();
+        const serverUsers = result.users ?? result;
         if (serverUsers.length > 0) {
           await AsyncStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(serverUsers));
           const storedFollows = await AsyncStorage.getItem(FOLLOWS_STORAGE_KEY);
@@ -163,14 +164,9 @@ export const [UsersProvider, useUsers] = createContextHook(() => {
   const verifyUserMutation = useMutation({
     mutationFn: async (userId: string) => {
       console.log('[Users] Verifying user:', userId);
-      
-      try {
-        await usersApi.update(userId, { isVerified: true });
-      } catch (e) {
-        console.log('[Users] Supabase verify failed, using local');
-      }
-      
-      const updatedUsers = users.map(u => u.id === userId ? { ...u, isVerified: true } : u);
+
+      const verifiedUser = await usersApi.update(userId, { isVerified: true });
+      const updatedUsers = users.map(u => (u.id === userId ? { ...u, ...verifiedUser, isVerified: true } : u));
       await saveUsers(updatedUsers);
     },
   });

@@ -5,17 +5,21 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Trophy, Calendar, MapPin, Users, Award, DollarSign, UserMinus, CheckCircle, ChevronRight, Settings, Clock, Shield, Zap, Target, Share2, Info, Flame, TrendingUp, Search, Star } from 'lucide-react-native';
+import { ArrowLeft, Trophy, Calendar, MapPin, Users, Award, DollarSign, UserMinus, CheckCircle, ChevronRight, Settings, Clock, Shield, Zap, Target, Share2, Info, Flame, TrendingUp, Search, Star, CreditCard, FileText } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { Avatar } from '@/components/Avatar';
+import { PaymentInstructions } from '@/components/PaymentInstructions';
+import { PaymentSubmissionModal } from '@/components/PaymentSubmissionModal';
+import { TeamStatusBadge } from '@/components/TeamStatusBadge';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
 import { useTeams } from '@/contexts/TeamsContext';
 import { tournamentsApi } from '@/lib/api/tournaments';
+import { tournamentTeamsApi, tournamentPaymentsApi } from '@/lib/api/tournament-payments';
 import { sportLabels, levelLabels } from '@/mocks/data';
-import type { Tournament, Match } from '@/types';
+import type { Tournament, Match, TournamentTeam, PaymentMethod } from '@/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -30,6 +34,9 @@ export default function TournamentDetailScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showPaymentInstructions, setShowPaymentInstructions] = useState(false);
+  const [showPaymentSubmission, setShowPaymentSubmission] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>('wave');
   useEffect(() => {
     if (!successMessage) return;
     const t = setTimeout(() => setSuccessMessage(null), 2500);
@@ -42,6 +49,28 @@ export default function TournamentDetailScreen() {
   });
   const tournamentMatches: Match[] = tournamentMatchesQuery.data ?? [];
 
+  // Récupérer les équipes inscrites avec leurs statuts
+  const tournamentTeamsQuery = useQuery({
+    queryKey: ['tournament-teams', id],
+    queryFn: () => tournamentTeamsApi.getTournamentTeams(id!),
+    enabled: !!id,
+  });
+  const tournamentTeams: TournamentTeam[] = tournamentTeamsQuery.data ?? [];
+
+  // Récupérer le statut de paiement de l'équipe de l'utilisateur
+  const myTeamInTournament = useMemo(() => {
+    if (!user) return null;
+    const myTeams = getUserTeams(user.id).filter(t => t.captainId === user.id);
+    return tournamentTeams.find(tt => myTeams.some(mt => mt.id === tt.teamId));
+  }, [user, tournamentTeams, getUserTeams]);
+
+  const myPaymentQuery = useQuery({
+    queryKey: ['my-payment', id, myTeamInTournament?.teamId],
+    queryFn: () => tournamentPaymentsApi.getPayment(id!, myTeamInTournament!.teamId),
+    enabled: !!id && !!myTeamInTournament,
+  });
+  const myPayment = myPaymentQuery.data;
+
   const onRefreshDetail = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -51,10 +80,14 @@ export default function TournamentDetailScreen() {
         setFetchedTournament(t);
       }
       await tournamentMatchesQuery?.refetch?.();
+      await tournamentTeamsQuery?.refetch?.();
+      if (myTeamInTournament) {
+        await myPaymentQuery?.refetch?.();
+      }
     } finally {
       setRefreshing(false);
     }
-  }, [id, refetchTournaments, tournamentMatchesQuery]);
+  }, [id, refetchTournaments, tournamentMatchesQuery, tournamentTeamsQuery, myTeamInTournament, myPaymentQuery]);
 
   useFocusEffect(
     useCallback(() => {
@@ -110,9 +143,35 @@ export default function TournamentDetailScreen() {
   }, [id, fromContext]);
 
   const tournament = fromContext ?? fetchedTournament;
+  const registeredTeamIds = useMemo(
+    () => (tournamentTeamsQuery.isSuccess ? tournamentTeams.map((tt) => tt.teamId) : (tournament?.registeredTeams ?? [])),
+    [tournamentTeamsQuery.isSuccess, tournamentTeams, tournament?.registeredTeams]
+  );
+  const teamStatusById = useMemo(
+    () => new Map(tournamentTeams.map((tt) => [tt.teamId, tt.status] as const)),
+    [tournamentTeams]
+  );
+  const activeRegisteredTeamIds = useMemo(
+    () => (
+      tournamentTeamsQuery.isSuccess
+        ? tournamentTeams
+            .filter((tt) => tt.status !== 'rejected' && tt.status !== 'cancelled')
+            .map((tt) => tt.teamId)
+        : registeredTeamIds
+    ),
+    [tournamentTeamsQuery.isSuccess, tournamentTeams, registeredTeamIds]
+  );
+  const reservedSpots = useMemo(
+    () => (
+      tournamentTeamsQuery.isSuccess
+        ? tournamentTeams.filter((tt) => tt.status === 'confirmed' || tt.status === 'payment_submitted').length
+        : registeredTeamIds.length
+    ),
+    [tournamentTeamsQuery.isSuccess, tournamentTeams, registeredTeamIds.length]
+  );
   const teamsWhereCaptain = user ? getUserTeams(user.id).filter((t) => t.captainId === user.id) : [];
   const canRegisterTeam = tournament?.status === 'registration' && teamsWhereCaptain.length > 0;
-  const teamAlreadyRegistered = (tid: string) => (tournament?.registeredTeams ?? []).includes(tid);
+  const teamAlreadyRegistered = (tid: string) => activeRegisteredTeamIds.includes(tid);
   const teamsEligibleToRegister = teamsWhereCaptain.filter((t) => !teamAlreadyRegistered(t.id));
   const isCreatorOrAdmin = user && tournament && (
     tournament.createdBy === user.id
@@ -128,8 +187,8 @@ export default function TournamentDetailScreen() {
       router.replace('/tournaments' as any);
     }
   }, [router]);
-  const isFull = tournament ? (tournament.registeredTeams?.length ?? 0) >= tournament.maxTeams : false;
-  const userIsRegistered = !!(user && tournament && (tournament.registeredTeams ?? []).some((tid) => getTeamById(tid)?.captainId === user.id));
+  const isFull = tournament ? reservedSpots >= tournament.maxTeams : false;
+  const userIsRegistered = !!(user && (myTeamInTournament || activeRegisteredTeamIds.some((tid) => getTeamById(tid)?.captainId === user.id)));
   const joinLabel = teamsEligibleToRegister.length === 1
     ? `Inscrire ${teamsEligibleToRegister[0].name}`
     : teamsEligibleToRegister.length > 1
@@ -304,12 +363,13 @@ export default function TournamentDetailScreen() {
         onPress: async () => {
           try {
             await unregisterTeam({ tournamentId: tournament.id, teamId });
+            await tournamentTeamsQuery.refetch();
             await refetchTournaments();
             if (id) {
               const updated = await tournamentsApi.getById(id).catch(() => null);
               if (updated) setFetchedTournament(updated);
             }
-            setSuccessMessage('Équipe désinscrite.');
+            setSuccessMessage('Équipe retirée du tournoi.');
           } catch (e: unknown) {
             Alert.alert('Erreur', getErrorMessage(e));
           }
@@ -361,11 +421,11 @@ export default function TournamentDetailScreen() {
   const [descExpanded, setDescExpanded] = useState(false);
   const descIsLong = (tournament.description?.length ?? 0) > 150;
 
-  const heroGradient: string[] = tournament.status === 'completed'
+  const heroGradient: [string, string] = tournament.status === 'completed'
     ? ['#7C3AED', '#6366F1']
     : tournament.status === 'in_progress'
       ? ['#059669', '#10B981']
-      : ['#EA580C', '#F97316'];
+      : ['#EA580C', '#FB923C'];
 
   const completedCount = tournamentMatches.filter(m => m.status === 'completed').length;
   const liveCount = tournamentMatches.filter(m => m.status === 'in_progress').length;
@@ -384,7 +444,7 @@ export default function TournamentDetailScreen() {
   }, [liveCount, pulseAnim]);
 
   const registrationPct = tournament.maxTeams > 0
-    ? Math.round(((tournament.registeredTeams ?? []).length / tournament.maxTeams) * 100)
+    ? Math.round((reservedSpots / tournament.maxTeams) * 100)
     : 0;
 
   const sortedMatches = [...tournamentMatches].sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
@@ -422,7 +482,15 @@ export default function TournamentDetailScreen() {
   });
 
   // Tournament statistics dashboard
-  const tournamentStats = useMemo(() => {
+  type TournamentStats = {
+    totalGoals: number;
+    avgGoals: string;
+    biggestWin: { match: Match; diff: number } | null;
+    progressPct: number;
+    completedMatches: number;
+  };
+
+  const tournamentStats = useMemo<TournamentStats>(() => {
     const completedMatches = tournamentMatches.filter(m => m.status === 'completed' && m.score != null);
     const totalGoals = completedMatches.reduce((sum, m) => sum + (m.score?.home ?? 0) + (m.score?.away ?? 0), 0);
     const avgGoals = completedMatches.length > 0 ? (totalGoals / completedMatches.length).toFixed(1) : '0';
@@ -450,14 +518,25 @@ export default function TournamentDetailScreen() {
   // Team search in teams tab
   const [teamSearch, setTeamSearch] = useState('');
   const filteredTeams = useMemo(() => {
-    const teams = tournament.registeredTeams ?? [];
+    const teams = registeredTeamIds;
     if (!teamSearch.trim()) return teams;
     const q = teamSearch.toLowerCase();
     return teams.filter((tid: string) => {
       const t = getTeamById(tid);
       return t?.name?.toLowerCase().includes(q);
     });
-  }, [tournament.registeredTeams, teamSearch, getTeamById]);
+  }, [registeredTeamIds, teamSearch, getTeamById]);
+
+  const handlePaymentSuccess = useCallback(async () => {
+    await Promise.all([
+      tournamentTeamsQuery.refetch(),
+      myPaymentQuery.refetch(),
+      refetchTournaments(),
+    ]);
+    setShowPaymentSubmission(false);
+    setShowPaymentInstructions(false);
+    setSuccessMessage('Paiement soumis. En attente de validation admin.');
+  }, [tournamentTeamsQuery, myPaymentQuery, refetchTournaments]);
 
   return (
     <>
@@ -534,7 +613,7 @@ export default function TournamentDetailScreen() {
                   </View>
                 )}
                 <View style={styles.heroStatsRow}>
-                  <View style={styles.heroStat}><Text style={styles.heroStatValue}>{(tournament.registeredTeams ?? []).length}/{tournament.maxTeams}</Text><Text style={styles.heroStatLabel}>équipes</Text></View>
+                  <View style={styles.heroStat}><Text style={styles.heroStatValue}>{reservedSpots}/{tournament.maxTeams}</Text><Text style={styles.heroStatLabel}>équipes</Text></View>
                   {hasMatches && <View style={styles.heroStat}><Text style={styles.heroStatValue}>{tournamentMatches.length}</Text><Text style={styles.heroStatLabel}>matchs</Text></View>}
                   {completedCount > 0 && <View style={styles.heroStat}><Text style={styles.heroStatValue}>{completedCount}</Text><Text style={styles.heroStatLabel}>joués</Text></View>}
                   {tournamentStats.totalGoals > 0 && <View style={styles.heroStat}><Text style={styles.heroStatValue}>{tournamentStats.totalGoals}</Text><Text style={styles.heroStatLabel}>buts</Text></View>}
@@ -545,7 +624,7 @@ export default function TournamentDetailScreen() {
                     <View style={styles.progressBarRow}>
                       <Text style={styles.progressBarText}>{registrationPct >= 100 ? 'Complet' : `${registrationPct}% rempli`}</Text>
                       {registrationPct >= 80 && registrationPct < 100 && (
-                        <Text style={styles.urgencyText}>Plus que {tournament.maxTeams - (tournament.registeredTeams ?? []).length} place{tournament.maxTeams - (tournament.registeredTeams ?? []).length > 1 ? 's' : ''} !</Text>
+                        <Text style={styles.urgencyText}>Plus que {Math.max(tournament.maxTeams - reservedSpots, 0)} place{Math.max(tournament.maxTeams - reservedSpots, 0) > 1 ? 's' : ''} !</Text>
                       )}
                     </View>
                   </View>
@@ -724,7 +803,7 @@ export default function TournamentDetailScreen() {
                     {userIsRegistered ? (
                       <View style={styles.dejaInscritBadge}><CheckCircle size={18} color={Colors.status.success} /><Text style={styles.dejaInscritText}>Votre équipe est inscrite</Text></View>
                     ) : isFull ? (
-                      <View style={styles.fullBadge}><Text style={styles.fullBadgeText}>Complet ({tournament.registeredTeams.length}/{tournament.maxTeams})</Text></View>
+                      <View style={styles.fullBadge}><Text style={styles.fullBadgeText}>Complet ({reservedSpots}/{tournament.maxTeams})</Text></View>
                     ) : !user ? (
                       <Text style={styles.actionsMutedText}>Connectez-vous pour rejoindre.</Text>
                     ) : (
@@ -1054,18 +1133,81 @@ export default function TournamentDetailScreen() {
                 <View style={styles.teamsSummaryRow}>
                   <View style={styles.teamsSummaryChip}>
                     <Users size={14} color={Colors.primary.blue} />
-                    <Text style={styles.teamsSummaryText}>{(tournament.registeredTeams ?? []).length}/{tournament.maxTeams} équipes</Text>
+                    <Text style={styles.teamsSummaryText}>{reservedSpots}/{tournament.maxTeams} places réservées</Text>
                   </View>
                   {registrationPct >= 100 && <View style={[styles.teamsSummaryChip, { backgroundColor: Colors.status.error + '15' }]}><Text style={[styles.teamsSummaryText, { color: Colors.status.error }]}>Complet</Text></View>}
                   {registrationPct < 100 && tournament.status === 'registration' && (
                     <View style={[styles.teamsSummaryChip, { backgroundColor: Colors.status.success + '15' }]}>
-                      <Text style={[styles.teamsSummaryText, { color: Colors.status.success }]}>{tournament.maxTeams - (tournament.registeredTeams ?? []).length} place{tournament.maxTeams - (tournament.registeredTeams ?? []).length > 1 ? 's' : ''} restante{tournament.maxTeams - (tournament.registeredTeams ?? []).length > 1 ? 's' : ''}</Text>
+                      <Text style={[styles.teamsSummaryText, { color: Colors.status.success }]}>{Math.max(tournament.maxTeams - reservedSpots, 0)} place{Math.max(tournament.maxTeams - reservedSpots, 0) > 1 ? 's' : ''} restante{Math.max(tournament.maxTeams - reservedSpots, 0) > 1 ? 's' : ''}</Text>
                     </View>
                   )}
                 </View>
 
+                {!!myTeamInTournament && (
+                  <Card style={styles.paymentPanelCard}>
+                    <View style={styles.paymentPanelHeader}>
+                      <View style={styles.paymentPanelTitleRow}>
+                        <CreditCard size={16} color={Colors.primary.orange} />
+                        <Text style={styles.sectionTitle}>Paiement d'inscription</Text>
+                      </View>
+                      <TeamStatusBadge status={myTeamInTournament.status} size="small" />
+                    </View>
+
+                    {myTeamInTournament.status === 'pending_payment' && (
+                      <>
+                        {!showPaymentInstructions ? (
+                          <Button
+                            title="Voir les instructions de paiement"
+                            onPress={() => setShowPaymentInstructions(true)}
+                            variant="outline"
+                          />
+                        ) : (
+                          <View style={styles.paymentInstructionsWrap}>
+                            <PaymentInstructions
+                              amount={tournament.entryFee}
+                              tournamentName={tournament.name}
+                              teamName={getTeamById(myTeamInTournament.teamId)?.name || 'Mon équipe'}
+                              onMethodSelect={setSelectedPaymentMethod}
+                            />
+                            <Button
+                              title="J'ai payé"
+                              onPress={() => setShowPaymentSubmission(true)}
+                              variant="orange"
+                              style={styles.paymentSubmitBtn}
+                            />
+                          </View>
+                        )}
+                      </>
+                    )}
+
+                    {myTeamInTournament.status === 'payment_submitted' && (
+                      <Text style={styles.paymentInfoText}>
+                        Paiement soumis{myPayment?.createdAt ? ` le ${new Date(myPayment.createdAt).toLocaleDateString('fr-FR')}` : ''}. En attente de validation par un administrateur.
+                      </Text>
+                    )}
+
+                    {myTeamInTournament.status === 'confirmed' && (
+                      <Text style={[styles.paymentInfoText, { color: Colors.status.success }]}>Paiement validé. Votre équipe est confirmée pour le tournoi.</Text>
+                    )}
+
+                    {(myTeamInTournament.status === 'rejected' || myTeamInTournament.status === 'cancelled') && (
+                      <View style={styles.paymentRejectedWrap}>
+                        <Text style={[styles.paymentInfoText, { color: Colors.status.error }]}>Votre paiement a été refusé ou expiré. Vous pouvez soumettre une nouvelle preuve.</Text>
+                        <Button
+                          title="Soumettre une nouvelle preuve"
+                          onPress={() => {
+                            setShowPaymentInstructions(true);
+                            setShowPaymentSubmission(true);
+                          }}
+                          variant="outline"
+                        />
+                      </View>
+                    )}
+                  </Card>
+                )}
+
                 {/* Search */}
-                {(tournament.registeredTeams ?? []).length > 4 && (
+                {registeredTeamIds.length > 4 && (
                   <View style={styles.teamSearchWrap}>
                     <Search size={14} color={Colors.text.muted} />
                     <TextInput
@@ -1079,45 +1221,53 @@ export default function TournamentDetailScreen() {
                 )}
 
                 {(() => {
-                  const myTeamIn = user && (tournament.registeredTeams ?? []).some((tid: string) => getTeamById(tid)?.captainId === user.id);
+                  const myTeamIn = user && registeredTeamIds.some((tid: string) => getTeamById(tid)?.captainId === user.id);
                   return myTeamIn ? <View style={styles.inscritBadge}><CheckCircle size={14} color={Colors.status.success} /><Text style={styles.inscritBadgeText}>Vous êtes inscrit</Text></View> : null;
                 })()}
 
                 {filteredTeams.length > 0 ? (
                   filteredTeams.map((teamId: string) => {
                     const team = getTeamById(teamId);
-                    const isMyTeam = user && team?.captainId === user.id;
+                    const isMyTeam = !!(user && team?.captainId === user.id);
                     const canUnregister = tournament.status === 'registration' && (isMyTeam || canManage);
+                    const teamStatus = teamStatusById.get(teamId);
                     const standing = standings.find(s => s.teamId === teamId);
                     const rank = standings.findIndex(s => s.teamId === teamId);
                     return (
                       <Card key={teamId} style={[styles.teamCard, isMyTeam && styles.teamCardMine]}>
-                        <TouchableOpacity style={styles.registeredTeamRow} onPress={() => router.push(`/team/${teamId}` as any)} activeOpacity={0.7}>
-                          <Avatar uri={team?.logo} name={team?.name} size="small" />
-                          <View style={styles.registeredTeamInfo}>
-                            <View style={styles.teamNameRow}>
-                              <Text style={styles.registeredTeamName}>{team?.name ?? `Équipe ${teamId.slice(0, 8)}`}</Text>
-                              {isMyTeam && <View style={styles.myTeamBadge}><Text style={styles.myTeamBadgeText}>Mon équipe</Text></View>}
-                              {rank === 0 && standings.length > 0 && <Trophy size={12} color="#FFD700" />}
-                            </View>
-                            {standing != null ? (
-                              <View style={styles.teamStatsLine}>
-                                <Text style={styles.teamRankBadge}>{rank + 1}e</Text>
-                                <Text style={styles.registeredTeamMeta}>{standing.points} pts</Text>
-                                <View style={styles.teamMiniBar}>
-                                  <View style={[styles.teamMiniBarWin, { flex: standing.wins || 0.01 }]} />
-                                  <View style={[styles.teamMiniBarDraw, { flex: standing.draws || 0.01 }]} />
-                                  <View style={[styles.teamMiniBarLoss, { flex: standing.losses || 0.01 }]} />
-                                </View>
-                                <Text style={styles.teamWDL}>{standing.wins}V {standing.draws}N {standing.losses}D</Text>
+                        <View style={styles.registeredTeamRow}>
+                          <TouchableOpacity style={styles.registeredTeamMain} onPress={() => router.push(`/team/${teamId}` as any)} activeOpacity={0.7}>
+                            <Avatar uri={team?.logo} name={team?.name} size="small" />
+                            <View style={styles.registeredTeamInfo}>
+                              <View style={styles.teamNameRow}>
+                                <Text style={styles.registeredTeamName}>{team?.name ?? `Équipe ${teamId.slice(0, 8)}`}</Text>
+                                {isMyTeam && <View style={styles.myTeamBadge}><Text style={styles.myTeamBadgeText}>Mon équipe</Text></View>}
+                                {rank === 0 && standings.length > 0 && <Trophy size={12} color="#FFD700" />}
                               </View>
-                            ) : (
-                              <Text style={styles.registeredTeamMeta}>{team?.members?.length ?? 0} joueurs</Text>
-                            )}
-                          </View>
-                          {canUnregister && <TouchableOpacity style={styles.unregisterBtn} onPress={(e) => { e?.stopPropagation?.(); handleUnregister(teamId); }}><UserMinus size={14} color={Colors.status.error} /></TouchableOpacity>}
+                              {teamStatus && <TeamStatusBadge status={teamStatus} size="small" />}
+                              {standing != null ? (
+                                <View style={styles.teamStatsLine}>
+                                  <Text style={styles.teamRankBadge}>{rank + 1}e</Text>
+                                  <Text style={styles.registeredTeamMeta}>{standing.points} pts</Text>
+                                  <View style={styles.teamMiniBar}>
+                                    <View style={[styles.teamMiniBarWin, { flex: standing.wins || 0.01 }]} />
+                                    <View style={[styles.teamMiniBarDraw, { flex: standing.draws || 0.01 }]} />
+                                    <View style={[styles.teamMiniBarLoss, { flex: standing.losses || 0.01 }]} />
+                                  </View>
+                                  <Text style={styles.teamWDL}>{standing.wins}V {standing.draws}N {standing.losses}D</Text>
+                                </View>
+                              ) : (
+                                <Text style={styles.registeredTeamMeta}>{team?.members?.length ?? 0} joueurs</Text>
+                              )}
+                            </View>
+                          </TouchableOpacity>
+                          {canUnregister && (
+                            <TouchableOpacity style={styles.unregisterBtn} onPress={() => handleUnregister(teamId)}>
+                              <UserMinus size={14} color={Colors.status.error} />
+                            </TouchableOpacity>
+                          )}
                           <ChevronRight size={14} color={Colors.text.muted} />
-                        </TouchableOpacity>
+                        </View>
                       </Card>
                     );
                   })
@@ -1149,6 +1299,23 @@ export default function TournamentDetailScreen() {
               </LinearGradient>
             </TouchableOpacity>
 
+            {canManage && (tournament.entryFee ?? 0) > 0 && (
+              <TouchableOpacity
+                style={styles.manageTournamentBtn}
+                onPress={() => router.push(`/tournament/${tournament.id}/advance-payout-request` as any)}
+                activeOpacity={0.8}
+              >
+                <LinearGradient colors={[Colors.status.warning + '22', Colors.status.warning + '10']} style={styles.manageBtnGradient}>
+                  <FileText size={20} color={Colors.status.warning} />
+                  <View style={styles.manageTournamentBtnContent}>
+                    <Text style={styles.manageTournamentBtnText}>Demander une avance</Text>
+                    <Text style={styles.manageTournamentBtnSubtext}>Soumettre une demande de reversement anticipé</Text>
+                  </View>
+                  <ChevronRight size={20} color={Colors.text.muted} />
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+
             <View style={styles.bottomSpacer} />
           </ScrollView>
 
@@ -1170,6 +1337,18 @@ export default function TournamentDetailScreen() {
                 <Text style={styles.footerMutedText}>Seul le capitaine d&apos;une équipe peut l&apos;inscrire.</Text>
               )}
             </View>
+          )}
+
+          {myTeamInTournament && (
+            <PaymentSubmissionModal
+              visible={showPaymentSubmission}
+              onClose={() => setShowPaymentSubmission(false)}
+              tournamentId={tournament.id}
+              teamId={myTeamInTournament.teamId}
+              amount={tournament.entryFee}
+              method={selectedPaymentMethod}
+              onSuccess={handlePaymentSuccess}
+            />
           )}
         </SafeAreaView>
       </View>
@@ -1474,6 +1653,13 @@ const styles = StyleSheet.create({
   teamsSummaryRow: { flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' },
   teamsSummaryChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.background.card, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12 },
   teamsSummaryText: { color: Colors.text.primary, fontSize: 12, fontWeight: '600' as const },
+  paymentPanelCard: { marginBottom: 12, padding: 12, gap: 12 },
+  paymentPanelHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  paymentPanelTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  paymentInstructionsWrap: { gap: 12 },
+  paymentSubmitBtn: { marginTop: 4 },
+  paymentInfoText: { color: Colors.text.secondary, fontSize: 13, lineHeight: 18 },
+  paymentRejectedWrap: { gap: 10 },
   teamSearchWrap: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.background.card, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, borderWidth: 1, borderColor: Colors.border.light },
   teamSearchInput: { flex: 1, color: Colors.text.primary, fontSize: 14, padding: 0 },
   teamsCard: { marginBottom: 12 },
@@ -1484,6 +1670,7 @@ const styles = StyleSheet.create({
   inscritBadgeText: { color: Colors.status.success, fontSize: 12, fontWeight: '600' as const },
   teamAvatar: { marginRight: 10 },
   registeredTeamRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  registeredTeamMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   registeredTeamInfo: { flex: 1 },
   teamNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   registeredTeamName: { color: Colors.text.primary, fontSize: 14, fontWeight: '600' as const },

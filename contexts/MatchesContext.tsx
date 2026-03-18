@@ -8,7 +8,8 @@ import { matchesApi } from '@/lib/api/matches';
 import { venuesApi } from '@/lib/api/venues';
 import { useAuth } from './AuthContext';
 
-const MATCHES_REFETCH_INTERVAL_MS = 15_000;
+const MATCHES_REFETCH_INTERVAL_MS = 60_000;
+const VENUES_REFETCH_INTERVAL_MS = 30_000;
 
 const MATCHES_STORAGE_KEY = 'vs_matches';
 
@@ -85,12 +86,15 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
       console.log('[Matches] Loading venues...');
       try {
         const serverVenues = await venuesApi.getAll();
-        if (serverVenues.length > 0) return serverVenues;
+        return serverVenues.filter((v) => v.isActive !== false);
       } catch (e) {
         console.log('[Matches] Venues fetch failed');
       }
       return [];
     },
+    staleTime: 15 * 1000,
+    refetchInterval: isAppActive ? VENUES_REFETCH_INTERVAL_MS : false,
+    refetchIntervalInBackground: false,
   });
 
   useEffect(() => {

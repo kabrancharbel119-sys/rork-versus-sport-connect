@@ -10,6 +10,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
 import { useMatches } from '@/contexts/MatchesContext';
 import { useTeams } from '@/contexts/TeamsContext';
+import { venuesApi } from '@/lib/api/venues';
+import { useQuery } from '@tanstack/react-query';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { Sport, SkillLevel, Venue } from '@/types';
@@ -94,14 +96,25 @@ const VENUE_SUGGESTIONS: { name: string; city: string }[] = [
 
 export default function CreateTournamentScreen() {
   const router = useRouter();
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isVenueManager } = useAuth();
   const { createTournament, isCreating, refetchTournaments } = useTournaments();
-  const { venues } = useMatches();
+  const { venues: allVenues } = useMatches();
   const { getUserTeams } = useTeams();
+
+  // Charger les terrains du gestionnaire si c'est un gestionnaire de terrain
+  const myVenuesQuery = useQuery({
+    queryKey: ['myVenues', user?.id],
+    queryFn: () => venuesApi.getByOwner(user!.id),
+    enabled: !!user?.id && isVenueManager,
+  });
+
+  // Utiliser les terrains du gestionnaire ou tous les terrains selon le rôle
+  const venues = isVenueManager ? (myVenuesQuery.data || []) : allVenues;
 
   const canCreateTournament = (() => {
     if (!user) return false;
     if (isAdmin) return true;
+    if (isVenueManager) return true;
     const myTeams = getUserTeams(user.id);
     return myTeams.some((t) => t.captainId === user.id && (t.members?.length ?? 0) >= MIN_MEMBERS_TO_CREATE_TOURNAMENT);
   })();
@@ -137,6 +150,7 @@ export default function CreateTournamentScreen() {
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const isPaidTournament = (parseInt(formData.entryFee || '0', 10) || 0) > 0;
 
   // Synchroniser le lieu par défaut quand les lieux sont chargés
   useEffect(() => {
@@ -155,9 +169,8 @@ export default function CreateTournamentScreen() {
   }, [sportSearch]);
 
   const filteredVenues = useMemo(() => {
-    const allVenues = venues;
-    if (!venueSearch.trim()) return allVenues;
-    return allVenues.filter(v =>
+    if (!venueSearch.trim()) return venues;
+    return venues.filter(v =>
       v.name.toLowerCase().includes(venueSearch.toLowerCase()) ||
       v.city.toLowerCase().includes(venueSearch.toLowerCase())
     );
@@ -400,6 +413,16 @@ export default function CreateTournamentScreen() {
           />
         </View>
       </View>
+
+      {isPaidTournament && (
+        <View style={styles.paymentDisclaimerBox}>
+          <Text style={styles.paymentDisclaimerTitle}>⚠️ Informations importantes sur les paiements</Text>
+          <Text style={styles.paymentDisclaimerText}>
+            Pour des raisons de sécurité, les frais d’inscription ne sont pas reversés automatiquement et directement aux organisateurs.
+            Un reversement anticipé peut être accordé sous certaines conditions, uniquement après une demande et une validation administrateur.
+          </Text>
+        </View>
+      )}
 
       <Input
         scrollViewRef={scrollViewRef}
@@ -646,6 +669,13 @@ export default function CreateTournamentScreen() {
           <Text style={styles.summaryLabel}>Inscription:</Text>
           <Text style={styles.summaryValue}>{parseInt(formData.entryFee || '0').toLocaleString()} FCFA</Text>
         </View>
+        {isPaidTournament && (
+          <View style={styles.summaryDisclaimerWrap}>
+            <Text style={styles.summaryDisclaimerText}>
+              Reversement organisateur: non automatique. Les avances sont traitées uniquement après approbation admin.
+            </Text>
+          </View>
+        )}
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Cagnotte:</Text>
           <Text style={[styles.summaryValue, styles.prizeValue]}>{parseInt(formData.prizePool || '0').toLocaleString()} FCFA</Text>
@@ -1020,6 +1050,16 @@ const styles = StyleSheet.create({
   rowInputs: { flexDirection: 'row', gap: 12 },
   halfInput: { flex: 1 },
   prizesPreview: { backgroundColor: Colors.background.card, borderRadius: 12, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: Colors.border.light },
+  paymentDisclaimerBox: {
+    backgroundColor: Colors.primary.orange + '12',
+    borderColor: Colors.primary.orange + '30',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  paymentDisclaimerTitle: { color: Colors.primary.orange, fontSize: 13, fontWeight: '700' as const, marginBottom: 6 },
+  paymentDisclaimerText: { color: Colors.text.secondary, fontSize: 12, lineHeight: 18 },
   prizesTitle: { color: Colors.text.primary, fontSize: 14, fontWeight: '600' as const, marginBottom: 12 },
   prizeRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
   prizePosition: { color: Colors.text.secondary, fontSize: 14 },
@@ -1043,6 +1083,14 @@ const styles = StyleSheet.create({
   summaryCard: { backgroundColor: Colors.background.card, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: Colors.border.light },
   summaryTitle: { color: Colors.text.primary, fontSize: 16, fontWeight: '600' as const, marginBottom: 16 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
+  summaryDisclaimerWrap: {
+    backgroundColor: Colors.primary.orange + '12',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  summaryDisclaimerText: { color: Colors.text.secondary, fontSize: 12, lineHeight: 17 },
   summaryLabel: { color: Colors.text.muted, fontSize: 14 },
   summaryValue: { color: Colors.text.primary, fontSize: 14, fontWeight: '500' as const },
   prizeValue: { color: Colors.primary.orange },

@@ -25,9 +25,10 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('[ErrorBoundary] Caught error:', error);
+    console.error('[ErrorBoundary] ERROR MESSAGE:', error?.message || 'No message');
+    console.error('[ErrorBoundary] ERROR NAME:', error?.name || 'No name');
+    console.error('[ErrorBoundary] ERROR STACK:', error?.stack || 'No stack');
     console.error('[ErrorBoundary] Component stack:', errorInfo.componentStack);
-    console.error('[ErrorBoundary] Error info:', errorInfo);
     reportError(error);
   }
 

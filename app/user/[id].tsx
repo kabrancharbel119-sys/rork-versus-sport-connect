@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,6 +10,7 @@ import type { Team, User } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { useTeams } from '@/contexts/TeamsContext';
+import { useNotifications } from '@/contexts/NotificationsContext';
 import { usersApi } from '@/lib/api/users';
 import { teamsApi } from '@/lib/api/teams';
 import { Avatar } from '@/components/Avatar';
@@ -20,12 +21,22 @@ import { sportLabels, levelLabels } from '@/mocks/data';
 
 export default function UserProfileScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, fromTeamRequest, teamId, requestId } = useLocalSearchParams<{
+    id: string;
+    fromTeamRequest?: string;
+    teamId?: string;
+    requestId?: string;
+  }>();
   const { user: currentUser } = useAuth();
   const { getUserById, isFollowing, follow, unfollow, getFollowers, getFollowing } = useUsers();
-  const { getUserTeams, getTeamById } = useTeams();
+  const { teams, getUserTeams, getTeamById, handleRequest, refetchTeams } = useTeams();
+  const { notifyTeamRequest } = useNotifications();
+  const [isHandlingRequest, setIsHandlingRequest] = useState(false);
 
-  const profileUserId = id || '';
+  const profileUserId = (typeof id === 'string' ? id : Array.isArray(id) ? id[0] : '') || '';
+  const requestFlowFlag = (typeof fromTeamRequest === 'string' ? fromTeamRequest : Array.isArray(fromTeamRequest) ? fromTeamRequest[0] : '') || '';
+  const requestTeamParam = (typeof teamId === 'string' ? teamId : Array.isArray(teamId) ? teamId[0] : '') || '';
+  const requestIdParam = (typeof requestId === 'string' ? requestId : Array.isArray(requestId) ? requestId[0] : '') || '';
 
   const { data: fetchedUser } = useQuery({
     queryKey: ['profileUser', profileUserId],
@@ -49,9 +60,58 @@ export default function UserProfileScreen() {
     staleTime: 0,
   });
 
-  const isOwnProfile = currentUser?.id === id;
+  const requestTeamId = requestTeamParam;
+  const contextRequestTeam = requestTeamId ? getTeamById(requestTeamId) : undefined;
+  const { data: fetchedRequestTeam } = useQuery({
+    queryKey: ['requestFlowTeam', requestTeamId],
+    queryFn: () => teamsApi.getById(requestTeamId),
+    enabled: requestFlowFlag === '1' && !!requestTeamId && !contextRequestTeam,
+    staleTime: 0,
+  });
+
+  const fallbackRequestTeam = useMemo(() => {
+    if (!currentUser) return undefined;
+    return teams.find((t) => {
+      if (t.captainId !== currentUser.id) return false;
+      return t.joinRequests.some((r) => {
+        if (r.userId !== profileUserId) return false;
+        if (requestIdParam) return r.id === requestIdParam;
+        return r.status === 'pending' || r.status === 'waiting';
+      });
+    });
+  }, [teams, currentUser, profileUserId, requestIdParam]);
+
+  const isOwnProfile = currentUser?.id === profileUserId;
   const following = currentUser ? isFollowing(currentUser.id, profileUserId) : false;
   const userTeamsFromContext = getUserTeams(profileUserId);
+  const requestTeam = contextRequestTeam ?? fetchedRequestTeam ?? fallbackRequestTeam;
+  const canCaptainHandleRequest = !!currentUser && !!requestTeam && requestTeam.captainId === currentUser.id;
+  const joinRequest = canCaptainHandleRequest && requestTeam
+    ? requestTeam.joinRequests.find((r) => {
+        if (r.userId !== profileUserId) return false;
+        if (!requestIdParam) return r.status === 'pending' || r.status === 'waiting';
+        return r.id === requestIdParam;
+      })
+    : undefined;
+  const canHandleThisRequest = !!joinRequest && (joinRequest.status === 'pending' || joinRequest.status === 'waiting');
+
+  console.log('[UserProfile] DEBUG BOUTON CAPITAINE:', {
+    profileUserId,
+    currentUserId: currentUser?.id,
+    requestFlowFlag,
+    requestTeamParam,
+    requestIdParam,
+    hasRequestTeam: !!requestTeam,
+    requestTeamId: requestTeam?.id,
+    isCaptain: requestTeam?.captainId === currentUser?.id,
+    canCaptainHandleRequest,
+    hasJoinRequest: !!joinRequest,
+    joinRequestId: joinRequest?.id,
+    joinRequestStatus: joinRequest?.status,
+    canHandleThisRequest,
+    teamsCount: teams.length,
+    fallbackTeamFound: !!fallbackRequestTeam,
+  });
 
   const displayTeams = useMemo(() => {
     const fromApi = fetchedTeams;
@@ -89,6 +149,32 @@ export default function UserProfileScreen() {
 
   const handleMessage = () => {
     Alert.alert('Info', 'Fonctionnalité bientôt disponible');
+  };
+
+  const handleRequestAction = async (action: 'accept' | 'reject') => {
+    if (!currentUser || !requestTeam || !joinRequest) return;
+    try {
+      setIsHandlingRequest(true);
+      await handleRequest({
+        teamId: requestTeam.id,
+        requestId: joinRequest.id,
+        action,
+        handlerId: currentUser.id,
+      });
+      await notifyTeamRequest(
+        requestTeam.name,
+        action === 'accept' ? 'accepted' : 'rejected',
+        requestTeam.id,
+        profileUserId
+      );
+      await refetchTeams();
+      Alert.alert('Succès', action === 'accept' ? 'Demande acceptée' : 'Demande refusée');
+      router.back();
+    } catch (error: any) {
+      Alert.alert('Erreur', error?.message ?? 'Impossible de traiter la demande');
+    } finally {
+      setIsHandlingRequest(false);
+    }
   };
 
   const formatDate = (date: Date) => new Date(date).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
@@ -168,6 +254,28 @@ export default function UserProfileScreen() {
                   <TouchableOpacity style={styles.messageBtn} onPress={handleMessage}>
                     <MessageCircle size={20} color={Colors.primary.blue} />
                   </TouchableOpacity>
+                </View>
+              )}
+              {canHandleThisRequest && (
+                <View style={styles.joinRequestActions}>
+                  <Button
+                    title="Accepter"
+                    onPress={() => handleRequestAction('accept')}
+                    variant="primary"
+                    size="medium"
+                    style={styles.joinRequestBtn}
+                    loading={isHandlingRequest}
+                    disabled={isHandlingRequest}
+                  />
+                  <Button
+                    title="Refuser"
+                    onPress={() => handleRequestAction('reject')}
+                    variant="secondary"
+                    size="medium"
+                    style={styles.joinRequestBtn}
+                    loading={isHandlingRequest}
+                    disabled={isHandlingRequest}
+                  />
                 </View>
               )}
             </View>
@@ -272,6 +380,8 @@ const styles = StyleSheet.create({
   actionButtons: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 24 },
   actionBtn: { minWidth: 140 },
   messageBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.primary.blue },
+  joinRequestActions: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16, width: '100%' },
+  joinRequestBtn: { flex: 1 },
   sectionTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const, marginTop: 24, marginBottom: 16 },
   statsGrid: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   sportCard: { marginBottom: 12 },

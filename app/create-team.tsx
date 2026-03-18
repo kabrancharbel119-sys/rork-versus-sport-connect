@@ -8,6 +8,7 @@ import { X, Users, MapPin, Check, ChevronDown, Search, Shield, Image as ImageIco
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
+import { uploadTeamImage } from '@/lib/uploadImage';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { Avatar } from '@/components/Avatar';
@@ -199,9 +200,29 @@ export default function CreateTeamScreen() {
       return;
     }
     
+    let logoUrl = formData.logo;
+    
+    const shouldUploadLogo =
+      !!logoUrl &&
+      !logoUrl.startsWith('http://') &&
+      !logoUrl.startsWith('https://');
+
+    if (shouldUploadLogo) {
+      console.log('[CreateTeam] Uploading local image to Supabase Storage...');
+      try {
+        const tempTeamId = `temp-${Date.now()}`;
+        logoUrl = await uploadTeamImage(logoUrl, tempTeamId);
+        console.log('[CreateTeam] Image uploaded, new URL:', logoUrl);
+      } catch (uploadError) {
+        console.error('[CreateTeam] Failed to upload image:', uploadError);
+        Alert.alert('Erreur', 'Impossible d\'uploader l\'image. Vérifiez votre connexion.');
+        return;
+      }
+    }
+    
     const teamData = {
       name: formData.name.trim(),
-      logo: formData.logo || undefined,
+      logo: logoUrl || undefined,
       sport: formData.sport,
       format: formData.format,
       level: formData.level,

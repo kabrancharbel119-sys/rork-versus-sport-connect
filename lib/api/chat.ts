@@ -6,7 +6,8 @@ export interface ChatRoomRow {
   team_id: string | null;
   name: string;
   type: string;
-  participants: string[];
+  participants?: string[];
+  participant_ids?: string[];
   last_message_id: string | null;
   created_at: string;
 }
@@ -22,15 +23,32 @@ export interface ChatMessageRow {
   created_at: string;
 }
 
+const getRoomParticipants = (row: Partial<ChatRoomRow>) =>
+  (row.participants as string[] | undefined) ||
+  (row.participant_ids as string[] | undefined) ||
+  [];
+
 export const mapChatRoomRowToRoom = (row: ChatRoomRow): ChatRoom => ({
   id: row.id,
   teamId: row.team_id || undefined,
   name: row.name,
   type: row.type as ChatRoom['type'],
-  participants: (row.participants as string[]) || [],
+  participants: getRoomParticipants(row),
   unreadCount: 0,
   createdAt: new Date(row.created_at),
 });
+
+const isMissingParticipantsColumnError = (error: any) => {
+  const message = error?.message || '';
+  const code = error?.code || '';
+  return code === 'PGRST204' && String(message).toLowerCase().includes('participants');
+};
+
+const isMissingParticipantIdsColumnError = (error: any) => {
+  const message = error?.message || '';
+  const code = error?.code || '';
+  return code === 'PGRST204' && String(message).toLowerCase().includes('participant_ids');
+};
 
 export const mapChatMessageRowToMessage = (row: ChatMessageRow): ChatMessage => ({
   id: row.id,
@@ -48,14 +66,45 @@ export const chatApi = {
     console.log('[ChatAPI] Getting rooms for user:', userId);
     const { data, error } = await (supabase
       .from('chat_rooms')
-      .select('*')
+      .select(`
+        *,
+        chat_messages(
+          id,
+          content,
+          type,
+          sender_id,
+          created_at,
+          read_by
+        )
+      `)
       .order('created_at', { ascending: false }) as any);
     
     if (error) throw error;
     
-    const rooms = ((data || []) as ChatRoomRow[])
-      .filter(r => (r.participants || []).includes(userId))
-      .map(row => mapChatRoomRowToRoom(row));
+    const rows = (data || []) as any[];
+    const hasParticipantData = rows.some(r => getRoomParticipants(r).length > 0);
+
+    const rooms = rows
+      .filter(r => !hasParticipantData || getRoomParticipants(r).includes(userId))
+      .map(row => {
+        const room = mapChatRoomRowToRoom(row);
+        // Get the latest message if available
+        if (row.chat_messages && row.chat_messages.length > 0) {
+          const latestMessage = row.chat_messages
+            .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+          
+          room.lastMessage = {
+            id: latestMessage.id,
+            roomId: room.id,
+            senderId: latestMessage.sender_id,
+            content: latestMessage.content,
+            type: latestMessage.type || 'text',
+            createdAt: new Date(latestMessage.created_at),
+            readBy: latestMessage.read_by || [],
+          };
+        }
+        return room;
+      });
     
     return rooms;
   },
@@ -72,8 +121,8 @@ export const chatApi = {
     if (!data) throw new Error('Salon non trouvé');
     
     const row = data as ChatRoomRow;
-    const participants = row.participants || [];
-    if (!participants.includes(userId)) {
+    const participants = getRoomParticipants(row);
+    if (participants.length > 0 && !participants.includes(userId)) {
       throw new Error('Non autorisé');
     }
     
@@ -90,11 +139,13 @@ export const chatApi = {
     
     const q = supabase.from('chat_rooms').select('*').eq('name', roomData.name);
     const query = roomData.teamId != null ? q.eq('team_id', roomData.teamId) : q.is('team_id', null);
-    const { data: existing } = await query.single();
+    const { data: existing } = await (query.maybeSingle() as any);
     
     if (existing) {
       return mapChatRoomRowToRoom(existing as ChatRoomRow);
     }
+
+    const participantIds = [...new Set([userId, ...roomData.participants])];
 
     const { data, error } = await (supabase
       .from('chat_rooms')
@@ -102,11 +153,42 @@ export const chatApi = {
         team_id: roomData.teamId || null,
         name: roomData.name,
         type: roomData.type,
-        participants: [...new Set([userId, ...roomData.participants])],
+        participants: participantIds,
       } as any)
       .select()
       .single() as any);
-    
+
+    if (error && isMissingParticipantsColumnError(error)) {
+      const { data: fallbackData, error: fallbackError } = await (supabase
+        .from('chat_rooms')
+        .insert({
+          team_id: roomData.teamId || null,
+          name: roomData.name,
+          type: roomData.type,
+          participant_ids: participantIds,
+        } as any)
+        .select()
+        .single() as any);
+
+      if (fallbackError) throw fallbackError;
+      return mapChatRoomRowToRoom(fallbackData as ChatRoomRow);
+    }
+
+    if (error && isMissingParticipantIdsColumnError(error)) {
+      const { data: fallbackData, error: fallbackError } = await (supabase
+        .from('chat_rooms')
+        .insert({
+          team_id: roomData.teamId || null,
+          name: roomData.name,
+          type: roomData.type,
+        } as any)
+        .select()
+        .single() as any);
+
+      if (fallbackError) throw fallbackError;
+      return mapChatRoomRowToRoom(fallbackData as ChatRoomRow);
+    }
+
     if (error) throw error;
     return mapChatRoomRowToRoom(data as ChatRoomRow);
   },
@@ -140,10 +222,53 @@ export const chatApi = {
         }
       ] as any)
       .select() as any);
-    
-    if (error) throw error;
 
-    const roomsData = rooms as ChatRoomRow[];
+    let roomsData = rooms as ChatRoomRow[];
+
+    if (error && isMissingParticipantsColumnError(error)) {
+      const { data: fallbackRooms, error: fallbackError } = await (supabase
+        .from('chat_rooms')
+        .insert([
+          {
+            team_id: teamId,
+            name: `${teamName} - Général`,
+            type: 'general',
+            participant_ids: members,
+          },
+          {
+            team_id: teamId,
+            name: `${teamName} - Stratégie`,
+            type: 'strategy',
+            participant_ids: members,
+          }
+        ] as any)
+        .select() as any);
+
+      if (fallbackError) throw fallbackError;
+      roomsData = (fallbackRooms || []) as ChatRoomRow[];
+    } else if (error && isMissingParticipantIdsColumnError(error)) {
+      const { data: fallbackRooms, error: fallbackError } = await (supabase
+        .from('chat_rooms')
+        .insert([
+          {
+            team_id: teamId,
+            name: `${teamName} - Général`,
+            type: 'general',
+          },
+          {
+            team_id: teamId,
+            name: `${teamName} - Stratégie`,
+            type: 'strategy',
+          }
+        ] as any)
+        .select() as any);
+
+      if (fallbackError) throw fallbackError;
+      roomsData = (fallbackRooms || []) as ChatRoomRow[];
+    } else if (error) {
+      throw error;
+    }
+
     if (roomsData && roomsData.length > 0) {
       await (supabase.from('chat_messages').insert({
         room_id: roomsData[0].id,
@@ -192,8 +317,8 @@ export const chatApi = {
     if (!room) throw new Error('Salon non trouvé');
     
     const roomData = room as ChatRoomRow;
-    const participants = roomData.participants || [];
-    if (!participants.includes(userId)) {
+    const participants = getRoomParticipants(roomData);
+    if (participants.length > 0 && !participants.includes(userId)) {
       throw new Error('Non autorisé');
     }
 

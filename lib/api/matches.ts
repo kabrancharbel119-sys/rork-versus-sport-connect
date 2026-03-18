@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { Match, Venue, MatchPlayerStats } from '@/types';
+import { logger } from '@/lib/logger';
 
 export interface MatchRow {
   id: string;
@@ -88,7 +89,7 @@ const getDistance = (lat1: number, lng1: number, lat2: number, lng2: number): nu
 
 export const matchesApi = {
   async getAll() {
-    console.log('[MatchesAPI] Getting all matches');
+    logger.debug('MatchesAPI', 'Getting all matches');
     const { data, error } = await (supabase
       .from('matches')
       .select('*')
@@ -99,7 +100,7 @@ export const matchesApi = {
   },
 
   async getById(id: string) {
-    console.log('[MatchesAPI] Getting match by id:', id);
+    logger.debug('MatchesAPI', 'Getting match by id:', id);
     const { data, error } = await (supabase
       .from('matches')
       .select('*')
@@ -142,7 +143,7 @@ export const matchesApi = {
     lat?: number;
     lng?: number;
   }, userId: string) {
-    console.log('[MatchesAPI] Creating match:', matchData);
+    logger.debug('MatchesAPI', 'Creating match:', matchData);
     
     // Validation des champs
     if (matchData.entryFee !== undefined && matchData.entryFee < 0) {
@@ -242,7 +243,7 @@ export const matchesApi = {
     lng?: number;
     radiusKm?: number;
   }) {
-    console.log('[MatchesAPI] Searching matches:', params);
+    logger.debug('MatchesAPI', 'Searching matches:', params);
     let query = supabase.from('matches').select('*') as any;
 
     if (params.sport) query = query.eq('sport', params.sport);
@@ -270,7 +271,7 @@ export const matchesApi = {
   },
 
   async join(matchId: string, userId: string) {
-    console.log('[MatchesAPI] Joining match:', userId, '->', matchId);
+    logger.debug('MatchesAPI', 'Joining match:', userId, '->', matchId);
     
     const match = await this.getById(matchId);
     
@@ -308,7 +309,7 @@ export const matchesApi = {
   },
 
   async leave(matchId: string, userId: string) {
-    console.log('[MatchesAPI] Leaving match:', userId, 'from', matchId);
+    logger.debug('MatchesAPI', 'Leaving match:', userId, 'from', matchId);
     
     const match = await this.getById(matchId);
     const registeredPlayers = match.registeredPlayers.filter(id => id !== userId);
@@ -322,7 +323,7 @@ export const matchesApi = {
   },
 
   async updateScore(matchId: string, homeScore: number, awayScore: number, playerStats?: MatchPlayerStats[]) {
-    console.log('[MatchesAPI] Updating score for match:', matchId);
+    logger.debug('MatchesAPI', 'Updating score for match:', matchId);
     
     const payload: Record<string, unknown> = {
       score_home: homeScore,
@@ -393,13 +394,13 @@ export const matchesApi = {
     if (updates.roundLabel !== undefined) payload.round_label = updates.roundLabel;
     if (updates.status != null) payload.status = updates.status;
     if (Object.keys(payload).length === 0) return this.getById(matchId);
-    const { error } = await (supabase.from('matches').update(payload as any).eq('id', matchId) as any);
+    const { error } = await (supabase.from('matches').update(payload).eq('id', matchId) as any);
     if (error) throw error;
     return this.getById(matchId);
   },
 
   async getUpcoming() {
-    console.log('[MatchesAPI] Getting upcoming matches');
+    logger.debug('MatchesAPI', 'Getting upcoming matches');
     const { data, error } = await (supabase
       .from('matches')
       .select('*')
@@ -411,7 +412,7 @@ export const matchesApi = {
   },
 
   async getNeedingPlayers(lat?: number, lng?: number, radiusKm: number = 50) {
-    console.log('[MatchesAPI] Getting matches needing players');
+    logger.debug('MatchesAPI', 'Getting matches needing players');
     const { data, error } = await (supabase
       .from('matches')
       .select('*')
@@ -435,7 +436,7 @@ export const matchesApi = {
   },
 
   async delete(matchId: string, userId: string, asAdmin: boolean = false) {
-    console.log('[MatchesAPI] Deleting match:', matchId, asAdmin ? '(admin)' : '');
+    logger.debug('MatchesAPI', 'Deleting match:', matchId, asAdmin ? '(admin)' : '');
     
     if (!asAdmin) {
       const match = await this.getById(matchId);

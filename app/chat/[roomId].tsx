@@ -54,7 +54,7 @@ export default function ChatRoomScreen() {
     if (room && user) {
       markAsRead({ roomId: room.id, userId: user.id });
     }
-  }, [room, user]);
+  }, [room?.id, user?.id]);
 
   useEffect(() => {
     setTimeout(() => {

@@ -89,9 +89,8 @@ async function createTestUser(overrides = {}) {
       phone,
       email,
       username,
+      full_name: overrides.full_name || `${overrides.first_name || 'Test'} ${overrides.last_name || 'User'}`,
       password_hash: passwordHash,
-      first_name: overrides.first_name || 'Test',
-      last_name: overrides.last_name || 'User',
       bio: overrides.bio !== undefined ? overrides.bio : 'Test user bio',
       city: overrides.city || 'Abidjan',
       country: overrides.country || 'Côte d\'Ivoire',
@@ -99,7 +98,6 @@ async function createTestUser(overrides = {}) {
       is_verified: overrides.is_verified !== undefined ? overrides.is_verified : false,
       is_premium: overrides.is_premium !== undefined ? overrides.is_premium : false,
       referral_code: overrides.referral_code || `REF${Date.now()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
-      referred_by: overrides.referred_by || null,
       stats: overrides.stats || {
         matchesPlayed: 0,
         wins: 0,
@@ -107,14 +105,12 @@ async function createTestUser(overrides = {}) {
         draws: 0,
         goalsScored: 0,
         assists: 0,
-        mvpCount: 0,
-        fairPlayScore: 0,
-        tournamentsWon: 0,
-        cashPrizesTotal: 0
+        mvpAwards: 0,
+        fairPlayScore: 5.0,
+        tournamentWins: 0,
+        totalCashPrize: 0
       },
-      favorite_sports: overrides.favorite_sports || [],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      sports: overrides.sports || overrides.favorite_sports || []
     })
     .select()
     .single();
@@ -125,23 +121,20 @@ async function createTestUser(overrides = {}) {
     throw new Error('createProfile failed: ' + profileError.message);
   }
 
-  // 3. Générer un token de session valide
-  const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
-    type: 'magiclink',
-    email
-  });
-  
-  // Extraire le token du lien magique ou utiliser un token factice
+  // 3. Obtenir un vrai JWT via signInWithPassword (fiable pour les tests RLS)
   let token = '';
-  if (linkData?.properties?.action_link) {
-    const url = new URL(linkData.properties.action_link);
-    // Le token peut être dans les query params ou dans le hash
-    token = url.searchParams.get('access_token') || 
-            url.hash.split('access_token=')[1]?.split('&')[0] || 
-            url.searchParams.get('token') || '';
+  try {
+    const { data: signInData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+      email,
+      password
+    });
+    if (!signInError && signInData?.session?.access_token) {
+      token = signInData.session.access_token;
+    }
+  } catch (e) {
+    // fallback : token factice (ok pour les tests qui n'utilisent pas supabaseAsUser)
   }
-  
-  // Si toujours pas de token, utiliser un token factice (pour les tests qui n'utilisent pas supabaseAsUser)
+
   if (!token) {
     token = `test_token_${userId}_${Date.now()}`;
   }
@@ -217,36 +210,32 @@ async function createTestMatch(userId, venueId, overrides = {}) {
   }
   
   const matchData = {
-    title: overrides.title || 'Test Match',
-    match_type: overrides.match_type || 'friendly',
     sport: overrides.sport || 'football',
     format: overrides.format || '5v5',
     type: overrides.type || 'friendly',
     status: overrides.status || 'open',
     venue_id: actualVenueId,
-    venue_data: overrides.venue_data || { id: venueId, name: 'Test Venue' },
+    venue_data: overrides.venue_data || { id: actualVenueId, name: 'Test Venue' },
     date_time: dateTime,
-    start_time: overrides.start_time || dateTime,
     duration: overrides.duration || 90,
     level: overrides.level || 'intermediate',
     ambiance: overrides.ambiance || 'casual',
     max_players: maxPlayers,
     registered_players: overrides.registered_players || [],
-    score_home: overrides.score_home || null,
-    score_away: overrides.score_away || null,
+    score_home: overrides.score_home !== undefined ? overrides.score_home : null,
+    score_away: overrides.score_away !== undefined ? overrides.score_away : null,
     created_by: userId,
     entry_fee: entryFee,
     prize: prize,
     needs_players: overrides.needs_players !== undefined ? overrides.needs_players : true,
     location_lat: overrides.location_lat || 5.3,
     location_lng: overrides.location_lng || -4.0,
-    player_stats: overrides.player_stats || {},
+    player_stats: overrides.player_stats || [],
     home_team_id: overrides.home_team_id || null,
     away_team_id: overrides.away_team_id || null,
     tournament_id: overrides.tournament_id || null,
     round_label: overrides.round_label || null,
-    mvp_id: overrides.mvp_id || null,
-    ...overrides
+    mvp_id: overrides.mvp_id || null
   };
 
   const { data, error } = await supabaseAdmin

@@ -1,14 +1,15 @@
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { ChatRoom, ChatMessage, ChatRequest } from '@/types';
 import { mockChatRooms, mockMessages } from '@/mocks/data';
 import { emitRealtimeEvent } from '@/lib/realtime';
 import { chatApi } from '@/lib/api/chat';
-import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { logger } from '@/lib/logger';
+import { supabase } from '@/lib/supabase';
 
 const CHATS_STORAGE_KEY = 'vs_chats';
 const MESSAGES_STORAGE_KEY = 'vs_messages';
@@ -20,34 +21,15 @@ export const [ChatProvider, useChat] = createContextHook(() => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatRequests, setChatRequests] = useState<ChatRequest[]>([]);
   const [isPollingActive, setIsPollingActive] = useState(true);
-  const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
+  const roomIdsRef = useRef<Set<string>>(new Set());
 
-  useEffect(() => {
-    const getCurrentUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setSupabaseUserId(user?.id || null);
-    };
-    getCurrentUser();
-  }, []);
-
-  const currentUserId = useMemo(() => authUser?.id ?? supabaseUserId, [authUser?.id, supabaseUserId]);
-
-  useEffect(() => {
-    if (authUser?.id && supabaseUserId && authUser.id !== supabaseUserId) {
-      console.warn('[ChatContext] ⚠️ User ID mismatch!', {
-        authUser: authUser.id,
-        supabaseUser: supabaseUserId,
-      });
-    } else if (authUser?.id) {
-      console.log('[ChatContext] ✅ User ID matched:', authUser.id);
-    }
-  }, [authUser?.id, supabaseUserId]);
+  const currentUserId = authUser?.id ?? null;
 
   useEffect(() => {
     const handleAppState = (state: AppStateStatus) => {
       const active = state === 'active';
       setIsPollingActive(active);
-      console.log('[Chat] App state changed, polling:', active);
+      logger.debug('Chat', 'App state changed, polling:', active);
     };
     const subscription = AppState.addEventListener('change', handleAppState);
     return () => subscription.remove();
@@ -56,24 +38,32 @@ export const [ChatProvider, useChat] = createContextHook(() => {
   const chatsQuery = useQuery({
     queryKey: ['chats', currentUserId],
     queryFn: async () => {
-      console.log('[Chat] Loading chats...');
+      logger.debug('Chat', 'Loading chats...');
       
       if (currentUserId) {
         try {
           const serverRooms = await chatApi.getRooms(currentUserId);
-          if (serverRooms.length > 0) {
-            await AsyncStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify(serverRooms));
-            
-            const allMessages: ChatMessage[] = [];
-            for (const room of serverRooms) {
-              const roomMessages = await chatApi.getMessages(room.id, currentUserId);
-              allMessages.push(...roomMessages);
-            }
-            await AsyncStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(allMessages));
-            return { rooms: serverRooms, messages: allMessages };
+          await AsyncStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify(serverRooms));
+
+          const allMessages: ChatMessage[] = [];
+          for (const room of serverRooms) {
+            const roomMessages = await chatApi.getMessages(room.id, currentUserId);
+            allMessages.push(...roomMessages);
           }
+          await AsyncStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(allMessages));
+          return { rooms: serverRooms, messages: allMessages };
         } catch (e) {
-          console.log('[Chat] Server fetch failed, using local storage');
+          logger.error('Chat', 'Server fetch failed for authenticated user:', e);
+
+          const [storedRooms, storedMessages] = await Promise.all([
+            AsyncStorage.getItem(CHATS_STORAGE_KEY),
+            AsyncStorage.getItem(MESSAGES_STORAGE_KEY),
+          ]);
+
+          return {
+            rooms: storedRooms ? JSON.parse(storedRooms) : [],
+            messages: storedMessages ? JSON.parse(storedMessages) : [],
+          };
         }
       }
 
@@ -101,9 +91,103 @@ export const [ChatProvider, useChat] = createContextHook(() => {
   useEffect(() => {
     if (chatsQuery.data) {
       setChatRooms(chatsQuery.data.rooms);
-      setMessages(chatsQuery.data.messages);
+      
+      // Merge server messages with existing local messages to prevent loss
+      setMessages(prevMessages => {
+        const serverMessages: ChatMessage[] = chatsQuery.data.messages;
+        const serverMessageIds = new Set(serverMessages.map((m: ChatMessage) => m.id));
+        
+        // Keep local messages that aren't on the server yet (recently sent)
+        const localOnlyMessages = prevMessages.filter(m => !serverMessageIds.has(m.id));
+        
+        // Combine server messages with local-only messages
+        const merged = [...serverMessages, ...localOnlyMessages];
+        
+        // Sort by creation date
+        return merged.sort((a, b) => 
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+      });
     }
   }, [chatsQuery.data]);
+
+  useEffect(() => {
+    roomIdsRef.current = new Set(chatRooms.map(room => room.id));
+  }, [chatRooms]);
+
+  // Supabase Realtime subscription for chat messages
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    logger.debug('Chat', 'Setting up Realtime subscription for messages');
+
+    const channel = supabase
+      .channel('chat_messages_realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+        },
+        (payload) => {
+          logger.debug('Chat', 'Realtime: New message received', payload.new);
+          
+          const newMessage = payload.new as any;
+          const chatMessage: ChatMessage = {
+            id: newMessage.id,
+            roomId: newMessage.room_id,
+            senderId: newMessage.sender_id,
+            content: newMessage.content,
+            type: newMessage.type || 'text',
+            createdAt: new Date(newMessage.created_at),
+            readBy: newMessage.read_by || [],
+          };
+
+          if (!roomIdsRef.current.has(chatMessage.roomId)) {
+            return;
+          }
+
+          setChatRooms(prevRooms => {
+            const roomIndex = prevRooms.findIndex(r => r.id === chatMessage.roomId);
+            if (roomIndex === -1) return prevRooms;
+            const updatedRooms = [...prevRooms];
+            updatedRooms[roomIndex] = {
+              ...updatedRooms[roomIndex],
+              lastMessage: chatMessage,
+              unreadCount:
+                chatMessage.senderId === currentUserId
+                  ? updatedRooms[roomIndex].unreadCount
+                  : updatedRooms[roomIndex].unreadCount + 1,
+            };
+            AsyncStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify(updatedRooms));
+            return updatedRooms;
+          });
+
+          // Only add if message is not from current user (to avoid duplicates)
+          // Current user's messages are already added optimistically
+          if (chatMessage.senderId !== currentUserId) {
+            setMessages(prev => {
+              // Check if message already exists
+              if (prev.some(m => m.id === chatMessage.id)) {
+                return prev;
+              }
+              const updated = [...prev, chatMessage].sort((a, b) => 
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              );
+              AsyncStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      logger.debug('Chat', 'Cleaning up Realtime subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId]);
 
   const saveRooms = useCallback(async (updated: ChatRoom[]) => {
     await AsyncStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify(updated));
@@ -115,9 +199,53 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     setMessages(updated);
   }, []);
 
+  const resolveServerRoomId = useCallback(async (roomId: string): Promise<string> => {
+    if (!currentUserId || !roomId.startsWith('chat-')) return roomId;
+
+    const localRoom = chatRooms.find(r => r.id === roomId);
+    if (!localRoom) return roomId;
+
+    const serverRooms = await chatApi.getRooms(currentUserId);
+    let serverRoom = serverRooms.find(r =>
+      r.teamId === localRoom.teamId &&
+      r.name === localRoom.name &&
+      r.type === localRoom.type
+    );
+
+    if (!serverRoom) {
+      serverRoom = await chatApi.createRoom(currentUserId, {
+        teamId: localRoom.teamId,
+        name: localRoom.name,
+        type: localRoom.type as 'general' | 'match' | 'strategy' | 'direct',
+        participants: localRoom.participants,
+      });
+    }
+
+    const mergedRoom: ChatRoom = {
+      ...localRoom,
+      ...serverRoom,
+    };
+
+    const updatedRooms = [
+      ...chatRooms.filter(r => r.id !== roomId && r.id !== serverRoom.id),
+      mergedRoom,
+    ];
+    await saveRooms(updatedRooms);
+
+    setMessages(prev => {
+      const remapped = prev.map(m =>
+        m.roomId === roomId ? { ...m, roomId: serverRoom!.id } : m
+      );
+      AsyncStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(remapped));
+      return remapped;
+    });
+
+    return serverRoom.id;
+  }, [chatRooms, currentUserId, saveRooms]);
+
   const createRoomMutation = useMutation({
     mutationFn: async ({ teamId, name, type, participants }: { teamId: string; name: string; type: 'general' | 'match' | 'strategy'; participants: string[] }) => {
-      console.log('[Chat] Creating room:', name);
+      logger.debug('Chat', 'Creating room:', name);
       
       const existingRoom = chatRooms.find(r => r.teamId === teamId && r.name === name);
       if (existingRoom) return existingRoom;
@@ -131,7 +259,9 @@ export const [ChatProvider, useChat] = createContextHook(() => {
           emitRealtimeEvent('chat', 'create', { room });
           return room;
         } catch (e) {
-          console.log('[Chat] Supabase error, using local');
+          const errorMessage = e instanceof Error ? e.message : JSON.stringify(e);
+          logger.error('Chat', `Failed to create room on server: ${errorMessage}`);
+          throw new Error(errorMessage);
         }
       }
 
@@ -155,30 +285,53 @@ export const [ChatProvider, useChat] = createContextHook(() => {
   const sendMessageMutation = useMutation({
     mutationFn: async ({ roomId, senderId, content, senderName, type }: { roomId: string; senderId: string; content: string; senderName?: string; type?: 'text' | 'image' | 'video' }) => {
       const messageType = type || 'text';
-      console.log('[Chat] Sending message to room:', roomId, 'type:', messageType);
+      logger.debug('Chat', 'Sending message to room:', roomId, 'type:', messageType);
 
       if (currentUserId) {
         try {
-          const message = await chatApi.sendMessage(roomId, senderId, content, messageType);
-          const updatedMessages = [...messages, message];
-          await saveMessages(updatedMessages);
+          let targetRoomId = roomId;
+          let message: ChatMessage;
+
+          try {
+            message = await chatApi.sendMessage(targetRoomId, senderId, content, messageType);
+          } catch (sendErr) {
+            const sendErrMessage = sendErr instanceof Error ? sendErr.message : JSON.stringify(sendErr);
+            if (!sendErrMessage.toLowerCase().includes('salon non trouvé')) {
+              throw sendErr;
+            }
+
+            logger.debug('Chat', `Room ${targetRoomId} not found on server, attempting recovery`);
+            targetRoomId = await resolveServerRoomId(targetRoomId);
+            message = await chatApi.sendMessage(targetRoomId, senderId, content, messageType);
+          }
+
+          setMessages(prev => {
+            if (prev.some(m => m.id === message.id)) return prev;
+            const updatedMessages = [...prev, message].sort((a, b) =>
+              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            );
+            AsyncStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(updatedMessages));
+            return updatedMessages;
+          });
           
-          const roomIndex = chatRooms.findIndex(r => r.id === roomId);
+          const roomIndex = chatRooms.findIndex(r => r.id === message.roomId);
           if (roomIndex !== -1) {
             const updatedRooms = [...chatRooms];
             updatedRooms[roomIndex] = {
               ...updatedRooms[roomIndex],
               lastMessage: message,
-              unreadCount: updatedRooms[roomIndex].unreadCount + 1,
+              unreadCount: updatedRooms[roomIndex].unreadCount,
             };
             await saveRooms(updatedRooms);
           }
           
           queryClient.invalidateQueries({ queryKey: ['chats'] });
-          emitRealtimeEvent('chat', 'create', { message, roomId, senderName });
+          emitRealtimeEvent('chat', 'create', { message, roomId: message.roomId, senderName });
           return message;
         } catch (e) {
-          console.log('[Chat] Supabase error, using local');
+          const errorMessage = e instanceof Error ? e.message : JSON.stringify(e);
+          logger.error('Chat', `Supabase sendMessage failed: ${errorMessage}`);
+          throw new Error(errorMessage);
         }
       }
 
@@ -191,8 +344,14 @@ export const [ChatProvider, useChat] = createContextHook(() => {
         createdAt: new Date(),
         readBy: [senderId],
       };
-      const updatedMessages = [...messages, newMessage];
-      await saveMessages(updatedMessages);
+      setMessages(prev => {
+        if (prev.some(m => m.id === newMessage.id)) return prev;
+        const updatedMessages = [...prev, newMessage].sort((a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+        AsyncStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(updatedMessages));
+        return updatedMessages;
+      });
       
       const roomIndex = chatRooms.findIndex(r => r.id === roomId);
       if (roomIndex !== -1) {
@@ -200,14 +359,14 @@ export const [ChatProvider, useChat] = createContextHook(() => {
         updatedRooms[roomIndex] = {
           ...updatedRooms[roomIndex],
           lastMessage: newMessage,
-          unreadCount: updatedRooms[roomIndex].unreadCount + 1,
+          unreadCount: updatedRooms[roomIndex].unreadCount,
         };
         await saveRooms(updatedRooms);
       }
       
       queryClient.invalidateQueries({ queryKey: ['chats'] });
       emitRealtimeEvent('chat', 'create', { message: newMessage, roomId, senderName });
-      console.log('[Chat] Message sent successfully');
+      logger.debug('Chat', 'Message sent successfully');
       return newMessage;
     },
   });
@@ -218,7 +377,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
         try {
           await chatApi.markAsRead(roomId, userId);
         } catch (e) {
-          console.log('[Chat] Supabase markAsRead failed');
+          logger.debug('Chat', 'Supabase markAsRead failed');
         }
       }
 
@@ -243,7 +402,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
 
   const deleteRoomMutation = useMutation({
     mutationFn: async (roomId: string) => {
-      console.log('[Chat] Deleting room:', roomId);
+      logger.debug('Chat', 'Deleting room:', roomId);
       const updatedRooms = chatRooms.filter(r => r.id !== roomId);
       const updatedMessages = messages.filter(m => m.roomId !== roomId);
       await Promise.all([saveRooms(updatedRooms), saveMessages(updatedMessages)]);
@@ -254,7 +413,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
 
   const addParticipantMutation = useMutation({
     mutationFn: async ({ roomId, userId }: { roomId: string; userId: string }) => {
-      console.log('[Chat] Adding participant:', userId);
+      logger.debug('Chat', 'Adding participant:', userId);
       const updatedRooms = chatRooms.map(r => {
         if (r.id === roomId && !r.participants.includes(userId)) {
           return { ...r, participants: [...r.participants, userId] };
@@ -268,7 +427,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
 
   const removeParticipantMutation = useMutation({
     mutationFn: async ({ roomId, userId }: { roomId: string; userId: string }) => {
-      console.log('[Chat] Removing participant:', userId);
+      logger.debug('Chat', 'Removing participant:', userId);
       const updatedRooms = chatRooms.map(r => {
         if (r.id === roomId) {
           return { ...r, participants: r.participants.filter(p => p !== userId) };
@@ -301,13 +460,13 @@ export const [ChatProvider, useChat] = createContextHook(() => {
       queryClient.invalidateQueries({ queryKey: ['chats'] });
     },
     onError: (error) => {
-      console.error('[ChatContext] deleteMessage error:', error);
+      logger.error('ChatContext', 'deleteMessage error:', error);
     },
   });
 
   const createTeamChatsMutation = useMutation({
     mutationFn: async ({ teamId, teamName, members }: { teamId: string; teamName: string; members: string[] }) => {
-      console.log('[Chat] Creating team chats for:', teamName);
+      logger.debug('Chat', 'Creating team chats for:', teamName);
       
       const existingTeamRooms = chatRooms.filter(r => r.teamId === teamId);
       if (existingTeamRooms.length > 0) return existingTeamRooms;
@@ -321,7 +480,9 @@ export const [ChatProvider, useChat] = createContextHook(() => {
           emitRealtimeEvent('chat', 'create', { rooms });
           return rooms;
         } catch (e) {
-          console.log('[Chat] Supabase error, using local');
+          const errorMessage = e instanceof Error ? e.message : JSON.stringify(e);
+          logger.error('Chat', `Failed to create team chats on server: ${errorMessage}`);
+          throw new Error(errorMessage);
         }
       }
 
@@ -371,7 +532,23 @@ export const [ChatProvider, useChat] = createContextHook(() => {
   }, [messages]);
 
   const getTeamRooms = useCallback((teamId: string) => chatRooms.filter(r => r.teamId === teamId), [chatRooms]);
-  const getTotalUnread = useCallback(() => chatRooms.reduce((sum, room) => sum + room.unreadCount, 0), [chatRooms]);
+  const getTotalUnread = useCallback(() => {
+    if (!currentUserId) return 0;
+
+    const myRoomIds = new Set(
+      chatRooms
+        .filter(room => room.participants.includes(currentUserId))
+        .map(room => room.id)
+    );
+
+    return messages.reduce((sum, msg) => {
+      const isInMyRoom = myRoomIds.has(msg.roomId);
+      const isMyMessage = msg.senderId === currentUserId;
+      const isReadByMe = msg.readBy.includes(currentUserId);
+      if (!isInMyRoom || isMyMessage || isReadByMe) return sum;
+      return sum + 1;
+    }, 0);
+  }, [chatRooms, currentUserId, messages]);
   const getUserRooms = useCallback((userId: string) => chatRooms.filter(r => r.participants.includes(userId)), [chatRooms]);
 
   const forceRefresh = useCallback(() => {
@@ -386,7 +563,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
       try {
         return await chatApi.getChatRequests(currentUserId);
       } catch (e) {
-        console.log('[Chat] Failed to load chat requests');
+        logger.debug('Chat', 'Failed to load chat requests');
         return [];
       }
     },
@@ -437,7 +614,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
           queryClient.invalidateQueries({ queryKey: ['chats'] });
           setChatRequests(prev => {
             const next = prev.filter(r => r.id !== requestId);
-            if (__DEV__) console.log('Request accepted, removing:', requestId, '| remaining:', next.length);
+            logger.debug('Chat', 'Request accepted, removing:', requestId, '| remaining:', next.length);
             return next;
           });
           // Ne pas invalider ici : onSuccess le fera après 1 s
@@ -445,7 +622,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
         
         return result;
       } catch (e) {
-        console.log('[Chat] Supabase error, using local');
+        logger.debug('Chat', 'Supabase error, using local');
         setChatRequests(prev => prev.filter(r => r.id !== requestId));
         if (action === 'accept') {
           const directRoom: ChatRoom = {
@@ -466,19 +643,19 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     onSuccess: (_, variables) => {
       const { requestId, action } = variables;
       if (action === 'accept') {
-        if (__DEV__) console.log('[Chat] Request accepted, removing from state:', requestId);
+        logger.debug('Chat', 'Request accepted, removing from state:', requestId);
         
         // Retire immédiatement de l'état local
         setChatRequests(prev => {
           const filtered = prev.filter(r => r.id !== requestId);
-          if (__DEV__) console.log('[Chat] Remaining requests:', filtered.length);
+          logger.debug('Chat', 'Remaining requests:', filtered.length);
           return filtered;
         });
         
         // Attends 1 seconde avant d'invalider le cache
         // pour laisser le temps à Supabase de mettre à jour
         setTimeout(() => {
-          if (__DEV__) console.log('[Chat] Invalidating cache after delay');
+          logger.debug('Chat', 'Invalidating cache after delay');
           queryClient.invalidateQueries({ queryKey: ['chatRequests'] });
         }, 1000);
       } else {

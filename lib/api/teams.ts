@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { Team, TeamMember, JoinRequest, TeamStats, TeamRole } from '@/types';
+import { logger } from '@/lib/logger';
 
 export interface TeamRow {
   id: string;
@@ -69,21 +70,33 @@ export const mapTeamRowToTeam = (row: TeamRow): Team => ({
 });
 
 export const teamsApi = {
-  async getAll() {
-    console.log('[TeamsAPI] Getting all teams (no filter by userId)');
-    const { data, error } = await (supabase
+  async getAll(options?: { page?: number; limit?: number }) {
+    const page = options?.page ?? 1;
+    const limit = options?.limit ?? 50;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    
+    logger.debug('TeamsAPI', 'Getting all teams (no filter by userId)', { page, limit });
+    const { data, error, count } = await (supabase
       .from('teams')
-      .select('*')
+      .select('*', { count: 'exact' })
+      .range(from, to)
       .order('created_at', { ascending: false }) as any);
     
     if (error) throw error;
     const teams = ((data || []) as TeamRow[]).map(row => mapTeamRowToTeam(row));
-    console.log('All teams from DB:', teams.length);
-    return teams;
+    logger.debug('TeamsAPI', 'All teams from DB:', teams.length);
+    return {
+      teams,
+      total: count ?? 0,
+      page,
+      limit,
+      hasMore: count ? (page * limit) < count : false,
+    };
   },
 
   async getById(id: string) {
-    console.log('[TeamsAPI] Getting team by id:', id);
+    logger.debug('TeamsAPI', 'Getting team by id:', id);
     const { data, error } = await (supabase
       .from('teams')
       .select('*')
@@ -219,6 +232,7 @@ export const teamsApi = {
   },
 
   async sendJoinRequest(teamId: string, userId: string, message?: string) {
+    console.log('[TeamsAPI] ========== DÉBUT ENVOI DEMANDE ==========');
     console.log('[TeamsAPI] Sending join request:', userId, '->', teamId);
     
     const team = await this.getById(teamId);
@@ -244,14 +258,38 @@ export const teamsApi = {
     const joinRequests = [...team.joinRequests, request];
     await this.update(teamId, { joinRequests: joinRequests as JoinRequest[] });
 
-    await (supabase.from('notifications').insert({
+    const { data: requester } = await (supabase
+      .from('users')
+      .select('full_name, username')
+      .eq('id', userId)
+      .single() as any);
+    const requesterName = (requester as { full_name?: string | null; username?: string | null } | null)?.full_name
+      || (requester as { full_name?: string | null; username?: string | null } | null)?.username
+      || 'Un joueur';
+
+    console.log('[TeamsAPI] Insertion notification pour capitaine:', team.captainId);
+    console.log('[TeamsAPI] Message notif:', `${requesterName} souhaite rejoindre ${team.name}`);
+    
+    const notifResult = await (supabase.from('notifications').insert({
       user_id: team.captainId,
       type: 'team',
       title: 'Nouvelle demande',
-      message: `Nouvelle demande pour ${team.name}`,
-      data: { teamId: team.id, requestId: request.id }
+      message: `${requesterName} souhaite rejoindre ${team.name}`,
+      data: {
+        route: `/user/${userId}?fromTeamRequest=1&teamId=${team.id}&requestId=${request.id}`,
+        requesterId: userId,
+        teamId: team.id,
+        requestId: request.id,
+      }
     } as any) as any);
 
+    if (notifResult.error) {
+      console.error('[TeamsAPI] ❌ ERREUR insertion notification:', notifResult.error);
+    } else {
+      console.log('[TeamsAPI] ✅ Notification insérée avec succès');
+    }
+
+    console.log('[TeamsAPI] ========== FIN ENVOI DEMANDE ==========');
     return request;
   },
 
@@ -260,7 +298,7 @@ export const teamsApi = {
     
     const team = await this.getById(teamId);
     
-    if (team.captainId !== handlerId && !team.coCaptainIds.includes(handlerId)) {
+    if (team.captainId !== handlerId) {
       throw new Error('Non autorisé');
     }
 
@@ -268,10 +306,38 @@ export const teamsApi = {
     if (requestIndex === -1) throw new Error('Demande non trouvée');
 
     const request = team.joinRequests[requestIndex];
-    request.status = action === 'accept' ? 'accepted' : action === 'reject' ? 'rejected' : 'waiting';
-    request.respondedAt = new Date();
+    if (request.status !== 'pending' && request.status !== 'waiting') {
+      throw new Error('Cette demande a déjà été traitée');
+    }
+
+    const updatedRequest: JoinRequest = {
+      ...request,
+      status: action === 'accept' ? 'accepted' : action === 'reject' ? 'rejected' : 'waiting',
+      respondedAt: new Date(),
+    };
+    const updatedJoinRequests = [...team.joinRequests];
+    updatedJoinRequests[requestIndex] = updatedRequest;
 
     if (action === 'accept') {
+      if (team.members.some(m => m.userId === request.userId)) {
+        throw new Error('Ce joueur est déjà membre');
+      }
+      if (team.members.length >= team.maxMembers) {
+        throw new Error('Équipe complète');
+      }
+
+      const { data: user, error: userError } = await (supabase
+        .from('users')
+        .select('teams')
+        .eq('id', request.userId)
+        .single() as any);
+      if (userError) throw userError;
+      const userTeams = (((user as { teams?: string[] | null } | null)?.teams as string[] | null) ?? []).filter(Boolean);
+      const otherTeams = userTeams.filter(id => id !== team.id);
+      if (otherTeams.length > 0) {
+        throw new Error('Ce joueur est déjà membre d\'une autre équipe');
+      }
+
       const newMember: TeamMember = {
         userId: request.userId,
         role: 'member',
@@ -279,19 +345,10 @@ export const teamsApi = {
       };
       
       const members = [...team.members, newMember];
-      await this.update(teamId, { members, joinRequests: team.joinRequests });
-
-      const { data: user } = await (supabase
-        .from('users')
-        .select('teams')
-        .eq('id', request.userId)
-        .single() as any);
-      
-      if (user) {
-        const userTeams = user as { teams: string[] | null };
-        const teams = [...((userTeams.teams as string[]) || []), team.id];
-        await ((supabase.from('users') as any).update({ teams }).eq('id', request.userId));
-      }
+      const fans = (team.fans ?? []).filter(id => id !== request.userId);
+      await this.update(teamId, { members, joinRequests: updatedJoinRequests, fans });
+      const teams = [...new Set([...userTeams, team.id])];
+      await ((supabase.from('users') as any).update({ teams }).eq('id', request.userId));
 
       await (supabase.from('notifications').insert({
         user_id: request.userId,
@@ -299,11 +356,19 @@ export const teamsApi = {
         title: 'Demande acceptée',
         message: `Vous êtes maintenant membre de ${team.name}!`
       } as any) as any);
+    } else if (action === 'reject') {
+      await this.update(teamId, { joinRequests: updatedJoinRequests });
+      await (supabase.from('notifications').insert({
+        user_id: request.userId,
+        type: 'team',
+        title: 'Demande refusée',
+        message: `Votre demande pour rejoindre ${team.name} a été refusée.`
+      } as any) as any);
     } else {
-      await this.update(teamId, { joinRequests: team.joinRequests });
+      await this.update(teamId, { joinRequests: updatedJoinRequests });
     }
 
-    return request;
+    return updatedRequest;
   },
 
   async leave(teamId: string, userId: string) {

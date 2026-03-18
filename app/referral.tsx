@@ -14,7 +14,7 @@ import * as Haptics from 'expo-haptics';
 
 export default function ReferralScreen() {
   const router = useRouter();
-  useAuth();
+  const { user } = useAuth();
   const { referrals, getReferralCode, shareCode, applyCode, getTotalRewards, isSharing, isApplying } = useReferral();
   const [inputCode, setInputCode] = useState('');
   const myCode = getReferralCode();

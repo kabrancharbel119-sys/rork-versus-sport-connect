@@ -6,7 +6,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { Tournament, Sport, SkillLevel, Venue, TournamentPrize } from '@/types';
 import { tournamentsApi } from '@/lib/api/tournaments';
 
-const TOURNAMENTS_REFETCH_INTERVAL_MS = 15_000;
+const TOURNAMENTS_REFETCH_INTERVAL_MS = 60_000;
 
 const TOURNAMENTS_STORAGE_KEY = 'vs_tournaments';
 
@@ -148,19 +148,34 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
     mutationFn: async ({ tournamentId, teamId }: { tournamentId: string; teamId: string }) => {
       console.log('[Tournaments] Registering team:', teamId, 'to tournament:', tournamentId);
       const current = (queryClient.getQueryData(['tournaments']) as Tournament[] | undefined) ?? [];
-      const tournamentIndex = current.findIndex(t => t.id === tournamentId);
-      if (tournamentIndex === -1) throw new Error('Tournoi non trouvé');
-      const tournament = current[tournamentIndex];
+      let tournament = current.find(t => t.id === tournamentId);
+      
+      // Si le tournoi n'est pas dans le cache, le récupérer depuis l'API
+      if (!tournament) {
+        console.log('[Tournaments] Tournament not in cache, fetching from API...');
+        try {
+          tournament = await tournamentsApi.getById(tournamentId);
+        } catch (err) {
+          throw new Error('Tournoi non trouvé');
+        }
+      }
+      
       if (tournament.registeredTeams.includes(teamId)) throw new Error('Équipe déjà inscrite');
       if (tournament.registeredTeams.length >= tournament.maxTeams) throw new Error('Tournoi complet');
       if (tournament.status !== 'registration') throw new Error('Inscriptions fermées');
+      
       try {
         await tournamentsApi.registerTeam(tournamentId, teamId);
         await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+        await queryClient.invalidateQueries({ queryKey: ['myTournaments'] });
       } catch (err) {
-        const updated = [...current];
-        updated[tournamentIndex] = { ...tournament, registeredTeams: [...tournament.registeredTeams, teamId] };
-        await saveTournaments(updated);
+        // Fallback optimiste si l'API échoue
+        const tournamentIndex = current.findIndex(t => t.id === tournamentId);
+        if (tournamentIndex !== -1) {
+          const updated = [...current];
+          updated[tournamentIndex] = { ...current[tournamentIndex], registeredTeams: [...current[tournamentIndex].registeredTeams, teamId] };
+          await saveTournaments(updated);
+        }
       }
     },
   });
@@ -169,18 +184,33 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
     mutationFn: async ({ tournamentId, teamId }: { tournamentId: string; teamId: string }) => {
       console.log('[Tournaments] Unregistering team:', teamId, 'from tournament:', tournamentId);
       const current = (queryClient.getQueryData(['tournaments']) as Tournament[] | undefined) ?? [];
-      const tournamentIndex = current.findIndex(t => t.id === tournamentId);
-      if (tournamentIndex === -1) throw new Error('Tournoi non trouvé');
-      const tournament = current[tournamentIndex];
+      let tournament = current.find(t => t.id === tournamentId);
+      
+      // Si le tournoi n'est pas dans le cache, le récupérer depuis l'API
+      if (!tournament) {
+        console.log('[Tournaments] Tournament not in cache, fetching from API...');
+        try {
+          tournament = await tournamentsApi.getById(tournamentId);
+        } catch (err) {
+          throw new Error('Tournoi non trouvé');
+        }
+      }
+      
       if (tournament.status !== 'registration') throw new Error('Impossible de se désinscrire');
+      
       try {
         await tournamentsApi.unregisterTeam(tournamentId, teamId);
         await queryClient.refetchQueries({ queryKey: ['tournaments'] });
+        await queryClient.invalidateQueries({ queryKey: ['myTournaments'] });
       } catch (err) {
         if (isBusinessError(err)) throw err;
-        const updated = [...current];
-        updated[tournamentIndex] = { ...tournament, registeredTeams: tournament.registeredTeams.filter(id => id !== teamId) };
-        await saveTournaments(updated);
+        // Fallback optimiste si l'API échoue
+        const tournamentIndex = current.findIndex(t => t.id === tournamentId);
+        if (tournamentIndex !== -1) {
+          const updated = [...current];
+          updated[tournamentIndex] = { ...current[tournamentIndex], registeredTeams: current[tournamentIndex].registeredTeams.filter(id => id !== teamId) };
+          await saveTournaments(updated);
+        }
       }
     },
   });

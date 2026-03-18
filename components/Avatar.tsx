@@ -14,6 +14,8 @@ interface AvatarProps {
 }
 
 export function Avatar({ uri, name, size = 'medium', style, showBadge, badgeColor, testID }: AvatarProps) {
+  const [imageError, setImageError] = React.useState(false);
+
   const getSize = () => {
     switch (size) {
       case 'small':
@@ -52,11 +54,15 @@ export function Avatar({ uri, name, size = 'medium', style, showBadge, badgeColo
 
   return (
     <View style={[styles.container, { width: dimension, height: dimension }, style]} testID={testID}>
-      {uri ? (
+      {uri && !imageError ? (
         <Image
           source={{ uri }}
           style={[styles.image, { width: dimension, height: dimension, borderRadius: dimension / 2 }]}
           contentFit="cover"
+          onError={(error) => {
+            console.log('[Avatar] Failed to load image:', uri, error);
+            setImageError(true);
+          }}
         />
       ) : (
         <View
