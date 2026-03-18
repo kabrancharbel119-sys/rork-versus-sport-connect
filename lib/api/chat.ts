@@ -456,6 +456,24 @@ export const chatApi = {
       throw new Error('Demande déjà envoyée');
     }
     
+    // If request exists but is not pending (accepted/rejected/cancelled), reuse the row
+    if (existing && existing.status !== 'pending') {
+      const { data: updated, error: updateError } = await (supabase
+        .from('chat_requests')
+        .update({
+          status: 'pending',
+          message: message || null,
+          created_at: new Date().toISOString(),
+          responded_at: null,
+        })
+        .eq('id', existing.id)
+        .select()
+        .single() as any);
+      
+      if (updateError) throw updateError;
+      return updated;
+    }
+    
     const { data, error } = await (supabase
       .from('chat_requests')
       .insert({
