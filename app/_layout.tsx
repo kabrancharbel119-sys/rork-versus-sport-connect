@@ -22,6 +22,7 @@ import { OfflineProvider } from "@/contexts/OfflineContext";
 import { ReferralProvider } from "@/contexts/ReferralContext";
 import { Colors } from "@/constants/colors";
 import { logger } from "@/lib/logger";
+import { AppAlertProvider } from "@/components/AppAlertProvider";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {
   // No-op: native splash may be unavailable in some dev reload states.
@@ -179,35 +180,37 @@ export default function RootLayout() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <GestureHandlerRootView style={{ flex: 1 }}>
-          <I18nProvider>
-            <OfflineProvider>
-              <AuthProvider>
-                <AuthGateInner>
-                  <UsersProvider>
-                    <NotificationsProvider>
-                      <SupportProvider>
-                        <TrophiesProvider>
-                          <ReferralProvider>
-                            <LocationProvider>
-                              <TeamsProvider>
-                                <MatchesProvider>
-                                  <TournamentsProvider>
-                                    <ChatProvider>
-                                      <RootLayoutNav />
-                                    </ChatProvider>
-                                  </TournamentsProvider>
-                                </MatchesProvider>
-                              </TeamsProvider>
-                            </LocationProvider>
-                          </ReferralProvider>
-                        </TrophiesProvider>
-                      </SupportProvider>
-                    </NotificationsProvider>
-                  </UsersProvider>
-                </AuthGateInner>
-              </AuthProvider>
-            </OfflineProvider>
-          </I18nProvider>
+          <AppAlertProvider>
+            <I18nProvider>
+              <OfflineProvider>
+                <AuthProvider>
+                  <AuthGateInner>
+                    <UsersProvider>
+                      <NotificationsProvider>
+                        <SupportProvider>
+                          <TrophiesProvider>
+                            <ReferralProvider>
+                              <LocationProvider>
+                                <TeamsProvider>
+                                  <MatchesProvider>
+                                    <TournamentsProvider>
+                                      <ChatProvider>
+                                        <RootLayoutNav />
+                                      </ChatProvider>
+                                    </TournamentsProvider>
+                                  </MatchesProvider>
+                                </TeamsProvider>
+                              </LocationProvider>
+                            </ReferralProvider>
+                          </TrophiesProvider>
+                        </SupportProvider>
+                      </NotificationsProvider>
+                    </UsersProvider>
+                  </AuthGateInner>
+                </AuthProvider>
+              </OfflineProvider>
+            </I18nProvider>
+          </AppAlertProvider>
         </GestureHandlerRootView>
       </QueryClientProvider>
     </ErrorBoundary>
