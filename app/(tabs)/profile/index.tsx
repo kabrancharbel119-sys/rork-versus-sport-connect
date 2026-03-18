@@ -99,7 +99,7 @@ export default function ProfileScreen() {
       ? upcoming
       : [...bookings].sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
 
-    return source.slice(0, 2);
+    return source.slice(0, 1);
   }, [bookingsQuery.data]);
 
   // Charger le classement du joueur
