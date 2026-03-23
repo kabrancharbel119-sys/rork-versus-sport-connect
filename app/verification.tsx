@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, CheckCircle, Clock, XCircle, Shield, Award, Users, Trophy } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
+import { useI18n } from '@/contexts/I18nContext';
 import { useSupport } from '@/contexts/SupportContext';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
@@ -13,6 +14,7 @@ import { Avatar } from '@/components/Avatar';
 
 export default function VerificationScreen() {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -45,15 +47,15 @@ export default function VerificationScreen() {
 
   const handleSubmit = async () => {
     if (!user || !reason.trim()) {
-      Alert.alert('Erreur', 'Veuillez expliquer pourquoi vous souhaitez être vérifié');
+      Alert.alert(t('common.error'), t('verification.errorReasonRequired'));
       return;
     }
     try {
       await submitVerification({ userId: user.id, userName: user.fullName, userEmail: user.email, userAvatar: user.avatar, reason: reason.trim() });
-      Alert.alert('Succès', 'Votre demande de vérification a été envoyée. Notre équipe l\'examinera sous peu.');
+      Alert.alert(t('common.success'), t('verification.requestSent'));
       setReason('');
     } catch (error: any) {
-      Alert.alert('Erreur', error.message);
+      Alert.alert(t('common.error'), error.message);
     }
   };
 
@@ -66,19 +68,19 @@ export default function VerificationScreen() {
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
               <TouchableOpacity style={styles.backButton} onPress={handleBack}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
-              <Text style={styles.headerTitle}>Vérification</Text>
+              <Text style={styles.headerTitle}>{t('verification.title')}</Text>
               <View style={styles.placeholder} />
             </View>
             <View style={styles.centerContent}>
               <View style={styles.verifiedBadge}><CheckCircle size={64} color={Colors.primary.blue} /></View>
-              <Text style={styles.verifiedTitle}>{isAdmin ? 'Compte administrateur ✓' : 'Compte vérifié ✓'}</Text>
-              <Text style={styles.verifiedText}>Félicitations ! Votre compte est vérifié. Vous bénéficiez de tous les avantages du badge vérifié.</Text>
+              <Text style={styles.verifiedTitle}>{isAdmin ? t('verification.verifiedAdmin') : t('verification.verifiedAccount')}</Text>
+              <Text style={styles.verifiedText}>{t('verification.verifiedCongrats')}</Text>
               <Card style={styles.benefitsCard}>
-                <Text style={styles.benefitsTitle}>Avantages du badge vérifié</Text>
-                <View style={styles.benefitItem}><Shield size={18} color={Colors.status.success} /><Text style={styles.benefitText}>Profil de confiance</Text></View>
-                <View style={styles.benefitItem}><Users size={18} color={Colors.primary.blue} /><Text style={styles.benefitText}>Priorité dans les matchs</Text></View>
-                <View style={styles.benefitItem}><Trophy size={18} color={Colors.primary.orange} /><Text style={styles.benefitText}>Badge visible sur le profil</Text></View>
-                <View style={styles.benefitItem}><Award size={18} color="#8B5CF6" /><Text style={styles.benefitText}>Accès aux tournois exclusifs</Text></View>
+                <Text style={styles.benefitsTitle}>{t('verification.benefitsTitle')}</Text>
+                <View style={styles.benefitItem}><Shield size={18} color={Colors.status.success} /><Text style={styles.benefitText}>{t('verification.benefitTrust')}</Text></View>
+                <View style={styles.benefitItem}><Users size={18} color={Colors.primary.blue} /><Text style={styles.benefitText}>{t('verification.benefitPriority')}</Text></View>
+                <View style={styles.benefitItem}><Trophy size={18} color={Colors.primary.orange} /><Text style={styles.benefitText}>{t('verification.benefitBadge')}</Text></View>
+                <View style={styles.benefitItem}><Award size={18} color="#8B5CF6" /><Text style={styles.benefitText}>{t('verification.benefitTournaments')}</Text></View>
               </Card>
             </View>
           </SafeAreaView>
@@ -96,17 +98,17 @@ export default function VerificationScreen() {
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
               <TouchableOpacity style={styles.backButton} onPress={handleBack}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
-              <Text style={styles.headerTitle}>Vérification</Text>
+              <Text style={styles.headerTitle}>{t('verification.title')}</Text>
               <View style={styles.placeholder} />
             </View>
             <View style={styles.centerContent}>
               <View style={styles.pendingBadge}><Clock size={64} color={Colors.primary.orange} /></View>
-              <Text style={styles.pendingTitle}>Demande en cours</Text>
-              <Text style={styles.pendingText}>Votre demande de vérification est en cours d'examen. Notre équipe vous répondra sous 24-48h.</Text>
+              <Text style={styles.pendingTitle}>{t('verification.pendingTitle')}</Text>
+              <Text style={styles.pendingText}>{t('verification.pendingText')}</Text>
               <Card style={styles.requestCard}>
-                <Text style={styles.requestLabel}>Votre demande :</Text>
+                <Text style={styles.requestLabel}>{t('verification.requestLabel')}</Text>
                 <Text style={styles.requestReason}>{pendingRequest.reason}</Text>
-                <Text style={styles.requestDate}>Soumise le {new Date(pendingRequest.createdAt).toLocaleDateString('fr-FR')}</Text>
+                <Text style={styles.requestDate}>{t('verification.submittedOn', { date: new Date(pendingRequest.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR') })}</Text>
               </Card>
             </View>
           </SafeAreaView>
@@ -123,7 +125,7 @@ export default function VerificationScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={handleBack}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
-            <Text style={styles.headerTitle}>Demande de vérification</Text>
+            <Text style={styles.headerTitle}>{t('verification.requestTitle')}</Text>
             <View style={styles.placeholder} />
           </View>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 30}>
@@ -138,30 +140,30 @@ export default function VerificationScreen() {
             </View>
 
             <Card style={styles.infoCard}>
-              <Text style={styles.infoTitle}>Qu'est-ce que le badge vérifié ?</Text>
-              <Text style={styles.infoText}>Le badge vérifié confirme que votre identité a été vérifiée par notre équipe. C'est un gage de confiance pour les autres utilisateurs.</Text>
+              <Text style={styles.infoTitle}>{t('verification.whatIsTitle')}</Text>
+              <Text style={styles.infoText}>{t('verification.whatIsText')}</Text>
             </Card>
 
             <Card style={styles.benefitsCard}>
-              <Text style={styles.benefitsTitle}>Avantages</Text>
-              <View style={styles.benefitItem}><Shield size={18} color={Colors.status.success} /><Text style={styles.benefitText}>Profil de confiance renforcé</Text></View>
-              <View style={styles.benefitItem}><Users size={18} color={Colors.primary.blue} /><Text style={styles.benefitText}>Priorité pour rejoindre des équipes</Text></View>
-              <View style={styles.benefitItem}><Trophy size={18} color={Colors.primary.orange} /><Text style={styles.benefitText}>Badge visible sur votre profil</Text></View>
-              <View style={styles.benefitItem}><Award size={18} color="#8B5CF6" /><Text style={styles.benefitText}>Accès aux tournois exclusifs</Text></View>
+              <Text style={styles.benefitsTitle}>{t('verification.benefitsShortTitle')}</Text>
+              <View style={styles.benefitItem}><Shield size={18} color={Colors.status.success} /><Text style={styles.benefitText}>{t('verification.benefitTrustStrong')}</Text></View>
+              <View style={styles.benefitItem}><Users size={18} color={Colors.primary.blue} /><Text style={styles.benefitText}>{t('verification.benefitJoinPriority')}</Text></View>
+              <View style={styles.benefitItem}><Trophy size={18} color={Colors.primary.orange} /><Text style={styles.benefitText}>{t('verification.benefitBadgeProfile')}</Text></View>
+              <View style={styles.benefitItem}><Award size={18} color="#8B5CF6" /><Text style={styles.benefitText}>{t('verification.benefitTournaments')}</Text></View>
             </Card>
 
             <Card style={styles.criteriaCard}>
-              <Text style={styles.criteriaTitle}>Critères recommandés</Text>
-              <Text style={styles.criteriaText}>• Profil complet avec photo{'\n'}• Au moins 5 matchs joués{'\n'}• Membre d'au moins 1 équipe{'\n'}• Score fair-play supérieur à 4.0{'\n'}• Aucune infraction au règlement</Text>
+              <Text style={styles.criteriaTitle}>{t('verification.criteriaTitle')}</Text>
+              <Text style={styles.criteriaText}>{t('verification.criteriaText')}</Text>
             </Card>
 
-            <Text style={styles.formLabel}>Pourquoi souhaitez-vous être vérifié ?</Text>
+            <Text style={styles.formLabel}>{t('verification.reasonLabel')}</Text>
             <View ref={textAreaContainerRef} collapsable={false}>
-              <TextInput style={styles.textArea} placeholder="Expliquez-nous pourquoi vous méritez le badge vérifié... (ex: joueur régulier, capitaine d'équipe, organisateur de tournois)" placeholderTextColor={Colors.text.muted} value={reason} onChangeText={setReason} onFocus={scrollToFocusedInput} multiline numberOfLines={5} textAlignVertical="top" maxLength={500} />
+              <TextInput style={styles.textArea} placeholder={t('verification.reasonPlaceholder')} placeholderTextColor={Colors.text.muted} value={reason} onChangeText={setReason} onFocus={scrollToFocusedInput} multiline numberOfLines={5} textAlignVertical="top" maxLength={500} />
             </View>
             <Text style={styles.charCount}>{reason.length}/500</Text>
 
-            <Button title="Soumettre ma demande" onPress={handleSubmit} loading={isSubmittingVerification} variant="primary" disabled={!reason.trim()} style={styles.submitBtn} />
+            <Button title={t('verification.submit')} onPress={handleSubmit} loading={isSubmittingVerification} variant="primary" disabled={!reason.trim()} style={styles.submitBtn} />
             <View style={styles.bottomSpacer} />
           </ScrollView>
             </KeyboardAvoidingView>

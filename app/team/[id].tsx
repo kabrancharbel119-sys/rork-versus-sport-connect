@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Star, MapPin, Settings, UserPlus, MessageCircle, Shield, Plus, Check, X, ChevronDown, Edit3, Image, Crown, Trash2, Lock, Unlock, AlertTriangle, ChevronRight, Info } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
+import { useI18n } from '@/contexts/I18nContext';
 import { useTeams } from '@/contexts/TeamsContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { useNotifications } from '@/contexts/NotificationsContext';
@@ -57,10 +58,11 @@ const takePhoto = async (): Promise<string | null> => {
 
 export default function TeamDetailScreen() {
   const router = useRouter();
+  const { t } = useI18n();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const { getTeamById, sendJoinRequest, leaveTeam, handleRequest, updateMemberRole, addCustomRole, promoteMember, removeMember, getPendingRequests, updateTeam, deleteTeam, transferCaptaincy, followTeam, unfollowTeam, isUpdating, refetchTeams, getUserTeams } = useTeams();
-  const { getUserById, addUser } = useUsers();
+  const { users, addUser } = useUsers();
   const { addNotification, notifyTeamRequest } = useNotifications();
   const fromContext = getTeamById(id || '');
   const [fetchedTeam, setFetchedTeam] = useState<Team | null>(null);
@@ -121,7 +123,7 @@ export default function TeamDetailScreen() {
   const pendingRequests = team ? getPendingRequests(team.id) : [];
   const allRoles = team ? [...TEAM_ROLES, ...team.customRoles.map(r => r.name)] : [...TEAM_ROLES];
   const positions = team ? (DEFAULT_POSITIONS[team.sport] || DEFAULT_POSITIONS.default) : DEFAULT_POSITIONS.default;
-  const resolveMemberUser = (memberUserId: string) => memberUsers[memberUserId] || getUserById(memberUserId);
+  const resolveMemberUser = (memberUserId: string) => memberUsers[memberUserId] || users.find((u) => u.id === memberUserId);
 
   useEffect(() => {
     if (team) {
@@ -141,7 +143,7 @@ export default function TeamDetailScreen() {
       hydratedTeamMembersRef.current[team.id] = true;
 
       const cachedUsers = team.members.reduce<Record<string, User>>((acc, member) => {
-        const cached = getUserById(member.userId);
+        const cached = users.find((u) => u.id === member.userId);
         if (cached) acc[member.userId] = cached;
         return acc;
       }, {});
@@ -151,7 +153,7 @@ export default function TeamDetailScreen() {
       
       const missingUserIds = team.members
         .map(m => m.userId)
-        .filter(userId => !getUserById(userId) && !memberUsers[userId]);
+        .filter(userId => !users.find((u) => u.id === userId) && !memberUsers[userId]);
       
       if (missingUserIds.length === 0) return;
       
@@ -179,7 +181,7 @@ export default function TeamDetailScreen() {
     };
     
     loadMissingUsers();
-  }, [team?.id, getUserById, addUser]);
+  }, [team?.id, users, memberUsers, addUser]);
 
   useEffect(() => {
     if (team) {
@@ -197,9 +199,9 @@ export default function TeamDetailScreen() {
     if (team && canHandleRequests && pendingRequests.length > 0 && !showPendingAlert) {
       setShowPendingAlert(true);
       Alert.alert(
-        'Demandes en attente',
-        `Vous avez ${pendingRequests.length} demande(s) pour rejoindre l\'équipe.`,
-        [{ text: 'Voir', onPress: () => setShowRequestsModal(true) }, { text: 'Plus tard', style: 'cancel' }]
+        t('teamDetail.pendingRequestsTitle'),
+        t('teamDetail.pendingRequestsMessage', { count: pendingRequests.length }),
+        [{ text: t('teamDetail.view'), onPress: () => setShowRequestsModal(true) }, { text: t('teamDetail.later'), style: 'cancel' }]
       );
     }
   }, [team, canHandleRequests, pendingRequests.length, showPendingAlert]);
@@ -211,7 +213,7 @@ export default function TeamDetailScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
             <ActivityIndicator size="large" color={Colors.primary.orange} />
-            <Text style={styles.errorText}>Chargement...</Text>
+            <Text style={styles.errorText}>{t('teamDetail.loading')}</Text>
           </View>
         </SafeAreaView>
       </View>
@@ -223,7 +225,7 @@ export default function TeamDetailScreen() {
       <View style={styles.container}>
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
-          <View style={styles.errorContainer}><Text style={styles.errorText}>Équipe non trouvée</Text><Button title="Retour" onPress={() => router.back()} variant="outline" /></View>
+          <View style={styles.errorContainer}><Text style={styles.errorText}>{t('teamDetail.notFound')}</Text><Button title={t('common.back')} onPress={() => router.back()} variant="outline" /></View>
         </SafeAreaView>
       </View>
     );
@@ -233,8 +235,8 @@ export default function TeamDetailScreen() {
     if (!user) return;
     if (getUserTeams(user.id).length >= 1) {
       Alert.alert(
-        'Une seule équipe',
-        'Vous ne pouvez être membre que d\'une seule équipe à la fois. Quittez votre équipe actuelle pour rejoindre une autre.'
+        t('teamDetail.oneTeamTitle'),
+        t('teamDetail.oneTeamMessage')
       );
       return;
     }
@@ -244,20 +246,20 @@ export default function TeamDetailScreen() {
       await notifyTeamRequest(team.name, 'sent', team.id, user.id);
       await refetchTeams();
       Alert.alert(
-        'Demande envoyée',
-        'Votre demande a été envoyée au capitaine pour approbation. Vous serez notifié lorsqu\'elle sera acceptée ou refusée.'
+        t('teamDetail.requestSentTitle'),
+        t('teamDetail.requestSentMessage')
       );
     } catch (error: any) {
-      Alert.alert('Erreur', error.message ?? 'Impossible d\'envoyer la demande');
+      Alert.alert(t('common.error'), error.message ?? t('teamDetail.requestSendError'));
     } finally {
       setIsRequesting(false);
     }
   };
 
   const handleLeave = () => {
-    Alert.alert('Quitter', `Quitter ${team.name} ?`, [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Quitter', style: 'destructive', onPress: async () => { try { await leaveTeam({ teamId: team.id, userId: user!.id }); router.back(); } catch (e: any) { Alert.alert('Erreur', e.message); } } },
+    Alert.alert(t('teamDetail.leaveTeamTitle'), t('teamDetail.leaveTeamQuestion', { team: team.name }), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('teamDetail.leaveTeamTitle'), style: 'destructive', onPress: async () => { try { await leaveTeam({ teamId: team.id, userId: user!.id }); router.back(); } catch (e: any) { Alert.alert(t('common.error'), e.message); } } },
     ]);
   };
 
@@ -270,28 +272,28 @@ export default function TeamDetailScreen() {
       }
       setShowRequestsModal(false);
       await refetchTeams();
-      Alert.alert('Succès', action === 'accept' ? 'Membre ajouté' : 'Demande refusée');
+      Alert.alert(t('common.success'), action === 'accept' ? t('teamDetail.memberAdded') : t('teamDetail.requestRejected'));
     } catch (e: any) {
-      Alert.alert('Erreur', e.message);
+      Alert.alert(t('common.error'), e.message);
     }
   };
 
   const handleUpdateRole = async (userId: string, customRole: string, position?: string) => {
     try { await updateMemberRole({ teamId: team.id, userId, customRole, position }); setShowRoleModal(false); }
-    catch (e: any) { Alert.alert('Erreur', e.message); }
+    catch (e: any) { Alert.alert(t('common.error'), e.message); }
   };
 
   const handleAddCustomRole = async () => {
     if (!newRoleName.trim()) return;
-    try { await addCustomRole({ teamId: team.id, roleName: newRoleName.trim(), createdBy: user!.id }); setNewRoleName(''); setShowAddRoleModal(false); Alert.alert('Succès', 'Rôle ajouté'); }
-    catch (e: any) { Alert.alert('Erreur', e.message); }
+    try { await addCustomRole({ teamId: team.id, roleName: newRoleName.trim(), createdBy: user!.id }); setNewRoleName(''); setShowAddRoleModal(false); Alert.alert(t('common.success'), t('teamDetail.roleAdded')); }
+    catch (e: any) { Alert.alert(t('common.error'), e.message); }
   };
 
   const handlePromote = (userId: string, role: 'co-captain' | 'member') => {
-    Alert.alert('Confirmer', `${role === 'co-captain' ? 'Promouvoir co-capitaine' : 'Rétrograder membre'} ?`, [
-      { text: 'Annuler', style: 'cancel' },
+    Alert.alert(t('teamDetail.confirmTitle'), role === 'co-captain' ? t('teamDetail.promoteQuestion') : t('teamDetail.demoteQuestion'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Confirmer',
+        text: t('common.confirm'),
         onPress: async () => {
           try {
             await promoteMember({ teamId: team.id, userId, role, promoterId: user!.id });
@@ -300,7 +302,7 @@ export default function TeamDetailScreen() {
               : { title: 'Rôle mis à jour', message: `Vous n'êtes plus co-capitaine de ${team.name}.` };
             await addNotification({ userId, type: 'team', ...msg, data: { route: `/team/${team.id}` } });
           } catch (e: any) {
-            Alert.alert('Erreur', e.message);
+            Alert.alert(t('common.error'), e.message);
           }
         },
       },
@@ -308,10 +310,10 @@ export default function TeamDetailScreen() {
   };
 
   const handleRemoveMember = (userId: string) => {
-    Alert.alert('Retirer', 'Retirer ce membre ?', [
-      { text: 'Annuler', style: 'cancel' },
+    Alert.alert(t('teamDetail.removeMemberTitle'), t('teamDetail.removeMemberQuestion'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Retirer',
+        text: t('teamDetail.removeMemberTitle'),
         style: 'destructive',
         onPress: async () => {
           try {
@@ -324,7 +326,7 @@ export default function TeamDetailScreen() {
               data: { route: '/(tabs)/teams' },
             });
           } catch (e: any) {
-            Alert.alert('Erreur', e.message);
+            Alert.alert(t('common.error'), e.message);
           }
         },
       },
@@ -354,7 +356,7 @@ export default function TeamDetailScreen() {
           console.log('[Team] Image uploaded successfully, new URL:', logoUrl);
         } catch (uploadError) {
           console.error('[Team] Failed to upload image:', uploadError);
-          Alert.alert('Erreur', 'Impossible d\'uploader l\'image. Vérifiez votre connexion.');
+          Alert.alert(t('common.error'), t('teamDetail.uploadImageError'));
           return;
         }
       } else {
@@ -374,21 +376,21 @@ export default function TeamDetailScreen() {
         },
       });
       setShowSettingsModal(false);
-      Alert.alert('Succès', 'Équipe mise à jour');
+      Alert.alert(t('common.success'), t('teamDetail.teamUpdated'));
     } catch (e: any) {
       console.error('[Team] Erreur sauvegarde:', e);
-      Alert.alert('Erreur', e.message);
+      Alert.alert(t('common.error'), e.message);
     }
   };
 
   const handleDeleteTeam = () => {
     Alert.alert(
-      'Dissoudre l\'équipe',
-      `Êtes-vous sûr de vouloir dissoudre ${team.name} ? Cette action est irréversible.`,
+      t('teamDetail.dissolveTeamTitle'),
+      t('teamDetail.dissolveTeamMessage', { team: team.name }),
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Dissoudre',
+          text: t('teamDetail.dissolveAction'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -405,9 +407,9 @@ export default function TeamDetailScreen() {
               }
               setShowSettingsModal(false);
               router.back();
-              Alert.alert('Succès', 'Équipe dissoute');
+              Alert.alert(t('common.success'), t('teamDetail.dissolvedSuccess'));
             } catch (e: any) {
-              Alert.alert('Erreur', e.message);
+              Alert.alert(t('common.error'), e.message);
             }
           },
         },
@@ -416,13 +418,13 @@ export default function TeamDetailScreen() {
   };
 
   const handleTransferCaptaincy = async (newCaptainId: string) => {
-    const newCaptain = getUserById(newCaptainId);
+    const newCaptain = resolveMemberUser(newCaptainId);
     Alert.alert(
-      'Transférer le capitanat',
-      `Transférer le rôle de capitaine à ${newCaptain?.fullName || 'ce membre'} ? Vous deviendrez un membre normal.`,
+      t('teamDetail.transferTitle'),
+      t('teamDetail.transferMessage', { member: newCaptain?.fullName || t('teamDetail.member') }),
       [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Transférer', onPress: async () => {
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('teamDetail.transferAction'), onPress: async () => {
           try {
             await transferCaptaincy({ teamId: team.id, newCaptainId, currentCaptainId: user!.id });
             await addNotification({
@@ -434,9 +436,9 @@ export default function TeamDetailScreen() {
             });
             setShowTransferModal(false);
             await refetchTeams();
-            Alert.alert('Succès', 'Capitanat transféré');
+            Alert.alert(t('common.success'), t('teamDetail.transferSuccess'));
           } catch (e: any) {
-            Alert.alert('Erreur', e.message);
+            Alert.alert(t('common.error'), e.message);
           }
         }},
       ]
@@ -476,10 +478,10 @@ export default function TeamDetailScreen() {
               <View style={styles.badges}>
                 <View style={styles.badge}><Text style={styles.badgeText}>{levelLabels[team.level]}</Text></View>
                 <View style={styles.badge}><Text style={styles.badgeText}>{ambianceLabels[team.ambiance]}</Text></View>
-                {team.isRecruiting && <View style={[styles.badge, styles.recruitingBadge]}><Text style={[styles.badgeText, styles.recruitingText]}>Recrute</Text></View>}
+                {team.isRecruiting && <View style={[styles.badge, styles.recruitingBadge]}><Text style={[styles.badgeText, styles.recruitingText]}>{t('teamDetail.recruit')}</Text></View>}
               </View>
               {isMember && memberRole && (
-                <View style={styles.memberBadge}><Shield size={14} color={Colors.primary.orange} /><Text style={styles.memberBadgeText}>{memberRole === 'captain' ? 'Capitaine' : memberRole === 'co-captain' ? 'Co-capitaine' : 'Membre'}</Text></View>
+                <View style={styles.memberBadge}><Shield size={14} color={Colors.primary.orange} /><Text style={styles.memberBadgeText}>{memberRole === 'captain' ? t('teamDetail.captain') : memberRole === 'co-captain' ? t('teamDetail.coCaptain') : t('teamDetail.member')}</Text></View>
               )}
             </View>
 
@@ -487,15 +489,15 @@ export default function TeamDetailScreen() {
               <>
                 {team.description && <Card style={styles.descriptionCard}><Text style={styles.description} numberOfLines={4}>{team.description}</Text></Card>}
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Membres ({team.members.length}/{team.maxMembers})</Text>
-                  <Text style={styles.previewMembersHint}>Seuls le nom et le rôle du capitaine sont visibles. Rejoignez l&apos;équipe pour tout voir.</Text>
+                  <Text style={styles.sectionTitle}>{t('teamDetail.members', { count: team.members.length, max: team.maxMembers })}</Text>
+                  <Text style={styles.previewMembersHint}>{t('teamDetail.accessMembersText')}</Text>
                   {team.members.map((member) => (
                     <Card key={member.userId} style={styles.memberCard}>
                       <View style={styles.memberRow}>
-                        <Avatar uri={getUserById(member.userId)?.avatar} name={getUserById(member.userId)?.fullName || getUserById(member.userId)?.username} size="medium" />
+                        <Avatar uri={resolveMemberUser(member.userId)?.avatar} name={resolveMemberUser(member.userId)?.fullName || resolveMemberUser(member.userId)?.username} size="medium" />
                         <View style={styles.memberInfo}>
-                          <Text style={styles.memberName}>{getUserById(member.userId)?.fullName || getUserById(member.userId)?.username || 'Membre'}</Text>
-                          <Text style={styles.memberPosition}>{member.role === 'captain' ? 'Capitaine' : member.role === 'co-captain' ? 'Co-capitaine' : 'Membre'}</Text>
+                          <Text style={styles.memberName}>{resolveMemberUser(member.userId)?.fullName || resolveMemberUser(member.userId)?.username || t('teamDetail.member')}</Text>
+                          <Text style={styles.memberPosition}>{member.role === 'captain' ? t('teamDetail.captain') : member.role === 'co-captain' ? t('teamDetail.coCaptain') : t('teamDetail.member')}</Text>
                         </View>
                         {member.role === 'captain' && <View style={styles.organizerBadge}><Crown size={14} color={Colors.primary.orange} /></View>}
                       </View>
@@ -504,22 +506,22 @@ export default function TeamDetailScreen() {
                 </View>
                 <Card style={styles.accessCard} variant="gradient">
                   <Info size={22} color={Colors.primary.blue} />
-                  <Text style={styles.accessTitle}>Accès réservé aux membres</Text>
+                  <Text style={styles.accessTitle}>{t('teamDetail.accessMembersTitle')}</Text>
                   <Text style={styles.accessText}>
-                    Pour accéder aux stats, au chat et à la gestion de l&apos;équipe, envoyez une demande au capitaine. Une fois acceptée, vous aurez tous les droits.
+                    {t('teamDetail.accessMembersText')}
                   </Text>
                 </Card>
                 <View style={styles.actions}>
                   {myJoinRequest?.status === 'waiting' ? (
-                    <Button title="En liste d'attente" onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
+                    <Button title={t('teamDetail.waitingList')} onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
                   ) : myJoinRequest?.status === 'rejected' ? (
-                    <Button title="Redemander à rejoindre" onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
+                    <Button title={t('teamDetail.requestJoinAgain')} onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
                   ) : hasRequested ? (
-                    <Button title="Demande envoyée au capitaine" onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
+                    <Button title={t('teamDetail.requestSentCaptain')} onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
                   ) : team.isRecruiting && team.members.length < team.maxMembers ? (
-                    <Button title="Demander à rejoindre" onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
+                    <Button title={t('teamDetail.requestJoin')} onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
                   ) : (
-                    <Button title="Recrutement fermé" onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
+                    <Button title={t('teamDetail.recruitmentClosed')} onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
                   )}
                 </View>
                 <View style={styles.bottomSpacer} />
@@ -529,31 +531,31 @@ export default function TeamDetailScreen() {
             {team.description && <Card style={styles.descriptionCard}><Text style={styles.description}>{team.description}</Text></Card>}
 
             <View style={styles.statsRow}>
-              <StatCard label="Matchs" value={team.stats.matchesPlayed} variant="blue" />
-              <StatCard label="Victoires" value={team.stats.wins} variant="default" />
-              <StatCard label="Trophées" value={team.stats.tournamentWins} variant="orange" />
+              <StatCard label={t('teamDetail.matches')} value={team.stats.matchesPlayed} variant="blue" />
+              <StatCard label={t('teamDetail.wins')} value={team.stats.wins} variant="default" />
+              <StatCard label={t('teamDetail.trophies')} value={team.stats.tournamentWins} variant="orange" />
             </View>
 
             <Card style={styles.reputationCard} variant="gradient">
               <View style={styles.reputationRow}>
                 <Star size={24} color="#F59E0B" />
-                <View style={styles.reputationInfo}><Text style={styles.reputationLabel}>Réputation</Text><Text style={styles.reputationValue}>{team.reputation.toFixed(1)} / 5.0</Text></View>
+                <View style={styles.reputationInfo}><Text style={styles.reputationLabel}>{t('teamDetail.reputation')}</Text><Text style={styles.reputationValue}>{team.reputation.toFixed(1)} / 5.0</Text></View>
                 <View style={styles.cashPrize}><Text style={styles.cashPrizeLabel}>Cash prizes</Text><Text style={styles.cashPrizeValue}>{team.stats.totalCashPrize.toLocaleString()} FCFA</Text></View>
               </View>
             </Card>
 
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Membres ({team.members.length}/{team.maxMembers})</Text>
-                {isCaptain && <TouchableOpacity style={styles.addRoleBtn} onPress={() => setShowAddRoleModal(true)}><Plus size={16} color="#FFFFFF" /><Text style={styles.addRoleBtnText}>Rôle</Text></TouchableOpacity>}
+                <Text style={styles.sectionTitle}>{t('teamDetail.members', { count: team.members.length, max: team.maxMembers })}</Text>
+                {isCaptain && <TouchableOpacity style={styles.addRoleBtn} onPress={() => setShowAddRoleModal(true)}><Plus size={16} color="#FFFFFF" /><Text style={styles.addRoleBtnText}>{t('teamDetail.customRole')}</Text></TouchableOpacity>}
               </View>
               {team.members.map((member, i) => (
                 <Card key={i} style={styles.memberCard}>
                   <TouchableOpacity style={styles.memberRow} onPress={() => canManage && member.userId !== team.captainId && (setSelectedMember(member.userId), setShowRoleModal(true))} disabled={!canManage || member.userId === team.captainId}>
                     <Avatar uri={member.userId === user?.id ? user?.avatar : resolveMemberUser(member.userId)?.avatar} name={member.userId === user?.id ? user?.fullName : resolveMemberUser(member.userId)?.fullName || resolveMemberUser(member.userId)?.username} size="medium" />
                     <View style={styles.memberInfo}>
-                      <Text style={styles.memberName}>{member.userId === user?.id ? user?.fullName : resolveMemberUser(member.userId)?.fullName || resolveMemberUser(member.userId)?.username || 'Membre'}</Text>
-                      <Text style={styles.memberPosition}>{member.customRole || member.position || 'Membre'}</Text>
+                      <Text style={styles.memberName}>{member.userId === user?.id ? user?.fullName : resolveMemberUser(member.userId)?.fullName || resolveMemberUser(member.userId)?.username || t('teamDetail.member')}</Text>
+                      <Text style={styles.memberPosition}>{member.customRole || member.position || t('teamDetail.member')}</Text>
                     </View>
                     {member.role !== 'member' && <View style={[styles.roleBadge, member.role === 'captain' && styles.captainRole]}><Text style={styles.roleText}>{member.role === 'captain' ? 'Cap' : 'Co'}</Text></View>}
                     {canManage && member.userId !== team.captainId && <ChevronDown size={16} color={Colors.text.muted} />}
@@ -565,24 +567,24 @@ export default function TeamDetailScreen() {
             {(team.fans ?? []).length > 0 && (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Communauté ({(team.fans ?? []).length})</Text>
+                  <Text style={styles.sectionTitle}>{t('teamDetail.community', { count: (team.fans ?? []).length })}</Text>
                 </View>
                 <Card style={styles.fansCard}>
                   <Text style={styles.fansDescription}>
-                    {(team.fans ?? []).length} {(team.fans ?? []).length === 1 ? 'fan' : 'fans'} suivent cette équipe
+                    {t('teamDetail.fansFollowTeam', { count: (team.fans ?? []).length })}
                   </Text>
                   <View style={styles.fansList}>
                     {(team.fans ?? []).slice(0, 10).map((fanId) => {
-                      const fan = getUserById(fanId);
+                      const fan = resolveMemberUser(fanId);
                       return (
                         <View key={fanId} style={styles.fanItem}>
                           <Avatar uri={fan?.avatar} name={fan?.fullName || fan?.username || ''} size="small" />
-                          <Text style={styles.fanName}>{fan?.fullName || fan?.username || 'Fan'}</Text>
+                          <Text style={styles.fanName}>{fan?.fullName || fan?.username || t('teamDetail.fan')}</Text>
                         </View>
                       );
                     })}
                     {(team.fans ?? []).length > 10 && (
-                      <Text style={styles.fansMore}>+{(team.fans ?? []).length - 10} autres</Text>
+                      <Text style={styles.fansMore}>{t('teamDetail.othersCount', { count: (team.fans ?? []).length - 10 })}</Text>
                     )}
                   </View>
                 </Card>
@@ -591,34 +593,34 @@ export default function TeamDetailScreen() {
 
             <View style={styles.actions}>
               {isMember && (
-                <Button title="Chat d'équipe" onPress={() => router.push('/(tabs)/chat')} variant="primary" icon={<MessageCircle size={18} color="#FFFFFF" />} style={styles.actionButton} />
+                <Button title={t('teamDetail.teamChat')} onPress={() => router.push('/(tabs)/chat')} variant="primary" icon={<MessageCircle size={18} color="#FFFFFF" />} style={styles.actionButton} />
               )}
               {!isMember && !hasRequested && !isFan && myJoinRequest?.status !== 'waiting' && (
                 <>
-                  <Button title={myJoinRequest?.status === 'rejected' ? 'Redemander à rejoindre' : 'Demander à rejoindre'} onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
-                  <Button title="Suivre l'équipe" onPress={async () => {
+                  <Button title={myJoinRequest?.status === 'rejected' ? t('teamDetail.requestJoinAgain') : t('teamDetail.requestJoin')} onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
+                  <Button title={t('teamDetail.followTeam')} onPress={async () => {
                     if (!user || !team) return;
                     try {
                       await followTeam({ teamId: team.id, userId: user.id });
-                      Alert.alert('Succès', 'Vous suivez maintenant cette équipe !');
+                      Alert.alert(t('common.success'), t('teamDetail.followSuccess'));
                     } catch (error: any) {
-                      Alert.alert('Erreur', error.message || 'Impossible de suivre l\'équipe');
+                      Alert.alert(t('common.error'), error.message || t('teamDetail.followError'));
                     }
                   }} variant="outline" icon={<Star size={18} color={Colors.primary.blue} />} style={styles.actionButton} />
                 </>
               )}
               {isFan && !isMember && (
-                <Button title="Ne plus suivre" onPress={async () => {
+                <Button title={t('teamDetail.unfollowTeam')} onPress={async () => {
                   if (!user || !team) return;
                   try {
                     await unfollowTeam({ teamId: team.id, userId: user.id });
-                    Alert.alert('Succès', 'Vous ne suivez plus cette équipe');
+                    Alert.alert(t('common.success'), t('teamDetail.unfollowSuccess'));
                   } catch (error: any) {
-                    Alert.alert('Erreur', error.message || 'Impossible de ne plus suivre l\'équipe');
+                    Alert.alert(t('common.error'), error.message || t('teamDetail.unfollowError'));
                   }
                 }} variant="outline" style={styles.actionButton} />
               )}
-              {!isCaptain && isMember && <Button title="Quitter l'équipe" onPress={handleLeave} variant="outline" style={styles.actionButton} />}
+              {!isCaptain && isMember && <Button title={t('teamDetail.leaveTeamButton')} onPress={handleLeave} variant="outline" style={styles.actionButton} />}
             </View>
             <View style={styles.bottomSpacer} />
               </>
@@ -629,18 +631,18 @@ export default function TeamDetailScreen() {
         <Modal visible={showRequestsModal && canHandleRequests} animationType="slide" transparent>
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <View style={styles.modalHeader}><Text style={styles.modalTitle}>Demandes ({pendingRequests.length})</Text><TouchableOpacity onPress={() => setShowRequestsModal(false)}><X size={24} color={Colors.text.primary} /></TouchableOpacity></View>
+              <View style={styles.modalHeader}><Text style={styles.modalTitle}>{t('teamDetail.requestsModalTitle', { count: pendingRequests.length })}</Text><TouchableOpacity onPress={() => setShowRequestsModal(false)}><X size={24} color={Colors.text.primary} /></TouchableOpacity></View>
               <ScrollView style={styles.modalScroll}>
                 {pendingRequests.map(req => (
                   <View key={req.id} style={styles.requestItem}>
-                    <View style={styles.requestInfo}><Text style={styles.requestName}>{getUserById(req.userId)?.fullName || getUserById(req.userId)?.username || 'Joueur'}</Text><Text style={styles.requestScore}>Compatibilité: {req.compatibilityScore || 75}%</Text>{req.message && <Text style={styles.requestMessage}>{req.message}</Text>}</View>
+                    <View style={styles.requestInfo}><Text style={styles.requestName}>{resolveMemberUser(req.userId)?.fullName || resolveMemberUser(req.userId)?.username || t('teamDetail.player')}</Text><Text style={styles.requestScore}>{t('teamDetail.compatibility', { score: req.compatibilityScore || 75 })}</Text>{req.message && <Text style={styles.requestMessage}>{req.message}</Text>}</View>
                     <View style={styles.requestActions}>
                       <TouchableOpacity style={styles.acceptBtn} onPress={() => handleRequestAction(req.id, 'accept')}><Check size={20} color="#FFFFFF" /></TouchableOpacity>
                       <TouchableOpacity style={styles.rejectBtn} onPress={() => handleRequestAction(req.id, 'reject')}><X size={20} color="#FFFFFF" /></TouchableOpacity>
                     </View>
                   </View>
                 ))}
-                {pendingRequests.length === 0 && <Text style={styles.emptyText}>Aucune demande</Text>}
+                {pendingRequests.length === 0 && <Text style={styles.emptyText}>{t('teamDetail.noRequests')}</Text>}
               </ScrollView>
             </View>
           </View>
@@ -649,21 +651,21 @@ export default function TeamDetailScreen() {
         <Modal visible={showRoleModal} animationType="slide" transparent>
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <View style={styles.modalHeader}><Text style={styles.modalTitle}>Gérer le membre</Text><TouchableOpacity onPress={() => setShowRoleModal(false)}><X size={24} color={Colors.text.primary} /></TouchableOpacity></View>
+              <View style={styles.modalHeader}><Text style={styles.modalTitle}>{t('teamDetail.manageMember')}</Text><TouchableOpacity onPress={() => setShowRoleModal(false)}><X size={24} color={Colors.text.primary} /></TouchableOpacity></View>
               <ScrollView style={styles.modalScroll}>
-                <Text style={styles.modalLabel}>Rôle personnalisé</Text>
+                <Text style={styles.modalLabel}>{t('teamDetail.customRole')}</Text>
                 <View style={styles.roleOptions}>{allRoles.map(role => (<TouchableOpacity key={role} style={styles.roleOption} onPress={() => { handleUpdateRole(selectedMember!, role); }}><Text style={styles.roleOptionText}>{role}</Text></TouchableOpacity>))}</View>
-                <Text style={styles.modalLabel}>Position</Text>
+                <Text style={styles.modalLabel}>{t('teamDetail.position')}</Text>
                 <View style={styles.roleOptions}>{positions.map(pos => (<TouchableOpacity key={pos} style={styles.roleOption} onPress={() => { handleUpdateRole(selectedMember!, team.members.find(m => m.userId === selectedMember)?.customRole || '', pos); }}><Text style={styles.roleOptionText}>{pos}</Text></TouchableOpacity>))}</View>
                 {isCaptain && selectedMember && (
                   <>
-                    <Text style={styles.modalLabel}>Actions</Text>
+                    <Text style={styles.modalLabel}>{t('teamDetail.actions')}</Text>
                     {!team.coCaptainIds.includes(selectedMember) ? (
-                      <Button title="Promouvoir co-capitaine" onPress={() => { handlePromote(selectedMember, 'co-captain'); setShowRoleModal(false); }} variant="primary" style={styles.modalBtn} />
+                      <Button title={t('teamDetail.promoteCoCaptain')} onPress={() => { handlePromote(selectedMember, 'co-captain'); setShowRoleModal(false); }} variant="primary" style={styles.modalBtn} />
                     ) : (
-                      <Button title="Rétrograder membre" onPress={() => { handlePromote(selectedMember, 'member'); setShowRoleModal(false); }} variant="outline" style={styles.modalBtn} />
+                      <Button title={t('teamDetail.demoteMember')} onPress={() => { handlePromote(selectedMember, 'member'); setShowRoleModal(false); }} variant="outline" style={styles.modalBtn} />
                     )}
-                    <Button title="Retirer de l'équipe" onPress={() => { handleRemoveMember(selectedMember); setShowRoleModal(false); }} variant="outline" style={[styles.modalBtn, { borderColor: Colors.status.error }]} />
+                    <Button title={t('teamDetail.removeFromTeam')} onPress={() => { handleRemoveMember(selectedMember); setShowRoleModal(false); }} variant="outline" style={[styles.modalBtn, { borderColor: Colors.status.error }]} />
                   </>
                 )}
               </ScrollView>
@@ -674,9 +676,9 @@ export default function TeamDetailScreen() {
         <Modal visible={showAddRoleModal} animationType="slide" transparent>
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <View style={styles.modalHeader}><Text style={styles.modalTitle}>Nouveau rôle</Text><TouchableOpacity onPress={() => setShowAddRoleModal(false)}><X size={24} color={Colors.text.primary} /></TouchableOpacity></View>
-              <TextInput style={styles.roleInput} placeholder="Nom du rôle..." placeholderTextColor={Colors.text.muted} value={newRoleName} onChangeText={setNewRoleName} />
-              <Button title="Créer" onPress={handleAddCustomRole} variant="primary" disabled={!newRoleName.trim()} />
+              <View style={styles.modalHeader}><Text style={styles.modalTitle}>{t('teamDetail.newRole')}</Text><TouchableOpacity onPress={() => setShowAddRoleModal(false)}><X size={24} color={Colors.text.primary} /></TouchableOpacity></View>
+              <TextInput style={styles.roleInput} placeholder={t('teamDetail.roleNamePlaceholder')} placeholderTextColor={Colors.text.muted} value={newRoleName} onChangeText={setNewRoleName} />
+              <Button title={t('teamDetail.create')} onPress={handleAddCustomRole} variant="primary" disabled={!newRoleName.trim()} />
             </View>
           </View>
         </Modal>
@@ -880,7 +882,7 @@ export default function TeamDetailScreen() {
                   Sélectionnez le membre qui deviendra le nouveau capitaine. Vous perdrez vos droits de capitaine et deviendrez un membre normal.
                 </Text>
                 {otherMembers.map(member => {
-                  const memberUser = getUserById(member.userId);
+                  const memberUser = resolveMemberUser(member.userId);
                   return (
                     <TouchableOpacity 
                       key={member.userId} 

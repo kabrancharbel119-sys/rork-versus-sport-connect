@@ -42,6 +42,9 @@ export interface User {
   isVerified: boolean;
   isPremium: boolean;
   isBanned: boolean;
+  isProfileVisible?: boolean;
+  bannedUntil?: Date;
+  banReason?: string;
   role: UserRole;
   /** Seuls les organisateurs certifiés (ou admin) peuvent créer des matchs classés */
   canCreateRankedMatches?: boolean;

@@ -25,6 +25,9 @@
     },
     "production": {
       "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
         "EXPO_PUBLIC_USE_BACKEND_AUTH": "true",
         "EXPO_PUBLIC_RORK_API_BASE_URL": "https://api.rork.com",
@@ -34,6 +37,10 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "track": "internal"
+      }
+    }
   }
 }

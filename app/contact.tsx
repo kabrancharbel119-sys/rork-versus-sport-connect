@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Send, Bug, CreditCard, Users, Swords, HelpCircle, MessageCircle, Clock } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
+import { useI18n } from '@/contexts/I18nContext';
 import { useSupport, TicketCategory, SupportTicket } from '@/contexts/SupportContext';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
@@ -21,6 +22,7 @@ const CATEGORIES: { key: TicketCategory; label: string; icon: React.ReactNode }[
 
 export default function ContactScreen() {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const { user } = useAuth();
   const { createTicket, getUserTickets, isCreatingTicket } = useSupport();
   const [view, setView] = useState<'list' | 'new'>('list');
@@ -32,18 +34,18 @@ export default function ContactScreen() {
 
   const handleSubmit = async () => {
     if (!user || !category || !subject.trim() || !description.trim()) {
-      Alert.alert('Erreur', 'Veuillez remplir tous les champs');
+      Alert.alert(t('common.error'), t('contact.fillAllFields'));
       return;
     }
     try {
       await createTicket({ userId: user.id, userName: user.fullName, userEmail: user.email, category, subject: subject.trim(), description: description.trim() });
-      Alert.alert('Succès', 'Votre ticket a été créé. Notre équipe vous répondra bientôt.');
+      Alert.alert(t('common.success'), t('contact.ticketCreated'));
       setCategory(null);
       setSubject('');
       setDescription('');
       setView('list');
     } catch (error: any) {
-      Alert.alert('Erreur', error.message);
+      Alert.alert(t('common.error'), error.message);
     }
   };
 
@@ -58,20 +60,31 @@ export default function ContactScreen() {
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case 'open': return 'Ouvert';
-      case 'in_progress': return 'En cours';
-      case 'resolved': return 'Résolu';
-      default: return 'Fermé';
+      case 'open': return t('contact.statusOpen');
+      case 'in_progress': return t('contact.statusInProgress');
+      case 'resolved': return t('contact.statusResolved');
+      default: return t('contact.statusClosed');
     }
   };
 
-  const formatDate = (date: Date) => new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  const formatDate = (date: Date) => new Date(date).toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR', { day: 'numeric', month: 'short' });
+
+  const categoryLabel = (key: TicketCategory) => {
+    switch (key) {
+      case 'bug': return t('contact.bugCategory');
+      case 'account': return t('contact.accountCategory');
+      case 'payment': return t('contact.paymentCategory');
+      case 'team': return t('contact.teamCategory');
+      case 'match': return t('contact.matchCategory');
+      default: return t('contact.otherCategory');
+    }
+  };
 
   const renderTicketList = () => (
     <>
       <View style={styles.tabRow}>
-        <Text style={styles.sectionTitle}>Mes tickets ({myTickets.length})</Text>
-        <TouchableOpacity style={styles.newBtn} onPress={() => setView('new')}><Text style={styles.newBtnText}>+ Nouveau</Text></TouchableOpacity>
+        <Text style={styles.sectionTitle}>{t('contact.myTickets', { count: myTickets.length })}</Text>
+        <TouchableOpacity style={styles.newBtn} onPress={() => setView('new')}><Text style={styles.newBtnText}>{t('contact.newTicketShort')}</Text></TouchableOpacity>
       </View>
       {myTickets.length > 0 ? (
         myTickets.map((ticket: SupportTicket) => (
@@ -80,7 +93,7 @@ export default function ContactScreen() {
               <View style={styles.ticketCategory}>{CATEGORIES.find(c => c.key === ticket.category)?.icon}</View>
               <View style={styles.ticketInfo}>
                 <Text style={styles.ticketSubject}>{ticket.subject}</Text>
-                <Text style={styles.ticketMeta}>{formatDate(ticket.createdAt)} • {ticket.responses.length} réponse(s)</Text>
+                <Text style={styles.ticketMeta}>{formatDate(ticket.createdAt)} • {t('contact.responsesCount', { count: ticket.responses.length })}</Text>
               </View>
               <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(ticket.status)}20` }]}>
                 <Text style={[styles.statusText, { color: getStatusColor(ticket.status) }]}>{getStatusLabel(ticket.status)}</Text>
@@ -92,9 +105,9 @@ export default function ContactScreen() {
       ) : (
         <View style={styles.emptyState}>
           <MessageCircle size={48} color={Colors.text.muted} />
-          <Text style={styles.emptyTitle}>Aucun ticket</Text>
-          <Text style={styles.emptyText}>Vous n{"'"}avez pas encore créé de ticket support</Text>
-          <Button title="Créer un ticket" onPress={() => setView('new')} variant="primary" style={styles.emptyButton} />
+          <Text style={styles.emptyTitle}>{t('contact.noTicket')}</Text>
+          <Text style={styles.emptyText}>{t('contact.noTicketText')}</Text>
+          <Button title={t('contact.createTicket')} onPress={() => setView('new')} variant="primary" style={styles.emptyButton} />
         </View>
       )}
     </>
@@ -103,27 +116,27 @@ export default function ContactScreen() {
   const renderNewTicket = () => (
     <>
       <TouchableOpacity style={styles.backLink} onPress={() => setView('list')}>
-        <ArrowLeft size={18} color={Colors.primary.blue} /><Text style={styles.backLinkText}>Retour aux tickets</Text>
+        <ArrowLeft size={18} color={Colors.primary.blue} /><Text style={styles.backLinkText}>{t('contact.backToTickets')}</Text>
       </TouchableOpacity>
-      <Text style={styles.formTitle}>Nouveau ticket</Text>
-      <Text style={styles.label}>Catégorie</Text>
+      <Text style={styles.formTitle}>{t('contact.newTicket')}</Text>
+      <Text style={styles.label}>{t('contact.category')}</Text>
       <View style={styles.categories}>
         {CATEGORIES.map(cat => (
           <TouchableOpacity key={cat.key} style={[styles.categoryItem, category === cat.key && styles.categoryActive]} onPress={() => setCategory(cat.key)}>
-            {cat.icon}<Text style={[styles.categoryText, category === cat.key && styles.categoryTextActive]}>{cat.label}</Text>
+            {cat.icon}<Text style={[styles.categoryText, category === cat.key && styles.categoryTextActive]}>{categoryLabel(cat.key)}</Text>
             {category === cat.key && <View style={styles.checkmark} />}
           </TouchableOpacity>
         ))}
       </View>
-      <Text style={styles.label}>Sujet</Text>
-      <TextInput style={styles.input} placeholder="Décrivez brièvement votre problème" placeholderTextColor={Colors.text.muted} value={subject} onChangeText={setSubject} maxLength={100} />
-      <Text style={styles.label}>Description</Text>
-      <TextInput style={[styles.input, styles.textArea]} placeholder="Donnez-nous plus de détails pour que nous puissions vous aider..." placeholderTextColor={Colors.text.muted} value={description} onChangeText={setDescription} multiline numberOfLines={6} textAlignVertical="top" maxLength={1000} />
+      <Text style={styles.label}>{t('contact.subject')}</Text>
+      <TextInput style={styles.input} placeholder={t('contact.subjectPlaceholder')} placeholderTextColor={Colors.text.muted} value={subject} onChangeText={setSubject} maxLength={100} />
+      <Text style={styles.label}>{t('contact.description')}</Text>
+      <TextInput style={[styles.input, styles.textArea]} placeholder={t('contact.descriptionPlaceholder')} placeholderTextColor={Colors.text.muted} value={description} onChangeText={setDescription} multiline numberOfLines={6} textAlignVertical="top" maxLength={1000} />
       <Text style={styles.charCount}>{description.length}/1000</Text>
-      <Button title="Envoyer le ticket" onPress={handleSubmit} loading={isCreatingTicket} variant="primary" icon={<Send size={18} color="#FFFFFF" />} disabled={!category || !subject.trim() || !description.trim()} style={styles.submitBtn} />
+      <Button title={t('contact.sendTicket')} onPress={handleSubmit} loading={isCreatingTicket} variant="primary" icon={<Send size={18} color="#FFFFFF" />} disabled={!category || !subject.trim() || !description.trim()} style={styles.submitBtn} />
       <View style={styles.infoBox}>
         <Clock size={16} color={Colors.text.muted} />
-        <Text style={styles.infoText}>Notre équipe répond généralement sous 24-48h</Text>
+        <Text style={styles.infoText}>{t('contact.supportReplyTime')}</Text>
       </View>
     </>
   );
@@ -136,7 +149,7 @@ export default function ContactScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
-            <Text style={styles.headerTitle}>Nous contacter</Text>
+            <Text style={styles.headerTitle}>{t('contact.title')}</Text>
             <View style={styles.placeholder} />
           </View>
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>

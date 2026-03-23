@@ -19,6 +19,7 @@ import { Colors } from '@/constants/colors';
 import { Button } from '@/components/Button';
 import { Skeleton } from '@/components/LoadingSkeleton';
 import { useAuth } from '@/contexts/AuthContext';
+import { useI18n } from '@/contexts/I18nContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
 import { useTeams } from '@/contexts/TeamsContext';
 import { useMatches } from '@/contexts/MatchesContext';
@@ -426,11 +427,21 @@ function ManagerSearchModal({
           if (normalized.startsWith('0') && normalized.length <= 10) variants.push(`+225${normalized.slice(1)}`);
           
           for (const v of variants) {
-            const { data } = await (supabase.from('users').select('id, username, phone').ilike('phone', `%${v}%`).limit(5) as any);
+            const { data } = await (supabase
+              .from('users')
+              .select('id, username, phone')
+              .eq('is_profile_visible', true)
+              .ilike('phone', `%${v}%`)
+              .limit(5) as any);
             if (data && data.length > 0) results.push(...data);
           }
         } else {
-          const { data } = await (supabase.from('users').select('id, username, phone').ilike('username', `%${query}%`).limit(5) as any);
+          const { data } = await (supabase
+            .from('users')
+            .select('id, username, phone')
+            .eq('is_profile_visible', true)
+            .ilike('username', `%${query}%`)
+            .limit(5) as any);
           if (data && data.length > 0) results = data;
         }
         
@@ -604,6 +615,7 @@ function ManagersList({ managers, creatorId, onRemove }: { managers: string[]; c
 
 export default function ManageTournamentScreen() {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, isAdmin } = useAuth();
   const { getTournamentById, updateTournament, deleteTournament, refetchTournaments, addMatchToTournament, setTournamentWinner, removeMatchFromTournament } = useTournaments();
@@ -941,14 +953,14 @@ export default function ManageTournamentScreen() {
   const handleAutoMatchmaking = useCallback(async () => {
     if (!user || !tournament) return;
     const teams = [...(tournament.registeredTeams ?? [])];
-    if (teams.length < 2) { Alert.alert('Pas assez d\'équipes', 'Inscrivez au moins 2 équipes.'); return; }
-    if (tournamentMatches.length > 0) { Alert.alert('Matchs existants', 'Supprimez d\'abord les matchs existants avant de régénérer.'); return; }
+    if (teams.length < 2) { Alert.alert(t('tournamentManage.notEnoughTeamsTitle'), t('tournamentManage.notEnoughTeamsMessage')); return; }
+    if (tournamentMatches.length > 0) { Alert.alert(t('tournamentManage.matchesExistTitle'), t('tournamentManage.matchesExistMessage')); return; }
     const venueId = getVenueId();
     const venue = venues?.find((v) => v.id === venueId) ?? venues?.[0];
-    if (!venue?.id) { Alert.alert('Lieu manquant'); return; }
+    if (!venue?.id) { Alert.alert(t('tournamentManage.missingVenue')); return; }
 
     const tType = tournament.type;
-    const typeLabel = tType === 'league' ? 'Championnat (tous contre tous)' : tType === 'knockout' ? 'Élimination directe (bracket)' : 'Poules + Élimination directe';
+    const typeLabel = tType === 'league' ? t('tournamentManage.typeLeague') : tType === 'knockout' ? t('tournamentManage.typeKnockout') : t('tournamentManage.typeGroupKnockout');
     const shuffled = [...teams].sort(() => Math.random() - 0.5);
 
     let planned: { home: string | null; away: string | null; roundLabel: string }[] = [];
@@ -961,16 +973,19 @@ export default function ManageTournamentScreen() {
       planned = generateGroupKnockout(shuffled);
     }
 
-    if (planned.length === 0) { Alert.alert('Pas assez d\'équipes pour ce format.'); return; }
+    if (planned.length === 0) { Alert.alert(t('tournamentManage.notEnoughTeamsFormat')); return; }
 
     const realMatches = planned.filter((m) => m.home && m.away);
     const placeholderMatches = planned.filter((m) => !m.home || !m.away);
     const totalCount = planned.length;
+    const pendingText = placeholderMatches.length > 0
+      ? t('tournamentManage.pendingSummary', { pending: placeholderMatches.length })
+      : '';
 
     Alert.alert(
-      'Matchmaking automatique',
-      `${typeLabel}\n\n${teams.length} équipes → ${totalCount} match(s)\n${realMatches.length} match(s) programmés immédiatement${placeholderMatches.length > 0 ? `\n${placeholderMatches.length} match(s) en attente (phases suivantes)` : ''}`,
-      [{ text: 'Annuler', style: 'cancel' }, { text: 'Générer', onPress: async () => {
+      t('tournamentManage.autoMatchmakingTitle'),
+      t('tournamentManage.autoMatchmakingSummary', { typeLabel, teams: teams.length, total: totalCount, immediate: realMatches.length, pendingText }),
+      [{ text: t('common.cancel'), style: 'cancel' }, { text: t('tournamentManage.generate'), onPress: async () => {
         setIsMatchmaking(true);
         try {
           const baseDate = tournament.startDate ? new Date(tournament.startDate) : new Date();
@@ -1002,13 +1017,13 @@ export default function ManageTournamentScreen() {
             await addMatchToTournament({ tournamentId: tournament.id, matchId: m.id });
           }
           await refetchAll();
-          Alert.alert('Succès', `${totalCount} match(s) créé(s) pour le ${typeLabel.toLowerCase()}.`);
+          Alert.alert(t('common.success'), t('tournamentManage.generatedMatchesSuccess', { count: totalCount, type: typeLabel.toLowerCase() }));
           setActiveTab('matches');
-        } catch (e: unknown) { Alert.alert('Erreur', (e as Error).message); }
+        } catch (e: unknown) { Alert.alert(t('common.error'), (e as Error).message); }
         finally { setIsMatchmaking(false); }
       }}],
     );
-  }, [user, tournament, tournamentMatches.length, getVenueId, venues, createMatch, addMatchToTournament, refetchAll]);
+  }, [user, tournament, tournamentMatches.length, getVenueId, venues, createMatch, addMatchToTournament, refetchAll, t]);
 
   const doCreateMatch = useCallback(async (homeTeamId: string, awayTeamId: string, dateTime: Date, roundLabel?: string) => {
     if (!user || !tournament) return;
@@ -1020,22 +1035,22 @@ export default function ManageTournamentScreen() {
       await addMatchToTournament({ tournamentId: tournament.id, matchId: m.id });
       await refetchAll();
       setShowCreateMatchModal(false);
-      Alert.alert('Succès', 'Match ajouté.');
-    } catch (e: unknown) { Alert.alert('Erreur', (e as Error).message); }
+      Alert.alert(t('common.success'), t('tournamentManage.matchAdded'));
+    } catch (e: unknown) { Alert.alert(t('common.error'), (e as Error).message); }
     finally { setIsSavingMatch(false); }
-  }, [user, tournament, getVenueId, venues, createMatch, addMatchToTournament, refetchAll]);
+  }, [user, tournament, getVenueId, venues, createMatch, addMatchToTournament, refetchAll, t]);
 
   const handleCreateMatch = useCallback(async (h: string, a: string, dt: Date, rl?: string) => {
     if (!user || !tournament) return;
     if (dt.getTime() < Date.now() - 60000) {
-      Alert.alert('Date passée', 'La date du match est dans le passé. Créer quand même ?', [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Créer', onPress: () => doCreateMatch(h, a, dt, rl) },
+      Alert.alert(t('tournamentManage.pastDateTitle'), t('tournamentManage.pastDateMessage'), [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('tournamentManage.createMatch'), onPress: () => doCreateMatch(h, a, dt, rl) },
       ]);
       return;
     }
     await doCreateMatch(h, a, dt, rl);
-  }, [user, tournament, doCreateMatch]);
+  }, [user, tournament, doCreateMatch, t]);
 
   const handleSaveScore = useCallback(async (matchId: string, homeScore: number, awayScore: number) => {
     const match = tournamentMatches.find((m) => m.id === matchId);
@@ -1043,11 +1058,11 @@ export default function ManageTournamentScreen() {
     // Check if the round is already confirmed
     if (match?.roundLabel && confirmedRounds.has(match.roundLabel)) {
       Alert.alert(
-        'Scores confirmés',
-        'Les scores de ce tour ont déjà été confirmés. Voulez-vous vraiment modifier ce score ?',
+        t('tournamentManage.scoresConfirmedTitle'),
+        t('tournamentManage.scoresConfirmedMessage'),
         [
-          { text: 'Annuler', style: 'cancel' },
-          { text: 'Modifier quand même', onPress: async () => {
+          { text: t('common.cancel'), style: 'cancel' },
+          { text: t('tournamentManage.editAnyway'), onPress: async () => {
             // Remove confirmation for this round
             setConfirmedRounds(prev => {
               const newSet = new Set(prev);
@@ -1099,9 +1114,9 @@ export default function ManageTournamentScreen() {
                 }
               });
               Alert.alert(
-                'Tournoi terminé ! 🏆',
-                `Félicitations à ${teamName(winnerId)} pour leur victoire !`,
-                [{ text: 'OK' }]
+                t('tournamentManage.finishedTitle'),
+                t('tournamentManage.finishedMessage', { team: teamName(winnerId) }),
+                [{ text: t('common.ok') }]
               );
             } catch (err) {
               console.error('Error completing tournament:', err);
@@ -1113,9 +1128,9 @@ export default function ManageTournamentScreen() {
 
     await refetchAll();
     setShowScoreModal(null);
-    const winnerLabel = homeScore > awayScore ? 'Domicile' : homeScore < awayScore ? 'Extérieur' : 'Match nul';
-    Alert.alert('Score enregistré', `${homeScore} - ${awayScore} (${winnerLabel})`);
-  }, [updateMatchScore, refetchAll, tournament, tournamentMatches, updateTournament, teamName]);
+    const winnerLabel = homeScore > awayScore ? t('tournamentManage.home') : homeScore < awayScore ? t('tournamentManage.away') : t('tournamentManage.draw');
+    Alert.alert(t('tournamentManage.scoreSavedTitle'), `${homeScore} - ${awayScore} (${winnerLabel})`);
+  }, [updateMatchScore, refetchAll, tournament, tournamentMatches, updateTournament, teamName, t]);
 
   // Check if all matches in a round have scores
   const getRoundMatches = useCallback((roundLabel: string) => {
@@ -1209,25 +1224,25 @@ export default function ManageTournamentScreen() {
   // Confirm scores for a round
   const handleConfirmScores = useCallback((roundLabel: string) => {
     if (!areAllScoresEntered(roundLabel)) {
-      Alert.alert('Scores incomplets', 'Tous les scores du tour doivent être saisis avant de confirmer.');
+      Alert.alert(t('tournamentManage.incompleteScoresTitle'), t('tournamentManage.incompleteScoresMessage'));
       return;
     }
     
     Alert.alert(
-      'Confirmer les scores',
-      `Voulez-vous confirmer tous les scores du tour "${roundLabel}" ? Cette action verrouillera les scores et permettra de passer au tour suivant.`,
+      t('tournamentManage.confirmScoresTitle'),
+      t('tournamentManage.confirmScoresMessage', { round: roundLabel }),
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         { 
-          text: 'Confirmer', 
+          text: t('common.confirm'), 
           onPress: () => {
             setConfirmedRounds(prev => new Set(prev).add(roundLabel));
-            Alert.alert('Scores confirmés', `Les scores du tour "${roundLabel}" sont maintenant confirmés.`);
+            Alert.alert(t('tournamentManage.scoresConfirmedTitle'), t('tournamentManage.scoresNowConfirmed', { round: roundLabel }));
           }
         }
       ]
     );
-  }, [areAllScoresEntered, confirmedRounds]);
+  }, [areAllScoresEntered, confirmedRounds, t]);
 
   const canAdvanceToNextRound = useCallback(() => {
     const currentRound = getCurrentRound();
@@ -1246,7 +1261,7 @@ export default function ManageTournamentScreen() {
     const nextRound = getNextRound();
     
     if (!currentRound || !nextRound) {
-      Alert.alert('Erreur', 'Impossible de déterminer le tour suivant.');
+      Alert.alert(t('common.error'), t('tournamentManage.cannotDetermineNextRound'));
       return;
     }
 
@@ -1271,7 +1286,7 @@ export default function ManageTournamentScreen() {
     }
 
     if (winners.length === 0) {
-      Alert.alert('Erreur', 'Aucun vainqueur trouvé dans le tour actuel.');
+      Alert.alert(t('common.error'), t('tournamentManage.noWinnerFound'));
       return;
     }
 
@@ -1279,20 +1294,20 @@ export default function ManageTournamentScreen() {
     const hasDraws = currentRoundMatches.some(m => m.score && m.score.home === m.score.away);
     if (hasDraws) {
       Alert.alert(
-        'Matchs nuls détectés',
-        'Certains matchs se sont terminés par un match nul. Les matchs nuls ne peuvent pas progresser en élimination directe. Veuillez modifier les scores.',
-        [{ text: 'OK' }]
+        t('tournamentManage.drawsDetectedTitle'),
+        t('tournamentManage.drawsDetectedMessage'),
+        [{ text: t('common.ok') }]
       );
       return;
     }
 
     Alert.alert(
-      'Passer au tour suivant',
-      `Générer ${Math.floor(winners.length / 2)} match(s) pour le tour "${nextRound}" avec les ${winners.length} vainqueurs du "${currentRound}" ?`,
+      t('tournamentManage.advanceRoundTitle'),
+      t('tournamentManage.advanceRoundMessage', { count: Math.floor(winners.length / 2), next: nextRound, winners: winners.length, current: currentRound }),
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Générer',
+          text: t('tournamentManage.generate'),
           onPress: async () => {
             setIsMatchmaking(true);
             try {
@@ -1307,7 +1322,7 @@ export default function ManageTournamentScreen() {
               
               // Final validation
               if (!venue?.id || !/^[0-9a-f-]{36}$/i.test(venue.id)) {
-                Alert.alert('Erreur', 'Aucun lieu valide disponible. Veuillez configurer un lieu pour le tournoi.');
+                Alert.alert(t('common.error'), t('tournamentManage.noValidVenue'));
                 setIsMatchmaking(false);
                 return;
               }
@@ -1501,18 +1516,22 @@ export default function ManageTournamentScreen() {
   }, [tournament, updateTournament, refetchAll]);
 
   const fmtDate = useCallback((d: any) =>
-    safeDate(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
-    [safeDate]);
+    safeDate(d).toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
+    [safeDate, locale]);
 
-  const statusLabel = tournament?.status === 'registration' ? 'Inscriptions' : tournament?.status === 'in_progress' ? 'En cours' : 'Terminé';
+  const statusLabel = tournament?.status === 'registration'
+    ? t('tournamentDetail.statusRegistration')
+    : tournament?.status === 'in_progress'
+      ? t('tournamentDetail.statusInProgress')
+      : t('tournamentDetail.statusCompleted');
 
   if (loading && !tournament) {
     return (
       <><Stack.Screen options={{ headerShown: false }} />
       <View style={st.root}><LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={st.safe}>
-          <View style={st.fallbackHeader}><TouchableOpacity style={st.backBtn} onPress={goBack}><ArrowLeft size={20} color="#fff" /></TouchableOpacity><Text style={st.headerTitle}>Déroulé du tournoi</Text><View style={{ width: 36 }} /></View>
-          <View style={st.center}><ActivityIndicator size="large" color={Colors.primary.orange} /><Text style={st.centerText}>Chargement…</Text></View>
+          <View style={st.fallbackHeader}><TouchableOpacity style={st.backBtn} onPress={goBack}><ArrowLeft size={20} color="#fff" /></TouchableOpacity><Text style={st.headerTitle}>{t('tournamentManage.title')}</Text><View style={{ width: 36 }} /></View>
+          <View style={st.center}><ActivityIndicator size="large" color={Colors.primary.orange} /><Text style={st.centerText}>{t('common.loading')}</Text></View>
         </SafeAreaView></View></>
     );
   }
@@ -1521,8 +1540,8 @@ export default function ManageTournamentScreen() {
       <><Stack.Screen options={{ headerShown: false }} />
       <View style={st.root}><LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={st.safe}>
-          <View style={st.fallbackHeader}><TouchableOpacity style={st.backBtn} onPress={goBack}><ArrowLeft size={20} color="#fff" /></TouchableOpacity><Text style={st.headerTitle}>Déroulé du tournoi</Text><View style={{ width: 36 }} /></View>
-          <View style={st.center}><Trophy size={56} color={Colors.text.muted} /><Text style={st.centerText}>Tournoi introuvable</Text><Button title="Retour" onPress={goBack} variant="primary" /></View>
+          <View style={st.fallbackHeader}><TouchableOpacity style={st.backBtn} onPress={goBack}><ArrowLeft size={20} color="#fff" /></TouchableOpacity><Text style={st.headerTitle}>{t('tournamentManage.title')}</Text><View style={{ width: 36 }} /></View>
+          <View style={st.center}><Trophy size={56} color={Colors.text.muted} /><Text style={st.centerText}>{t('tournamentDetail.notFound')}</Text><Button title={t('common.back')} onPress={goBack} variant="primary" /></View>
         </SafeAreaView></View></>
     );
   }
@@ -1534,7 +1553,13 @@ export default function ManageTournamentScreen() {
     const isNext = nextMatch?.id === m.id;
     const past = safeDate(m.dateTime) < new Date() && !done;
     const isTBD = !m.homeTeamId || !m.awayTeamId;
-    const label = done ? 'Terminé' : isTBD ? 'En attente' : past ? 'À saisir' : 'À venir';
+    const label = done
+      ? t('tournamentDetail.statusCompleted')
+      : isTBD
+        ? t('tournamentManage.pending')
+        : past
+          ? t('tournamentManage.toEnter')
+          : t('tournamentDetail.upcomingTab');
     const statusColor = done ? Colors.status.success : isTBD ? Colors.text.muted : past ? Colors.status.warning : Colors.primary.blue;
 
     const progression = m.roundLabel ? getKnockoutProgression(m.roundLabel) : null;
@@ -1554,45 +1579,45 @@ export default function ManageTournamentScreen() {
         <View style={st.matchTeams}>
           <View style={st.matchTeamCol}>
             <Text style={[st.matchTeamName, done && m.score!.home > m.score!.away && st.matchWinnerName, !m.homeTeamId && st.matchTeamTBD]} numberOfLines={1}>{m.homeTeamId ? teamName(m.homeTeamId) : '?'}</Text>
-            {done && <Text style={st.matchTeamSub}>Dom.</Text>}
+            {done && <Text style={st.matchTeamSub}>{t('tournamentManage.homeShort')}</Text>}
           </View>
           <View style={st.matchScoreCol}>
             {done ? (
               canManage ? (
                 <TouchableOpacity style={st.scorePill} onPress={(e) => { e.stopPropagation(); setShowScoreModal(m); }}>
                   <Text style={st.matchScoreText}>{m.score!.home} - {m.score!.away}</Text>
-                  <Text style={st.editScoreHint}>Modifier</Text>
+                  <Text style={st.editScoreHint}>{t('common.edit')}</Text>
                 </TouchableOpacity>
               ) : (
                 <View style={st.scorePill}><Text style={st.matchScoreText}>{m.score!.home} - {m.score!.away}</Text></View>
               )
             ) : isTBD ? (
-              <View style={st.tbdBadge}><Clock size={12} color={Colors.text.muted} /><Text style={st.tbdBadgeText}>TBD</Text></View>
+              <View style={st.tbdBadge}><Clock size={12} color={Colors.text.muted} /><Text style={st.tbdBadgeText}>{t('tournamentDetail.tbd')}</Text></View>
             ) : past ? (
               canManage ? (
                 <TouchableOpacity style={st.scoreInputBtn} onPress={(e) => { e.stopPropagation(); setShowScoreModal(m); }}>
-                  <Target size={14} color="#fff" /><Text style={st.scoreInputBtnText}>Saisir</Text>
+                  <Target size={14} color="#fff" /><Text style={st.scoreInputBtnText}>{t('tournamentManage.enter')}</Text>
                 </TouchableOpacity>
               ) : (
                 <View style={st.tbdBadge}>
                   <Clock size={12} color={Colors.status.warning} />
-                  <Text style={st.tbdBadgeText}>En attente</Text>
+                  <Text style={st.tbdBadgeText}>{t('tournamentManage.pending')}</Text>
                 </View>
               )
             ) : (
-              <Text style={st.matchVsText}>VS</Text>
+              <Text style={st.matchVsText}>{t('tournamentDetail.vs')}</Text>
             )}
           </View>
           <View style={[st.matchTeamCol, { alignItems: 'flex-end' }]}>
             <Text style={[st.matchTeamName, done && m.score!.away > m.score!.home && st.matchWinnerName, !m.awayTeamId && st.matchTeamTBD]} numberOfLines={1}>{m.awayTeamId ? teamName(m.awayTeamId) : '?'}</Text>
-            {done && <Text style={st.matchTeamSub}>Ext.</Text>}
+            {done && <Text style={st.matchTeamSub}>{t('tournamentManage.awayShort')}</Text>}
           </View>
         </View>
         {isKnockout && done && progression && (
           <View style={st.progressionRow}>
             <ChevronRight size={12} color={Colors.primary.orange} />
             <Text style={st.progressionText}>
-              Qualifié → {progression.nextLabel}
+              {t('tournamentManage.qualifiedTo', { label: progression.nextLabel })}
             </Text>
           </View>
         )}
@@ -1643,12 +1668,12 @@ export default function ManageTournamentScreen() {
           <View style={st.headerRow}>
             <TouchableOpacity style={st.backBtn} onPress={goBack}><ArrowLeft size={20} color="#fff" /></TouchableOpacity>
             <View style={st.headerCenter}>
-              <Text style={st.headerTitle} numberOfLines={1}>{canManage ? 'Gestion' : 'Détails'} - {tournament.name}</Text>
+              <Text style={st.headerTitle} numberOfLines={1}>{canManage ? t('tournamentManage.manage') : t('tournamentManage.details')} - {tournament.name}</Text>
               <View style={st.headerMeta}>
                 <View style={st.pillDotWrap}><View style={st.pillDot} /></View>
                 <Text style={st.headerStatusText}>{statusLabel}</Text>
                 <Text style={st.headerSep}>•</Text>
-                <Text style={st.headerTeamCount}>{registeredTeamIds.length}/{tournament.maxTeams} équipes</Text>
+                <Text style={st.headerTeamCount}>{registeredTeamIds.length}/{tournament.maxTeams} {t('tournamentDetail.teamsLabel')}</Text>
                 {matchProgress.total > 0 && <><Text style={st.headerSep}>•</Text><Text style={st.headerTeamCount}>{matchProgress.pct}%</Text></>}
               </View>
             </View>
@@ -1700,7 +1725,7 @@ export default function ManageTournamentScreen() {
                   </View>
                   
                   <View style={st.championContent}>
-                    <Text style={st.championLabel}>🏆 CHAMPION DU TOURNOI</Text>
+                    <Text style={st.championLabel}>🏆 {t('tournamentManage.tournamentChampion')}</Text>
                     <Text style={st.championName}>{teamName(tournament.winnerId)}</Text>
                     <View style={st.championStats}>
                       <View style={st.championStatItem}>
@@ -1708,17 +1733,17 @@ export default function ManageTournamentScreen() {
                           (m.homeTeamId === tournament.winnerId && m.score && m.score.home > m.score.away) ||
                           (m.awayTeamId === tournament.winnerId && m.score && m.score.away > m.score.home)
                         ).length}</Text>
-                        <Text style={st.championStatLabel}>Victoires</Text>
+                        <Text style={st.championStatLabel}>{t('teamDetail.wins')}</Text>
                       </View>
                       <View style={st.championStatDivider} />
                       <View style={st.championStatItem}>
                         <Text style={st.championStatValue}>{tournamentMatches.length}</Text>
-                        <Text style={st.championStatLabel}>Matchs joués</Text>
+                        <Text style={st.championStatLabel}>{t('tournamentDetail.playedLabel')}</Text>
                       </View>
                       <View style={st.championStatDivider} />
                       <View style={st.championStatItem}>
                         <Text style={st.championStatValue}>{registeredTeamIds.length}</Text>
-                        <Text style={st.championStatLabel}>Équipes</Text>
+                        <Text style={st.championStatLabel}>{t('tournamentDetail.teamsLabel')}</Text>
                       </View>
                     </View>
                   </View>
@@ -1726,9 +1751,9 @@ export default function ManageTournamentScreen() {
                   <View style={st.championFooter}>
                     <View style={st.championBadge}>
                       <Award size={14} color="#FFD700" />
-                      <Text style={st.championBadgeText}>Vainqueur</Text>
+                      <Text style={st.championBadgeText}>{t('tournamentManage.winner')}</Text>
                     </View>
-                    <Text style={st.championDate}>{new Date(tournament.startDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</Text>
+                    <Text style={st.championDate}>{new Date(tournament.startDate).toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</Text>
                   </View>
                 </LinearGradient>
               </View>
@@ -1737,7 +1762,7 @@ export default function ManageTournamentScreen() {
             {/* Phase tracker */}
             {roundLabels.length > 1 && (
               <View style={st.phaseTracker}>
-                <Text style={st.phaseTrackerTitle}>Phases du tournoi</Text>
+                <Text style={st.phaseTrackerTitle}>{t('tournamentManage.phases')}</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 0, alignItems: 'center' }}>
                   {roundLabels.map((rl, i) => {
                     const rm = tournamentMatches.filter((m) => m.roundLabel === rl);
@@ -1763,8 +1788,8 @@ export default function ManageTournamentScreen() {
             <View style={st.progressCard}>
               <View style={st.progressHeader}>
                 <View>
-                  <Text style={st.progressTitle}>Progression du tournoi</Text>
-                  <Text style={st.progressSub}>{matchProgress.completed} terminé{matchProgress.completed > 1 ? 's' : ''} sur {matchProgress.total} matchs</Text>
+                  <Text style={st.progressTitle}>{t('tournamentManage.progressTitle')}</Text>
+                  <Text style={st.progressSub}>{t('tournamentManage.progressSummary', { completed: matchProgress.completed, total: matchProgress.total })}</Text>
                 </View>
                 <View style={st.progressPctWrap}>
                   <Text style={st.progressPct}>{matchProgress.pct}%</Text>
@@ -1772,41 +1797,41 @@ export default function ManageTournamentScreen() {
               </View>
               <View style={st.progressBar}><View style={[st.progressFill, { width: `${matchProgress.pct}%` }]} /></View>
               <View style={st.progressLegend}>
-                <View style={st.progressLegendItem}><View style={[st.progressLegendDot, { backgroundColor: Colors.status.success }]} /><Text style={st.progressLegendText}>{matchProgress.completed} terminés</Text></View>
-                <View style={st.progressLegendItem}><View style={[st.progressLegendDot, { backgroundColor: Colors.status.warning }]} /><Text style={st.progressLegendText}>{matchProgress.pending} en attente</Text></View>
+                <View style={st.progressLegendItem}><View style={[st.progressLegendDot, { backgroundColor: Colors.status.success }]} /><Text style={st.progressLegendText}>{t('tournamentManage.completedCount', { count: matchProgress.completed })}</Text></View>
+                <View style={st.progressLegendItem}><View style={[st.progressLegendDot, { backgroundColor: Colors.status.warning }]} /><Text style={st.progressLegendText}>{t('tournamentManage.pendingCount', { count: matchProgress.pending })}</Text></View>
               </View>
               {currentPhase && currentPhase.total > 0 && (
                 <View style={st.currentPhaseRow}>
                   <View style={st.currentPhaseDot} />
-                  <Text style={st.currentPhaseText}>Phase active : <Text style={{ color: '#fff', fontWeight: '700' }}>{currentPhase.label}</Text> ({currentPhase.done}/{currentPhase.total})</Text>
+                  <Text style={st.currentPhaseText}>{t('tournamentManage.activePhase')} <Text style={{ color: '#fff', fontWeight: '700' }}>{currentPhase.label}</Text> ({currentPhase.done}/{currentPhase.total})</Text>
                 </View>
               )}
             </View>
 
             <View style={st.metricsGrid}>
-              <MetricCard icon={Users} label="Équipes" value={registeredTeamIds.length} color={Colors.primary.blue} />
-              <MetricCard icon={Swords} label="Matchs" value={matchProgress.total} color={Colors.primary.orange} />
-              <MetricCard icon={Target} label="Buts" value={tournamentStats.totalGoals} color={Colors.status.success} />
-              <MetricCard icon={TrendingUp} label="Moy/match" value={tournamentStats.avgGoals} color="#9333EA" />
+              <MetricCard icon={Users} label={t('tournamentDetail.tabTeams')} value={registeredTeamIds.length} color={Colors.primary.blue} />
+              <MetricCard icon={Swords} label={t('tournamentDetail.tabMatches')} value={matchProgress.total} color={Colors.primary.orange} />
+              <MetricCard icon={Target} label={t('tournamentDetail.goalsLabel')} value={tournamentStats.totalGoals} color={Colors.status.success} />
+              <MetricCard icon={TrendingUp} label={t('tournamentManage.avgPerMatch')} value={tournamentStats.avgGoals} color="#9333EA" />
             </View>
 
             {/* Quick actions - Only for managers */}
             {canManage && (
               <View style={st.quickActionsCard}>
-                <Text style={st.quickActionsTitle}>Actions rapides</Text>
+                <Text style={st.quickActionsTitle}>{t('tournamentManage.quickActions')}</Text>
                 <View style={st.quickActionsRow}>
                   <TouchableOpacity style={st.quickActionBtn} onPress={() => setShowCreateMatchModal(true)} disabled={tournament.status === 'completed'}>
                     <View style={[st.quickActionIcon, tournament.status === 'completed' && { opacity: 0.4 }]}><Plus size={18} color="#fff" /></View>
-                    <Text style={[st.quickActionLabel, tournament.status === 'completed' && { opacity: 0.4 }]}>Créer match</Text>
+                    <Text style={[st.quickActionLabel, tournament.status === 'completed' && { opacity: 0.4 }]}>{t('tournamentManage.createMatch')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={st.quickActionBtn} onPress={handleAutoMatchmaking} disabled={isMatchmaking || tournament.status === 'completed' || registeredTeamIds.length < 2}>
                     <View style={[st.quickActionIcon, (isMatchmaking || tournament.status === 'completed' || registeredTeamIds.length < 2) && { opacity: 0.4 }]}>{isMatchmaking ? <ActivityIndicator size="small" color="#fff" /> : <Zap size={18} color="#fff" />}</View>
-                    <Text style={[st.quickActionLabel, (isMatchmaking || tournament.status === 'completed' || registeredTeamIds.length < 2) && { opacity: 0.4 }]}>{isMatchmaking ? 'Génération...' : 'Auto-matchs'}</Text>
+                    <Text style={[st.quickActionLabel, (isMatchmaking || tournament.status === 'completed' || registeredTeamIds.length < 2) && { opacity: 0.4 }]}>{isMatchmaking ? t('tournamentManage.generating') : t('tournamentManage.autoMatches')}</Text>
                   </TouchableOpacity>
                   {user?.id === tournament.createdBy && (
                     <TouchableOpacity style={st.quickActionBtn} onPress={() => setShowWinnerModal(true)} disabled={tournament.status === 'completed'}>
                       <View style={[st.quickActionIcon, tournament.status === 'completed' && { opacity: 0.4 }]}><Trophy size={18} color="#fff" /></View>
-                      <Text style={[st.quickActionLabel, tournament.status === 'completed' && { opacity: 0.4 }]}>Vainqueur</Text>
+                      <Text style={[st.quickActionLabel, tournament.status === 'completed' && { opacity: 0.4 }]}>{t('tournamentManage.winner')}</Text>
                     </TouchableOpacity>
                   )}
                 </View>

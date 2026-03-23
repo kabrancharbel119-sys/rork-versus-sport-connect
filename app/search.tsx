@@ -5,6 +5,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Search, Users, Shield, Swords, MapPin, Star, CheckCircle, X, Sliders } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
+import { useAuth } from '@/contexts/AuthContext';
+import { useI18n } from '@/contexts/I18nContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { useTeams } from '@/contexts/TeamsContext';
 import { useMatches } from '@/contexts/MatchesContext';
@@ -22,6 +24,8 @@ const LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced', 'expert'];
 
 export default function SearchScreen() {
   const router = useRouter();
+  const { t, locale } = useI18n();
+  const { user: currentUser } = useAuth();
   const { users } = useUsers();
   const { teams } = useTeams();
   const { matches } = useMatches();
@@ -40,7 +44,7 @@ export default function SearchScreen() {
   }, []);
 
   const filteredUsers = useMemo(() => {
-    let result = users;
+    let result = users.filter(u => u.isProfileVisible !== false || u.id === currentUser?.id);
     const q = query.toLowerCase();
     if (q) result = result.filter(u => u.fullName.toLowerCase().includes(q) || u.username.toLowerCase().includes(q) || u.city?.toLowerCase().includes(q));
     if (filters.sport) result = result.filter(u => u.sports?.some(s => s.sport === filters.sport));
@@ -54,7 +58,7 @@ export default function SearchScreen() {
       });
     }
     return result.slice(0, 50);
-  }, [users, query, filters, location, getDistance]);
+  }, [users, currentUser?.id, query, filters, location, getDistance]);
 
   const filteredTeams = useMemo(() => {
     let result = teams;
@@ -86,7 +90,7 @@ export default function SearchScreen() {
 
   const activeFiltersCount = Object.values(filters).filter(v => v && v !== 50).length;
   const resetFilters = () => setFilters({ sport: '', level: '', city: '', verified: false, recruiting: false, needsPlayers: false, maxDistance: 50 });
-  const formatDate = (date: Date) => new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  const formatDate = (date: Date) => new Date(date).toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR', { day: 'numeric', month: 'short' });
 
   return (
     <>
@@ -95,9 +99,9 @@ export default function SearchScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()} accessibilityLabel="Retour" accessibilityRole="button"><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
-            <Text style={styles.headerTitle} accessibilityRole="header">Rechercher</Text>
-            <TouchableOpacity style={[styles.filterButton, activeFiltersCount > 0 && styles.filterButtonActive]} onPress={() => setShowFilters(true)} accessibilityLabel={`Filtres${activeFiltersCount > 0 ? `, ${activeFiltersCount} actifs` : ''}`}>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()} accessibilityLabel={t('common.back')} accessibilityRole="button"><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
+            <Text style={styles.headerTitle} accessibilityRole="header">{t('search.title')}</Text>
+            <TouchableOpacity style={[styles.filterButton, activeFiltersCount > 0 && styles.filterButtonActive]} onPress={() => setShowFilters(true)} accessibilityLabel={activeFiltersCount > 0 ? t('search.filtersActive', { count: activeFiltersCount }) : t('search.filters')}>
               <Sliders size={20} color={activeFiltersCount > 0 ? '#FFF' : Colors.text.secondary} />
               {activeFiltersCount > 0 && <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>{activeFiltersCount}</Text></View>}
             </TouchableOpacity>
@@ -105,8 +109,8 @@ export default function SearchScreen() {
 
           <View style={styles.searchContainer} accessibilityRole="search">
             <Search size={20} color={Colors.text.muted} />
-            <TextInput style={styles.searchInput} placeholder="Rechercher joueurs, équipes, matchs..." placeholderTextColor={Colors.text.muted} value={query} onChangeText={setQuery} autoFocus accessibilityLabel="Champ de recherche" />
-            {query.length > 0 && <TouchableOpacity onPress={() => setQuery('')} accessibilityLabel="Effacer la recherche"><X size={18} color={Colors.text.muted} /></TouchableOpacity>}
+            <TextInput style={styles.searchInput} placeholder={t('search.searchPlaceholder')} placeholderTextColor={Colors.text.muted} value={query} onChangeText={setQuery} autoFocus accessibilityLabel={t('search.searchField')} />
+            {query.length > 0 && <TouchableOpacity onPress={() => setQuery('')} accessibilityLabel={t('search.clearSearch')}><X size={18} color={Colors.text.muted} /></TouchableOpacity>}
           </View>
 
           <View style={styles.tabs} accessibilityRole="tablist">
@@ -115,7 +119,7 @@ export default function SearchScreen() {
                 {type === 'users' && <Users size={16} color={searchType === type ? '#FFF' : Colors.text.secondary} />}
                 {type === 'teams' && <Shield size={16} color={searchType === type ? '#FFF' : Colors.text.secondary} />}
                 {type === 'matches' && <Swords size={16} color={searchType === type ? '#FFF' : Colors.text.secondary} />}
-                <Text style={[styles.tabText, searchType === type && styles.tabTextActive]}>{type === 'users' ? 'Joueurs' : type === 'teams' ? 'Équipes' : 'Matchs'}</Text>
+                <Text style={[styles.tabText, searchType === type && styles.tabTextActive]}>{type === 'users' ? t('search.usersTab') : type === 'teams' ? t('search.teamsTab') : t('search.matchesTab')}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -123,7 +127,7 @@ export default function SearchScreen() {
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             {searchType === 'users' && (
               <>
-                <Text style={styles.resultCount} accessibilityLiveRegion="polite">{filteredUsers.length} joueur(s)</Text>
+                <Text style={styles.resultCount} accessibilityLiveRegion="polite">{t('search.usersCount', { count: filteredUsers.length })}</Text>
                 {filteredUsers.map(user => (
                   <Card key={user.id} style={styles.resultCard} onPress={() => router.push(`/user/${user.id}`)}>
                     <View style={styles.resultRow}>
@@ -133,7 +137,7 @@ export default function SearchScreen() {
                         <Text style={styles.resultSub}>@{user.username}</Text>
                         <View style={styles.resultMeta}><MapPin size={12} color={Colors.text.muted} /><Text style={styles.metaText}>{user.city}</Text></View>
                       </View>
-                      <View style={styles.statBadge}><Text style={styles.statValue}>{user.stats?.matchesPlayed || 0}</Text><Text style={styles.statLabel}>matchs</Text></View>
+                      <View style={styles.statBadge}><Text style={styles.statValue}>{user.stats?.matchesPlayed || 0}</Text><Text style={styles.statLabel}>{t('search.matchesLabel')}</Text></View>
                     </View>
                   </Card>
                 ))}
@@ -142,7 +146,7 @@ export default function SearchScreen() {
 
             {searchType === 'teams' && (
               <>
-                <Text style={styles.resultCount} accessibilityLiveRegion="polite">{filteredTeams.length} équipe(s)</Text>
+                <Text style={styles.resultCount} accessibilityLiveRegion="polite">{t('search.teamsCount', { count: filteredTeams.length })}</Text>
                 {filteredTeams.map(team => (
                   <Card key={team.id} style={styles.resultCard} onPress={() => router.push(`/team/${team.id}`)}>
                     <View style={styles.resultRow}>
@@ -152,7 +156,7 @@ export default function SearchScreen() {
                         <Text style={styles.resultSub}>{sportLabels[team.sport]} • {team.format}</Text>
                         <View style={styles.resultMeta}><MapPin size={12} color={Colors.text.muted} /><Text style={styles.metaText}>{team.city}</Text><Text style={styles.metaDot}>•</Text><Users size={12} color={Colors.text.muted} /><Text style={styles.metaText}>{team.members.length}/{team.maxMembers}</Text></View>
                       </View>
-                      {team.isRecruiting && <View style={styles.recruitBadge}><Text style={styles.recruitText}>Recrute</Text></View>}
+                      {team.isRecruiting && <View style={styles.recruitBadge}><Text style={styles.recruitText}>{t('search.recruiting')}</Text></View>}
                     </View>
                   </Card>
                 ))}
@@ -161,7 +165,7 @@ export default function SearchScreen() {
 
             {searchType === 'matches' && (
               <>
-                <Text style={styles.resultCount} accessibilityLiveRegion="polite">{filteredMatches.length} match(s)</Text>
+                <Text style={styles.resultCount} accessibilityLiveRegion="polite">{t('search.matchesCount', { count: filteredMatches.length })}</Text>
                 {filteredMatches.map(match => (
                   <Card key={match.id} style={styles.resultCard} onPress={() => router.push(`/match/${match.id}`)}>
                     <View style={styles.resultRow}>
@@ -171,7 +175,7 @@ export default function SearchScreen() {
                         <Text style={styles.resultSub}>{match.venue.name}</Text>
                         <View style={styles.resultMeta}><Text style={styles.metaText}>{formatDate(match.dateTime)}</Text><Text style={styles.metaDot}>•</Text><Text style={styles.metaText}>{levelLabels[match.level]}</Text><Text style={styles.metaDot}>•</Text><Text style={styles.metaText}>{match.registeredPlayers.length}/{match.maxPlayers}</Text></View>
                       </View>
-                      {match.needsPlayers && <View style={styles.openBadge}><Text style={styles.openText}>Ouvert</Text></View>}
+                      {match.needsPlayers && <View style={styles.openBadge}><Text style={styles.openText}>{t('search.open')}</Text></View>}
                     </View>
                   </Card>
                 ))}
@@ -179,7 +183,7 @@ export default function SearchScreen() {
             )}
 
             {((searchType === 'users' && filteredUsers.length === 0) || (searchType === 'teams' && filteredTeams.length === 0) || (searchType === 'matches' && filteredMatches.length === 0)) && (
-              <View style={styles.emptyState} accessibilityRole="alert"><Search size={48} color={Colors.text.muted} /><Text style={styles.emptyTitle}>Aucun résultat</Text><Text style={styles.emptyText}>Essayez avec d&apos;autres mots-clés ou filtres</Text></View>
+              <View style={styles.emptyState} accessibilityRole="alert"><Search size={48} color={Colors.text.muted} /><Text style={styles.emptyTitle}>{t('search.noResultsTitle')}</Text><Text style={styles.emptyText}>{t('search.noResultsText')}</Text></View>
             )}
             <View style={styles.bottomSpacer} />
           </ScrollView>
@@ -189,11 +193,11 @@ export default function SearchScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Filtres avancés</Text>
-                <TouchableOpacity onPress={() => setShowFilters(false)} accessibilityLabel="Fermer"><X size={24} color={Colors.text.primary} /></TouchableOpacity>
+                <Text style={styles.modalTitle}>{t('search.advancedFilters')}</Text>
+                <TouchableOpacity onPress={() => setShowFilters(false)} accessibilityLabel={t('common.close')}><X size={24} color={Colors.text.primary} /></TouchableOpacity>
               </View>
               <ScrollView style={styles.modalScroll}>
-                <Text style={styles.filterLabel}>Sport</Text>
+                <Text style={styles.filterLabel}>{t('search.sport')}</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterChips}>
                   {SPORTS.map(sport => (
                     <TouchableOpacity key={sport} style={[styles.chip, filters.sport === sport && styles.chipActive]} onPress={() => setFilters(f => ({ ...f, sport: f.sport === sport ? '' : sport }))} accessibilityRole="button" accessibilityState={{ selected: filters.sport === sport }}>
@@ -202,7 +206,7 @@ export default function SearchScreen() {
                   ))}
                 </ScrollView>
 
-                <Text style={styles.filterLabel}>Niveau</Text>
+                <Text style={styles.filterLabel}>{t('search.level')}</Text>
                 <View style={styles.filterRow}>
                   {LEVELS.map(level => (
                     <TouchableOpacity key={level} style={[styles.chip, filters.level === level && styles.chipActive]} onPress={() => setFilters(f => ({ ...f, level: f.level === level ? '' : level }))}>
@@ -211,42 +215,42 @@ export default function SearchScreen() {
                   ))}
                 </View>
 
-                <Text style={styles.filterLabel}>Ville</Text>
-                <TextInput style={styles.filterInput} placeholder="Ex: Abidjan" placeholderTextColor={Colors.text.muted} value={filters.city} onChangeText={v => setFilters(f => ({ ...f, city: v }))} />
+                <Text style={styles.filterLabel}>{t('search.city')}</Text>
+                <TextInput style={styles.filterInput} placeholder={t('search.cityPlaceholder')} placeholderTextColor={Colors.text.muted} value={filters.city} onChangeText={v => setFilters(f => ({ ...f, city: v }))} />
 
-                <Text style={styles.filterLabel}>Distance max: {filters.maxDistance} km</Text>
+                <Text style={styles.filterLabel}>{t('search.maxDistance', { distance: filters.maxDistance })}</Text>
                 <View style={styles.distanceRow}>
                   {[10, 25, 50, 100].map(d => (
                     <TouchableOpacity key={d} style={[styles.chip, filters.maxDistance === d && styles.chipActive]} onPress={() => setFilters(f => ({ ...f, maxDistance: d }))}>
-                      <Text style={[styles.chipText, filters.maxDistance === d && styles.chipTextActive]}>{d === 100 ? 'Tous' : `${d}km`}</Text>
+                      <Text style={[styles.chipText, filters.maxDistance === d && styles.chipTextActive]}>{d === 100 ? t('search.allDistances') : `${d}km`}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
 
                 {searchType === 'users' && (
                   <TouchableOpacity style={styles.toggleRow} onPress={() => setFilters(f => ({ ...f, verified: !f.verified }))}>
-                    <Text style={styles.toggleLabel}>Uniquement vérifiés</Text>
+                    <Text style={styles.toggleLabel}>{t('search.verifiedOnly')}</Text>
                     <View style={[styles.toggle, filters.verified && styles.toggleActive]}>{filters.verified && <CheckCircle size={16} color="#FFF" />}</View>
                   </TouchableOpacity>
                 )}
 
                 {searchType === 'teams' && (
                   <TouchableOpacity style={styles.toggleRow} onPress={() => setFilters(f => ({ ...f, recruiting: !f.recruiting }))}>
-                    <Text style={styles.toggleLabel}>Équipes qui recrutent</Text>
+                    <Text style={styles.toggleLabel}>{t('search.recruitingTeams')}</Text>
                     <View style={[styles.toggle, filters.recruiting && styles.toggleActive]}>{filters.recruiting && <CheckCircle size={16} color="#FFF" />}</View>
                   </TouchableOpacity>
                 )}
 
                 {searchType === 'matches' && (
                   <TouchableOpacity style={styles.toggleRow} onPress={() => setFilters(f => ({ ...f, needsPlayers: !f.needsPlayers }))}>
-                    <Text style={styles.toggleLabel}>Matchs cherchant joueurs</Text>
+                    <Text style={styles.toggleLabel}>{t('search.needsPlayers')}</Text>
                     <View style={[styles.toggle, filters.needsPlayers && styles.toggleActive]}>{filters.needsPlayers && <CheckCircle size={16} color="#FFF" />}</View>
                   </TouchableOpacity>
                 )}
               </ScrollView>
               <View style={styles.modalFooter}>
-                <Button title="Réinitialiser" onPress={resetFilters} variant="outline" style={styles.resetButton} />
-                <Button title="Appliquer" onPress={() => setShowFilters(false)} variant="primary" style={styles.applyButton} />
+                <Button title={t('search.reset')} onPress={resetFilters} variant="outline" style={styles.resetButton} />
+                <Button title={t('search.apply')} onPress={() => setShowFilters(false)} variant="primary" style={styles.applyButton} />
               </View>
             </View>
           </View>

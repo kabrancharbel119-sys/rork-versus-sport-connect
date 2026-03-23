@@ -13,7 +13,9 @@
     "test:coverage": "jest --coverage",
     "test:e2e": "jest --config jest.config.e2e.js --runInBand",
     "test:e2e:report": "jest --config jest.config.e2e.js --runInBand --json --outputFile=test-report.json && node __tests__/e2e/runner.js",
-    "verify:production": "node scripts/verify-production-ready.js"
+    "verify:production": "node scripts/verify-production-ready.js",
+    "build:android:prod": "eas build --platform android --profile production",
+    "submit:android:prod": "eas submit --platform android --profile production"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

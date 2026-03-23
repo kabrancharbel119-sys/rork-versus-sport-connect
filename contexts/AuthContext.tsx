@@ -46,6 +46,7 @@ interface UpdateProfileData {
   bio?: string;
   avatar?: string;
   sports?: UserSport[];
+  isProfileVisible?: boolean;
 }
 
 
@@ -66,10 +67,20 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
-        const profile = await getCurrentUser();
-        if (profile) {
-          await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(profile));
-          return { isAuthenticated: true, user: profile };
+        try {
+          const profile = await getCurrentUser();
+          if (profile) {
+            await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(profile));
+            return { isAuthenticated: true, user: profile };
+          }
+        } catch (e: any) {
+          // enforceBanPolicy throws when user is banned → force logout
+          if (e?.message?.includes('suspendu')) {
+            logger.debug('Auth', 'User is banned, forcing logout');
+            await AsyncStorage.multiRemove([USER_STORAGE_KEY, AUTH_STORAGE_KEY]);
+            return { isAuthenticated: false, user: null, banMessage: e.message };
+          }
+          throw e;
         }
       }
 
@@ -91,6 +102,34 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setAuthState(prev => ({ ...prev, isLoading: false }));
     }
   }, [authQuery.data, authQuery.isLoading]);
+
+  // Periodic ban check: every 30s, verify the logged-in user is not banned
+  useEffect(() => {
+    if (!authState.isAuthenticated || !authState.user?.id) return;
+
+    const checkBan = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('is_banned')
+          .eq('id', authState.user!.id)
+          .single();
+
+        if (!error && data?.is_banned) {
+          logger.debug('Auth', 'Active ban detected, forcing logout');
+          await supabase.auth.signOut();
+          await AsyncStorage.multiRemove([USER_STORAGE_KEY, AUTH_STORAGE_KEY]);
+          setAuthState({ isAuthenticated: false, isLoading: false, user: null });
+          queryClient.clear();
+        }
+      } catch (_) {
+        // Silently ignore check errors
+      }
+    };
+
+    const interval = setInterval(checkBan, 30000);
+    return () => clearInterval(interval);
+  }, [authState.isAuthenticated, authState.user?.id, queryClient]);
 
 
 
@@ -266,11 +305,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       }
 
       if (authState.user) {
-        try {
-          await usersApi.delete(authState.user.id);
-        } catch (e) {
-          logger.debug('Auth', 'Backend deletion failed', e);
-        }
+        await usersApi.delete(authState.user.id);
       }
 
       await AsyncStorage.multiRemove([

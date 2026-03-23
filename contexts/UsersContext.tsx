@@ -87,8 +87,7 @@ export const [UsersProvider, useUsers] = createContextHook(() => {
   const saveUsers = useCallback(async (updated: User[]) => {
     await AsyncStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updated));
     setUsers(updated);
-    queryClient.invalidateQueries({ queryKey: ['allUsers'] });
-  }, [queryClient]);
+  }, []);
 
   const saveFollows = useCallback(async (updated: FollowRelation[]) => {
     await AsyncStorage.setItem(FOLLOWS_STORAGE_KEY, JSON.stringify(updated));
@@ -146,18 +145,55 @@ export const [UsersProvider, useUsers] = createContextHook(() => {
   });
 
   const banUserMutation = useMutation({
-    mutationFn: async (userId: string) => {
-      console.log('[Users] Banning user:', userId);
-      const updatedUsers = users.map(u => u.id === userId ? { ...u, isBanned: true } : u);
+    mutationFn: async (input: string | { userId: string; bannedUntil?: Date | null; banReason?: string | null }) => {
+      const userId = typeof input === 'string' ? input : input.userId;
+      const bannedUntil = typeof input === 'string' ? null : (input.bannedUntil ?? null);
+      const banReason = typeof input === 'string' ? null : (input.banReason ?? null);
+
+      console.log('[Users] Banning user:', userId, 'until:', bannedUntil);
+      
+      try {
+        await usersApi.setBanStatus(
+          userId,
+          true,
+          bannedUntil ? bannedUntil.toISOString() : null,
+          banReason ?? null,
+        );
+      } catch (e) {
+        console.error('[Users] Supabase ban failed:', e);
+        throw e;
+      }
+      
+      const latestUsers = ((queryClient.getQueryData(['allUsers']) as { users?: User[] } | undefined)?.users ?? users);
+      const updatedUsers = latestUsers.map(u => u.id === userId
+        ? {
+            ...u,
+            isBanned: true,
+            bannedUntil: bannedUntil ?? undefined,
+            banReason: banReason ?? undefined,
+          }
+        : u,
+      );
       await saveUsers(updatedUsers);
+      await usersQuery.refetch();
     },
   });
 
   const unbanUserMutation = useMutation({
     mutationFn: async (userId: string) => {
       console.log('[Users] Unbanning user:', userId);
-      const updatedUsers = users.map(u => u.id === userId ? { ...u, isBanned: false } : u);
+      
+      try {
+        await usersApi.setBanStatus(userId, false);
+      } catch (e) {
+        console.error('[Users] Supabase unban failed:', e);
+        throw e;
+      }
+      
+      const latestUsers = ((queryClient.getQueryData(['allUsers']) as { users?: User[] } | undefined)?.users ?? users);
+      const updatedUsers = latestUsers.map(u => u.id === userId ? { ...u, isBanned: false, bannedUntil: undefined, banReason: undefined } : u);
       await saveUsers(updatedUsers);
+      await usersQuery.refetch();
     },
   });
 
@@ -200,12 +236,28 @@ export const [UsersProvider, useUsers] = createContextHook(() => {
     },
   });
 
-  const getUserById = useCallback((id: string) => users.find(u => u.id === id), [users]);
+  const getUserById = useCallback(async (id: string) => {
+    const local = users.find(u => u.id === id);
+    if (local) return local;
+    try {
+      return await usersApi.getById(id);
+    } catch {
+      return undefined;
+    }
+  }, [users]);
   const getUserByEmail = useCallback((email: string) => users.find(u => u.email === email), [users]);
   const isFollowing = useCallback((followerId: string, followingId: string) => follows.some(f => f.followerId === followerId && f.followingId === followingId), [follows]);
-  const getFollowers = useCallback((userId: string) => follows.filter(f => f.followingId === userId).map(f => users.find(u => u.id === f.followerId)).filter(Boolean) as User[], [follows, users]);
-  const getFollowing = useCallback((userId: string) => follows.filter(f => f.followerId === userId).map(f => users.find(u => u.id === f.followingId)).filter(Boolean) as User[], [follows, users]);
-  const searchUsers = useCallback((query: string) => users.filter(u => u.fullName.toLowerCase().includes(query.toLowerCase()) || u.username.toLowerCase().includes(query.toLowerCase()) || (u.city ?? '').toLowerCase().includes(query.toLowerCase())), [users]);
+  const getFollowers = useCallback((userId: string) => follows
+    .filter(f => f.followingId === userId)
+    .map(f => users.find(u => u.id === f.followerId))
+    .filter((u): u is User => !!u && u.isProfileVisible !== false), [follows, users]);
+  const getFollowing = useCallback((userId: string) => follows
+    .filter(f => f.followerId === userId)
+    .map(f => users.find(u => u.id === f.followingId))
+    .filter((u): u is User => !!u && u.isProfileVisible !== false), [follows, users]);
+  const searchUsers = useCallback((query: string) => users
+    .filter(u => u.isProfileVisible !== false)
+    .filter(u => u.fullName.toLowerCase().includes(query.toLowerCase()) || u.username.toLowerCase().includes(query.toLowerCase()) || (u.city ?? '').toLowerCase().includes(query.toLowerCase())), [users]);
 
   return {
     users,

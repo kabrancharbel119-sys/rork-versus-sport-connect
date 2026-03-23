@@ -1,0 +1,2 @@
+ALTER TABLE public.users
+ADD COLUMN IF NOT EXISTS is_profile_visible BOOLEAN NOT NULL DEFAULT TRUE;

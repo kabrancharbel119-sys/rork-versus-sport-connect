@@ -8,9 +8,11 @@ import { Colors } from '@/constants/colors';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { supabase } from '@/lib/supabase';
+import { useI18n } from '@/contexts/I18nContext';
 
 export default function VerifyEmailScreen() {
   const router = useRouter();
+  const { t } = useI18n();
   const params = useLocalSearchParams<{ email: string; name: string; debugCode?: string }>();
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
@@ -30,11 +32,11 @@ export default function VerifyEmailScreen() {
   const handleVerify = async () => {
     setError('');
     if (!code || code.length !== 6) {
-      setError('Veuillez entrer un code à 6 chiffres');
+      setError(t('verifyEmail.enterSixDigitCode'));
       return;
     }
     if (!params.email) {
-      setError('Email manquant');
+      setError(t('verifyEmail.missingEmail'));
       return;
     }
     
@@ -50,7 +52,7 @@ export default function VerifyEmailScreen() {
       
       setIsVerified(true);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Code invalide ou expiré';
+      const message = err instanceof Error ? err.message : t('verifyEmail.invalidOrExpiredCode');
       setError(message);
     } finally {
       setIsLoading(false);
@@ -69,11 +71,11 @@ export default function VerifyEmailScreen() {
       
       if (resendError) throw resendError;
       
-      Alert.alert('Code envoyé', 'Un nouveau code a été envoyé à votre adresse email');
+      Alert.alert(t('verifyEmail.codeSentTitle'), t('verifyEmail.codeSentMessage'));
       setCountdown(60);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Une erreur est survenue';
-      Alert.alert('Erreur', message);
+      const message = err instanceof Error ? err.message : t('verifyEmail.genericError');
+      Alert.alert(t('common.error'), message);
     } finally {
       setIsResending(false);
     }
@@ -94,12 +96,12 @@ export default function VerifyEmailScreen() {
               <View style={styles.successIcon}>
                 <CheckCircle size={64} color={Colors.status.success} />
               </View>
-              <Text style={styles.successTitle}>Email vérifié ! 🎉</Text>
+              <Text style={styles.successTitle}>{t('verifyEmail.emailVerifiedTitle')}</Text>
               <Text style={styles.successText}>
-                Votre compte a été créé avec succès. Vous pouvez maintenant vous connecter et profiter de toutes les fonctionnalités de VS App.
+                {t('verifyEmail.emailVerifiedMessage')}
               </Text>
               <Button
-                title="Se connecter"
+                title={t('verifyEmail.signIn')}
                 onPress={handleContinue}
                 variant="primary"
                 size="large"
@@ -128,18 +130,18 @@ export default function VerifyEmailScreen() {
                 <Mail size={48} color={Colors.primary.blue} />
               </View>
 
-              <Text style={styles.title}>Vérifiez votre email</Text>
+              <Text style={styles.title}>{t('verifyEmail.verifyYourEmail')}</Text>
               <Text style={styles.subtitle}>
                 {params.debugCode 
-                  ? "L'email n'a pas pu être envoyé. Utilisez le code ci-dessous :"
-                  : "Nous avons envoyé un code de vérification à"}
+                  ? t('verifyEmail.debugModeSubtitle')
+                  : t('verifyEmail.sentCodeTo')}
                 {'\n'}
                 <Text style={styles.emailText}>{params.email}</Text>
               </Text>
 
               {params.debugCode && (
                 <View style={styles.debugCodeContainer}>
-                  <Text style={styles.debugCodeLabel}>Code de vérification (test)</Text>
+                  <Text style={styles.debugCodeLabel}>{t('verifyEmail.testCodeLabel')}</Text>
                   <Text style={styles.debugCode}>{params.debugCode}</Text>
                 </View>
               )}
@@ -147,7 +149,7 @@ export default function VerifyEmailScreen() {
               <View style={styles.form}>
                 <Input
                   scrollViewRef={scrollViewRef}
-                  label="Code de vérification"
+                  label={t('verifyEmail.verificationCodeLabel')}
                   placeholder="000000"
                   value={code}
                   onChangeText={(v) => {
@@ -161,7 +163,7 @@ export default function VerifyEmailScreen() {
                 />
 
                 <Button
-                  title="Vérifier"
+                  title={t('verifyEmail.verify')}
                   onPress={handleVerify}
                   loading={isLoading}
                   variant="primary"
@@ -177,19 +179,19 @@ export default function VerifyEmailScreen() {
                   <RefreshCw size={16} color={countdown > 0 ? Colors.text.muted : Colors.primary.blue} />
                   <Text style={[styles.resendText, countdown > 0 && styles.resendTextDisabled]}>
                     {isResending
-                      ? 'Envoi...'
+                      ? t('verifyEmail.sending')
                       : countdown > 0
-                      ? `Renvoyer dans ${countdown}s`
-                      : 'Renvoyer le code'}
+                      ? t('verifyEmail.resendIn', { seconds: countdown })
+                      : t('verifyEmail.resendCode')}
                   </Text>
                 </TouchableOpacity>
               </View>
 
               <View style={styles.helpContainer}>
                 <Text style={styles.helpText}>
-                  Vous n&apos;avez pas reçu le code ? Vérifiez vos spams ou{' '}
+                  {t('verifyEmail.noCodeReceived')}{' '}
                   <Text style={styles.helpLink} onPress={handleResendCode}>
-                    renvoyez le code
+                    {t('verifyEmail.resendCodeInline')}
                   </Text>
                 </Text>
               </View>

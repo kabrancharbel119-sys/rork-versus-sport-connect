@@ -1,23 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Switch, Alert, Modal, Share, Platform, AccessibilityInfo, TextInput } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Switch, Alert, Modal, Platform, TextInput } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Bell, Lock, Moon, MapPin, Shield, HelpCircle, FileText, Mail, Trash2, ChevronRight, LogOut, CheckCircle, Trophy, Search, Users, Star, Share2, Volume2, Vibrate, Eye, Database, RefreshCw, Gift, Wifi, WifiOff, Languages, Accessibility, AlertTriangle, UserX } from 'lucide-react-native';
+import { ArrowLeft, Bell, Lock, MapPin, Shield, HelpCircle, FileText, Mail, Trash2, ChevronRight, LogOut, CheckCircle, Trophy, Search, Users, Star, Volume2, Vibrate, Eye, Database, RefreshCw, Wifi, WifiOff, Languages, AlertTriangle, UserX } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
+import { useI18n } from '@/contexts/I18nContext';
 import { useTrophies } from '@/contexts/TrophiesContext';
 import { useNotifications } from '@/contexts/NotificationsContext';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { setLocale, getCurrentLocale } from '@/lib/i18n';
 import { offlineManager } from '@/lib/offline';
 import { setNotificationsEnabled, getNotificationsEnabled } from '@/lib/notifications';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { user, logout, deleteAccount, isAdmin, isVenueManager, upgradeToVenueManager, makeAdmin, isDeleteLoading } = useAuth();
+  const { locale, setLocale, t } = useI18n();
+  const { user, logout, deleteAccount, updateProfile, isAdmin, isVenueManager, upgradeToVenueManager, makeAdmin, isDeleteLoading } = useAuth();
   const { getUnlockedCount, getTotalXP, checkAndUnlockTrophies } = useTrophies();
   const { clearAll: clearNotifications, getUnreadCount } = useNotifications();
   
@@ -27,15 +28,12 @@ export default function SettingsScreen() {
   const [chatAlerts, setChatAlerts] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
-  const [darkMode, setDarkMode] = useState(true);
   const [locationEnabled, setLocationEnabled] = useState(true);
   const [profileVisible, setProfileVisible] = useState(true);
   const [showLanguageModal, setShowLanguageModal] = useState(false);
-  const [currentLanguage, setCurrentLanguage] = useState<'fr' | 'en'>('fr');
+  const [currentLanguage, setCurrentLanguage] = useState<'fr' | 'en'>(locale);
   const [isOnline, setIsOnline] = useState(true);
   const [pendingSync, setPendingSync] = useState(0);
-  const [reduceMotion, setReduceMotion] = useState(false);
-  const [screenReader, setScreenReader] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [versionTaps, setVersionTaps] = useState(0);
@@ -50,14 +48,18 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     loadSettings();
-    setCurrentLanguage(getCurrentLocale() as 'fr' | 'en');
+    setCurrentLanguage(locale);
     setIsOnline(offlineManager.getIsOnline());
     offlineManager.getPendingCount().then(setPendingSync);
     const unsubscribe = offlineManager.subscribe(setIsOnline);
-    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
-    AccessibilityInfo.isScreenReaderEnabled().then(setScreenReader);
     return unsubscribe;
-  }, []);
+  }, [locale]);
+
+  useEffect(() => {
+    if (typeof user?.isProfileVisible === 'boolean') {
+      setProfileVisible(user.isProfileVisible);
+    }
+  }, [user?.isProfileVisible]);
 
   const loadSettings = async () => {
     try {
@@ -71,7 +73,6 @@ export default function SettingsScreen() {
         setChatAlerts(parsed.chatAlerts ?? true);
         setSoundEnabled(parsed.soundEnabled ?? true);
         setVibrationEnabled(parsed.vibrationEnabled ?? true);
-        setDarkMode(parsed.darkMode ?? true);
         setLocationEnabled(parsed.locationEnabled ?? true);
         setProfileVisible(parsed.profileVisible ?? true);
       }
@@ -97,27 +98,38 @@ export default function SettingsScreen() {
     await setNotificationsEnabled(value);
   };
 
+  const handleProfileVisibilityToggle = async (value: boolean) => {
+    const prev = profileVisible;
+    setProfileVisible(value);
+    await saveSettings('profileVisible', value);
+
+    try {
+      await updateProfile({ isProfileVisible: value });
+    } catch (e) {
+      setProfileVisible(prev);
+      await saveSettings('profileVisible', prev);
+      Alert.alert(t('common.error'), t('settings.errorProfileVisibility'));
+    }
+  };
+
   const handleLanguageChange = async (lang: 'fr' | 'en') => {
     await setLocale(lang);
     setCurrentLanguage(lang);
     setShowLanguageModal(false);
-    Alert.alert(lang === 'fr' ? 'Langue modifiée' : 'Language changed', lang === 'fr' ? 'L\'application est maintenant en français.' : 'The app is now in English.');
-  };
-
-  const handleShareReferral = async () => {
-    const code = user ? `VS${user.id.slice(-6).toUpperCase()}` : 'VS000000';
-    const message = `🏆 Rejoins VS - L'app qui révolutionne le sport amateur!\n\nUtilise mon code: ${code}\n\nTélécharge l'app et gagne 50 FCFA de bonus!`;
-    try {
-      if (Platform.OS === 'web') { if (navigator.share) await navigator.share({ title: 'VS', text: message }); else await navigator.clipboard.writeText(message); }
-      else await Share.share({ message, title: 'Rejoins VS!' });
-    } catch (e) { console.log('[Settings] Share error:', e); }
+    Alert.alert(
+      lang === 'fr' ? t('settings.languageChangedTitle') : t('settings.languageChangedTitleEn'),
+      lang === 'fr' ? t('settings.languageChangedMessageFr') : t('settings.languageChangedMessageEn')
+    );
   };
 
   const handleSyncNow = async () => {
     await offlineManager.processQueue();
     const count = await offlineManager.getPendingCount();
     setPendingSync(count);
-    Alert.alert('Synchronisation', count === 0 ? 'Tout est à jour!' : `${count} actions en attente.`);
+    Alert.alert(
+      t('settings.syncTitle'),
+      count === 0 ? t('settings.syncUpToDate') : t('settings.syncPending', { count })
+    );
   };
 
   const handleLogout = () => setShowLogoutModal(true);
@@ -136,7 +148,7 @@ export default function SettingsScreen() {
   const handleDeleteAccount = () => setShowDeleteModal(true);
   const confirmDeleteAccount = async () => {
     if (deleteConfirmText !== 'SUPPRIMER') {
-      Alert.alert('Erreur', 'Veuillez taper SUPPRIMER pour confirmer.');
+      Alert.alert(t('common.error'), t('settings.deleteConfirmInvalid'));
       return;
     }
     try {
@@ -146,12 +158,12 @@ export default function SettingsScreen() {
       router.replace('/auth/welcome');
     } catch (e) {
       console.log('[Settings] Delete account error:', e);
-      Alert.alert('Erreur', 'Impossible de supprimer le compte. Veuillez réessayer.');
+      Alert.alert(t('common.error'), t('settings.deleteFailed'));
     }
   };
-  const handleClearCache = () => Alert.alert('Vider le cache', 'Cela supprimera les données temporaires.', [{ text: 'Annuler', style: 'cancel' }, { text: 'Vider', onPress: async () => { await offlineManager.clearCache(); Alert.alert('Succès', 'Cache vidé.'); } }]);
-  const handleClearNotifications = () => Alert.alert('Effacer les notifications', 'Supprimer toutes vos notifications ?', [{ text: 'Annuler', style: 'cancel' }, { text: 'Effacer', style: 'destructive', onPress: async () => { await clearNotifications(); Alert.alert('Succès', 'Notifications supprimées.'); } }]);
-  const handleRefreshTrophies = async () => { if (!user) return; const unlocked = await checkAndUnlockTrophies(user.id, { matchesPlayed: user.stats.matchesPlayed, wins: user.stats.wins, goalsScored: user.stats.goalsScored, assists: user.stats.assists, mvpAwards: user.stats.mvpAwards, tournamentWins: user.stats.tournamentWins, followers: user.followers, isVerified: user.isVerified || isAdmin, isPremium: user.isPremium || isAdmin, isCaptain: isAdmin, fairPlayScore: user.stats.fairPlayScore, hasTeam: (user.teams?.length || 0) > 0 || isAdmin, profileComplete: !!(user.fullName && user.city && user.sports?.length > 0) || isAdmin }); if (unlocked.length === 0) Alert.alert('Trophées', 'Vos trophées sont à jour!'); };
+  const handleClearCache = () => Alert.alert(t('settings.clearCacheTitle'), t('settings.clearCacheMessage'), [{ text: t('common.cancel'), style: 'cancel' }, { text: t('settings.clearAction'), onPress: async () => { await offlineManager.clearCache(); Alert.alert(t('common.success'), t('settings.cacheCleared')); } }]);
+  const handleClearNotifications = () => Alert.alert(t('settings.clearNotificationsTitle'), t('settings.clearNotificationsMessage'), [{ text: t('common.cancel'), style: 'cancel' }, { text: t('settings.clearAction'), style: 'destructive', onPress: async () => { await clearNotifications(); Alert.alert(t('common.success'), t('settings.notificationsCleared')); } }]);
+  const handleRefreshTrophies = async () => { if (!user) return; const unlocked = await checkAndUnlockTrophies(user.id, { matchesPlayed: user.stats.matchesPlayed, wins: user.stats.wins, goalsScored: user.stats.goalsScored, assists: user.stats.assists, mvpAwards: user.stats.mvpAwards, tournamentWins: user.stats.tournamentWins, followers: user.followers, isVerified: user.isVerified || isAdmin, isPremium: user.isPremium || isAdmin, isCaptain: isAdmin, fairPlayScore: user.stats.fairPlayScore, hasTeam: (user.teams?.length || 0) > 0 || isAdmin, profileComplete: !!(user.fullName && user.city && user.sports?.length > 0) || isAdmin }); if (unlocked.length === 0) Alert.alert(t('settings.trophiesTitle'), t('settings.trophiesUpToDate')); };
 
   const SettingRow = ({ icon, title, value, onPress, toggle, toggleValue, onToggle, danger, badge, testID }: { icon: React.ReactNode; title: string; value?: string; onPress?: () => void; toggle?: boolean; toggleValue?: boolean; onToggle?: (v: boolean) => void; danger?: boolean; badge?: string | number; testID?: string }) => (
     <TouchableOpacity testID={testID} style={styles.settingRow} onPress={onPress} disabled={toggle} activeOpacity={toggle ? 1 : 0.7} accessibilityRole={toggle ? 'switch' : 'button'} accessibilityLabel={title} accessibilityValue={toggle ? { text: toggleValue ? 'activé' : 'désactivé' } : value ? { text: value } : undefined}>
@@ -169,84 +181,70 @@ export default function SettingsScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()} accessibilityLabel="Retour"><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
-            <Text style={styles.headerTitle} accessibilityRole="header">Réglages</Text>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()} accessibilityLabel={t('common.back')}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
+            <Text style={styles.headerTitle} accessibilityRole="header">{t('settings.title')}</Text>
             <View style={styles.statusIndicator}>{isOnline ? <Wifi size={20} color={Colors.status.success} /> : <WifiOff size={20} color={Colors.status.error} />}</View>
           </View>
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             {!isOnline && (
-              <Card style={styles.offlineBanner}><WifiOff size={20} color={Colors.status.warning} /><View style={styles.offlineText}><Text style={styles.offlineTitle}>Mode hors ligne</Text><Text style={styles.offlineSub}>{pendingSync} action(s) en attente</Text></View><TouchableOpacity style={styles.syncButton} onPress={handleSyncNow}><RefreshCw size={16} color="#FFF" /></TouchableOpacity></Card>
+              <Card style={styles.offlineBanner}><WifiOff size={20} color={Colors.status.warning} /><View style={styles.offlineText}><Text style={styles.offlineTitle}>{t('settings.offlineMode')}</Text><Text style={styles.offlineSub}>{t('settings.pendingSyncActions', { count: pendingSync })}</Text></View><TouchableOpacity style={styles.syncButton} onPress={handleSyncNow}><RefreshCw size={16} color="#FFF" /></TouchableOpacity></Card>
             )}
 
-            {isAdmin && (<><Text style={styles.sectionTitle}>Administration</Text><Card style={styles.section}><SettingRow icon={<Shield size={20} color={Colors.primary.orange} />} title="Panneau admin" value="Gérer l'application" onPress={() => router.push('/admin')} /></Card></>)}
+            {isAdmin && (<><Text style={styles.sectionTitle}>{t('settings.admin')}</Text><Card style={styles.section}><SettingRow icon={<Shield size={20} color={Colors.primary.orange} />} title={t('settings.adminPanel')} value={t('settings.manageApp')} onPress={() => router.push('/admin')} /></Card></>)}
 
-            <Text style={styles.sectionTitle}>Compte</Text>
+            <Text style={styles.sectionTitle}>{t('settings.account')}</Text>
             <Card style={styles.section}>
-              <SettingRow icon={<Users size={20} color={Colors.text.secondary} />} title="Modifier le profil" onPress={() => router.push('/edit-profile')} />
-              <SettingRow icon={<CheckCircle size={20} color={user?.isVerified || isAdmin ? Colors.primary.blue : Colors.text.secondary} />} title="Vérification" value={isAdmin ? 'Compte admin ✓' : user?.isVerified ? 'Compte vérifié ✓' : 'Demander la vérification'} onPress={() => router.push('/verification')} />
-              <SettingRow icon={<Trophy size={20} color={Colors.primary.orange} />} title="Trophées & Récompenses" value={`${unlockedTrophies} débloqués • ${totalXP} XP`} onPress={() => router.push('/trophies')} />
-              <SettingRow icon={<RefreshCw size={20} color={Colors.text.secondary} />} title="Actualiser les trophées" onPress={handleRefreshTrophies} />
-              <SettingRow icon={<Search size={20} color={Colors.text.secondary} />} title="Rechercher" onPress={() => router.push('/search')} />
-              <SettingRow icon={<Trash2 size={20} color={Colors.status.error} />} title="Supprimer mon compte" onPress={handleDeleteAccount} danger />
+              <SettingRow icon={<Users size={20} color={Colors.text.secondary} />} title={t('settings.editProfile')} onPress={() => router.push('/edit-profile')} />
+              <SettingRow icon={<CheckCircle size={20} color={user?.isVerified || isAdmin ? Colors.primary.blue : Colors.text.secondary} />} title={t('settings.verification')} value={isAdmin ? t('settings.adminAccount') : user?.isVerified ? t('settings.verifiedAccount') : t('settings.requestVerification')} onPress={() => router.push('/verification')} />
+              <SettingRow icon={<Trophy size={20} color={Colors.primary.orange} />} title={t('settings.trophiesRewards')} value={t('settings.unlockedXp', { unlocked: unlockedTrophies, xp: totalXP })} onPress={() => router.push('/trophies')} />
+              <SettingRow icon={<RefreshCw size={20} color={Colors.text.secondary} />} title={t('settings.refreshTrophies')} onPress={handleRefreshTrophies} />
+              <SettingRow icon={<Search size={20} color={Colors.text.secondary} />} title={t('settings.searchLabel')} onPress={() => router.push('/search')} />
+              <SettingRow icon={<Trash2 size={20} color={Colors.status.error} />} title={t('settings.deleteMyAccount')} onPress={handleDeleteAccount} danger />
             </Card>
 
-            <Text style={styles.sectionTitle}>Notifications</Text>
+            <Text style={styles.sectionTitle}>{t('settings.notifications')}</Text>
             <Card style={styles.section}>
-              <SettingRow icon={<Bell size={20} color={Colors.text.secondary} />} title="Notifications push" toggle toggleValue={notifications} onToggle={handleNotificationsToggle} />
-              <SettingRow icon={<Bell size={20} color={Colors.text.secondary} />} title="Alertes matchs" toggle toggleValue={matchAlerts} onToggle={handleToggle('matchAlerts', setMatchAlerts)} />
-              <SettingRow icon={<Bell size={20} color={Colors.text.secondary} />} title="Alertes équipes" toggle toggleValue={teamAlerts} onToggle={handleToggle('teamAlerts', setTeamAlerts)} />
-              <SettingRow icon={<Bell size={20} color={Colors.text.secondary} />} title="Alertes chat" toggle toggleValue={chatAlerts} onToggle={handleToggle('chatAlerts', setChatAlerts)} />
-              <SettingRow icon={<Volume2 size={20} color={Colors.text.secondary} />} title="Sons" toggle toggleValue={soundEnabled} onToggle={handleToggle('soundEnabled', setSoundEnabled)} />
-              <SettingRow icon={<Vibrate size={20} color={Colors.text.secondary} />} title="Vibrations" toggle toggleValue={vibrationEnabled} onToggle={handleToggle('vibrationEnabled', setVibrationEnabled)} />
-              {unreadNotifs > 0 && <SettingRow icon={<Trash2 size={20} color={Colors.text.secondary} />} title="Effacer les notifications" value={`${unreadNotifs} non lues`} onPress={handleClearNotifications} />}
+              <SettingRow icon={<Bell size={20} color={Colors.text.secondary} />} title={t('settings.pushNotifications')} toggle toggleValue={notifications} onToggle={handleNotificationsToggle} />
+              <SettingRow icon={<Bell size={20} color={Colors.text.secondary} />} title={t('settings.matchAlerts')} toggle toggleValue={matchAlerts} onToggle={handleToggle('matchAlerts', setMatchAlerts)} />
+              <SettingRow icon={<Bell size={20} color={Colors.text.secondary} />} title={t('settings.teamAlerts')} toggle toggleValue={teamAlerts} onToggle={handleToggle('teamAlerts', setTeamAlerts)} />
+              <SettingRow icon={<Bell size={20} color={Colors.text.secondary} />} title={t('settings.chatAlerts')} toggle toggleValue={chatAlerts} onToggle={handleToggle('chatAlerts', setChatAlerts)} />
+              <SettingRow icon={<Volume2 size={20} color={Colors.text.secondary} />} title={t('settings.sounds')} toggle toggleValue={soundEnabled} onToggle={handleToggle('soundEnabled', setSoundEnabled)} />
+              <SettingRow icon={<Vibrate size={20} color={Colors.text.secondary} />} title={t('settings.vibrations')} toggle toggleValue={vibrationEnabled} onToggle={handleToggle('vibrationEnabled', setVibrationEnabled)} />
+              {unreadNotifs > 0 && <SettingRow icon={<Trash2 size={20} color={Colors.text.secondary} />} title={t('settings.clearNotifications')} value={t('settings.unreadCount', { count: unreadNotifs })} onPress={handleClearNotifications} />}
             </Card>
 
-            <Text style={styles.sectionTitle}>Confidentialité & Sécurité</Text>
+            <Text style={styles.sectionTitle}>{t('settings.privacySecurity')}</Text>
             <Card style={styles.section}>
-              <SettingRow icon={<MapPin size={20} color={Colors.text.secondary} />} title="Localisation" toggle toggleValue={locationEnabled} onToggle={handleToggle('locationEnabled', setLocationEnabled)} />
-              <SettingRow icon={<Eye size={20} color={Colors.text.secondary} />} title="Profil visible" toggle toggleValue={profileVisible} onToggle={handleToggle('profileVisible', setProfileVisible)} />
-              <SettingRow icon={<Lock size={20} color={Colors.text.secondary} />} title="Changer le mot de passe" onPress={() => router.push('/forgot-password')} />
+              <SettingRow icon={<MapPin size={20} color={Colors.text.secondary} />} title={t('settings.location')} toggle toggleValue={locationEnabled} onToggle={handleToggle('locationEnabled', setLocationEnabled)} />
+              <SettingRow icon={<Eye size={20} color={Colors.text.secondary} />} title={t('settings.profileVisible')} toggle toggleValue={profileVisible} onToggle={handleProfileVisibilityToggle} />
+              <SettingRow icon={<Lock size={20} color={Colors.text.secondary} />} title={t('settings.changePassword')} onPress={() => router.push('/forgot-password')} />
             </Card>
 
-            <Text style={styles.sectionTitle}>Apparence & Langue</Text>
+            <Text style={styles.sectionTitle}>{t('settings.appearanceLanguage')}</Text>
             <Card style={styles.section}>
-              <SettingRow icon={<Moon size={20} color={Colors.text.secondary} />} title="Mode sombre" toggle toggleValue={darkMode} onToggle={(v) => { setDarkMode(v); saveSettings('darkMode', v); }} />
-              <SettingRow icon={<Languages size={20} color={Colors.text.secondary} />} title="Langue" value={currentLanguage === 'fr' ? 'Français' : 'English'} onPress={() => setShowLanguageModal(true)} />
+              <SettingRow icon={<Languages size={20} color={Colors.text.secondary} />} title={t('settings.language')} value={currentLanguage === 'fr' ? 'Français' : 'English'} onPress={() => setShowLanguageModal(true)} />
             </Card>
 
-            <Text style={styles.sectionTitle}>Accessibilité</Text>
+            <Text style={styles.sectionTitle}>{t('settings.dataStorage')}</Text>
             <Card style={styles.section}>
-              <SettingRow icon={<Accessibility size={20} color={Colors.text.secondary} />} title="Lecteur d'écran" value={screenReader ? 'Activé' : 'Désactivé'} onPress={() => Alert.alert('Accessibilité', 'Activez le lecteur d\'écran dans les paramètres de votre appareil.')} />
-              <SettingRow icon={<Eye size={20} color={Colors.text.secondary} />} title="Réduire les mouvements" value={reduceMotion ? 'Activé' : 'Désactivé'} onPress={() => Alert.alert('Accessibilité', 'Activez cette option dans les paramètres de votre appareil.')} />
+              <SettingRow icon={<Database size={20} color={Colors.text.secondary} />} title={t('settings.clearCache')} onPress={handleClearCache} />
+              {pendingSync > 0 && <SettingRow icon={<RefreshCw size={20} color={Colors.text.secondary} />} title={t('settings.sync')} value={t('settings.pendingActions', { count: pendingSync })} onPress={handleSyncNow} />}
             </Card>
 
-            <Text style={styles.sectionTitle}>Parrainage</Text>
+            <Text style={styles.sectionTitle}>{t('settings.supportHelp')}</Text>
             <Card style={styles.section}>
-              <SettingRow icon={<Gift size={20} color={Colors.primary.orange} />} title="Mon code parrain" value={user ? `VS${user.id.slice(-6).toUpperCase()}` : ''} onPress={handleShareReferral} />
-              <SettingRow icon={<Share2 size={20} color={Colors.text.secondary} />} title="Inviter des amis" value="Gagnez 100 FCFA par filleul" onPress={handleShareReferral} />
+              <SettingRow icon={<Mail size={20} color={Colors.text.secondary} />} title={t('settings.contactUs')} onPress={() => router.push('/contact')} />
+              <SettingRow icon={<Star size={20} color={Colors.text.secondary} />} title={t('settings.rateApp')} onPress={() => Alert.alert(t('settings.thanksTitle'), t('settings.ratingSoon'))} />
             </Card>
 
-            <Text style={styles.sectionTitle}>Données & Stockage</Text>
+            <Text style={styles.sectionTitle}>{t('settings.legal')}</Text>
             <Card style={styles.section}>
-              <SettingRow icon={<Database size={20} color={Colors.text.secondary} />} title="Vider le cache" onPress={handleClearCache} />
-              {pendingSync > 0 && <SettingRow icon={<RefreshCw size={20} color={Colors.text.secondary} />} title="Synchroniser" value={`${pendingSync} en attente`} onPress={handleSyncNow} />}
-            </Card>
-
-            <Text style={styles.sectionTitle}>Support & Aide</Text>
-            <Card style={styles.section}>
-              <SettingRow icon={<HelpCircle size={20} color={Colors.text.secondary} />} title="Centre d'aide" onPress={() => Alert.alert('Centre d\'aide', 'FAQ disponible:\n\n• Comment créer une équipe?\n• Comment rejoindre un match?\n• Comment participer à un tournoi?')} />
-              <SettingRow icon={<Mail size={20} color={Colors.text.secondary} />} title="Nous contacter" onPress={() => router.push('/contact')} />
-              <SettingRow icon={<Star size={20} color={Colors.text.secondary} />} title="Noter l'application" onPress={() => Alert.alert('Merci!', 'La notation sera disponible sur les stores.')} />
-            </Card>
-
-            <Text style={styles.sectionTitle}>Légal</Text>
-            <Card style={styles.section}>
-              <SettingRow icon={<FileText size={20} color={Colors.text.secondary} />} title="Conditions d'utilisation" onPress={() => router.push('/terms')} />
-              <SettingRow icon={<FileText size={20} color={Colors.text.secondary} />} title="Politique de confidentialité" onPress={() => router.push('/privacy')} />
+              <SettingRow icon={<FileText size={20} color={Colors.text.secondary} />} title={t('settings.termsOfService')} onPress={() => router.push('/terms')} />
+              <SettingRow icon={<FileText size={20} color={Colors.text.secondary} />} title={t('settings.privacyPolicy')} onPress={() => router.push('/privacy')} />
             </Card>
 
             <Card style={[styles.section, { marginTop: 24 }]}>
-              <SettingRow testID="btn-logout" icon={<LogOut size={20} color={Colors.text.secondary} />} title="Se déconnecter" onPress={handleLogout} />
+              <SettingRow testID="btn-logout" icon={<LogOut size={20} color={Colors.text.secondary} />} title={t('settings.logout')} onPress={handleLogout} />
             </Card>
 
             
@@ -280,14 +278,14 @@ export default function SettingsScreen() {
                   <LogOut size={32} color="#FFFFFF" />
                 </LinearGradient>
               </View>
-              <Text style={styles.logoutTitle}>À bientôt !</Text>
+              <Text style={styles.logoutTitle}>{t('settings.goodbyeTitle')}</Text>
               <Text style={styles.logoutSubtitle}>
-                Tu es sur le point de te déconnecter de ton compte VS.
+                {t('settings.logoutSubtitle')}
               </Text>
               <View style={styles.logoutInfoBox}>
                 <Shield size={16} color={Colors.text.secondary} />
                 <Text style={styles.logoutInfoText}>
-                  Tes données et ta progression seront sauvegardées
+                  {t('settings.logoutInfo')}
                 </Text>
               </View>
               <View style={styles.logoutActions}>
@@ -297,7 +295,7 @@ export default function SettingsScreen() {
                   disabled={isLoggingOut}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.logoutCancelText}>Rester connecté</Text>
+                  <Text style={styles.logoutCancelText}>{t('settings.stayConnected')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.logoutConfirmButton, isLoggingOut && styles.logoutConfirmButtonDisabled]}
@@ -313,7 +311,7 @@ export default function SettingsScreen() {
                   >
                     <LogOut size={18} color="#FFFFFF" />
                     <Text style={styles.logoutConfirmText}>
-                      {isLoggingOut ? 'Déconnexion...' : 'Se déconnecter'}
+                      {isLoggingOut ? t('settings.loggingOut') : t('settings.logout')}
                     </Text>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -326,11 +324,11 @@ export default function SettingsScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.languageModal}>
               <Shield size={40} color={Colors.primary.orange} style={{ alignSelf: 'center', marginBottom: 16 }} />
-              <Text style={styles.modalTitle}>Mode Administrateur</Text>
-              <Text style={[styles.settingValue, { textAlign: 'center', marginBottom: 16 }]}>Entrez le code secret pour activer l{"'"}accès admin</Text>
+              <Text style={styles.modalTitle}>{t('settings.adminMode')}</Text>
+              <Text style={[styles.settingValue, { textAlign: 'center', marginBottom: 16 }]}>{t('settings.adminModePrompt')}</Text>
               <TextInput
                 style={styles.adminCodeInput}
-                placeholder="Code admin"
+                placeholder={t('settings.adminCodePlaceholder')}
                 placeholderTextColor={Colors.text.muted}
                 value={adminCode}
                 onChangeText={setAdminCode}
@@ -338,39 +336,39 @@ export default function SettingsScreen() {
                 autoCapitalize="none"
               />
               <Button
-                title="Activer"
+                title={t('settings.activate')}
                 onPress={async () => {
                   if (adminCode === 'VS2026ADMIN') {
                     try {
                       await makeAdmin();
-                      Alert.alert('Succès', 'Mode admin activé!');
+                      Alert.alert(t('common.success'), t('settings.adminActivated'));
                     } catch (e) {
                       console.log('[Settings] Admin activation error:', e);
-                      Alert.alert('Erreur', 'Impossible d\'activer le mode admin');
+                      Alert.alert(t('common.error'), t('settings.adminActivationFailed'));
                     }
                     setShowAdminModal(false);
                     setAdminCode('');
                   } else {
-                    Alert.alert('Erreur', 'Code incorrect');
+                    Alert.alert(t('common.error'), t('settings.incorrectCode'));
                   }
                 }}
                 style={{ marginTop: 8 }}
               />
-              <Button title="Annuler" onPress={() => { setShowAdminModal(false); setAdminCode(''); }} variant="outline" style={styles.closeButton} />
+              <Button title={t('common.cancel')} onPress={() => { setShowAdminModal(false); setAdminCode(''); }} variant="outline" style={styles.closeButton} />
             </View>
           </View>
         </Modal>
 
         <Modal visible={showLanguageModal} transparent animationType="fade">
           <View style={styles.modalOverlay}><View style={styles.languageModal}>
-            <Text style={styles.modalTitle}>Choisir la langue</Text>
+            <Text style={styles.modalTitle}>{t('settings.chooseLanguage')}</Text>
             {[{ code: 'fr' as const, label: 'Français', flag: '🇫🇷' }, { code: 'en' as const, label: 'English', flag: '🇬🇧' }].map(lang => (
               <TouchableOpacity key={lang.code} style={[styles.languageOption, currentLanguage === lang.code && styles.languageOptionActive]} onPress={() => handleLanguageChange(lang.code)}>
                 <Text style={styles.languageFlag}>{lang.flag}</Text><Text style={[styles.languageLabel, currentLanguage === lang.code && styles.languageLabelActive]}>{lang.label}</Text>
                 {currentLanguage === lang.code && <CheckCircle size={20} color={Colors.primary.blue} />}
               </TouchableOpacity>
             ))}
-            <Button title="Fermer" onPress={() => setShowLanguageModal(false)} variant="outline" style={styles.closeButton} />
+            <Button title={t('common.close')} onPress={() => setShowLanguageModal(false)} variant="outline" style={styles.closeButton} />
           </View></View>
         </Modal>
 
@@ -386,17 +384,17 @@ export default function SettingsScreen() {
                   <UserX size={32} color="#FFFFFF" />
                 </View>
               </View>
-              <Text style={styles.deleteTitle}>Supprimer le compte</Text>
+              <Text style={styles.deleteTitle}>{t('settings.deleteAccountTitle')}</Text>
               <Text style={styles.deleteSubtitle}>
-                Cette action est définitive et irréversible. Toutes vos données seront supprimées.
+                {t('settings.deleteAccountSubtitle')}
               </Text>
               <View style={styles.deleteWarningBox}>
                 <AlertTriangle size={16} color={Colors.status.error} />
                 <Text style={styles.deleteWarningText}>
-                  Matchs, équipes, statistiques et messages seront perdus
+                  {t('settings.deleteAccountWarning')}
                 </Text>
               </View>
-              <Text style={styles.deleteConfirmLabel}>Tapez SUPPRIMER pour confirmer</Text>
+              <Text style={styles.deleteConfirmLabel}>{t('settings.typeDeleteConfirm')}</Text>
               <TextInput
                 style={styles.deleteConfirmInput}
                 placeholder="SUPPRIMER"
@@ -412,7 +410,7 @@ export default function SettingsScreen() {
                   disabled={isDeleteLoading}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.deleteCancelText}>Annuler</Text>
+                  <Text style={styles.deleteCancelText}>{t('common.cancel')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[
@@ -426,7 +424,7 @@ export default function SettingsScreen() {
                   <View style={styles.deleteConfirmInner}>
                     <Trash2 size={18} color="#FFFFFF" />
                     <Text style={styles.deleteConfirmText}>
-                      {isDeleteLoading ? 'Suppression...' : 'Supprimer définitivement'}
+                      {isDeleteLoading ? t('settings.deleting') : t('settings.deletePermanently')}
                     </Text>
                   </View>
                 </TouchableOpacity>

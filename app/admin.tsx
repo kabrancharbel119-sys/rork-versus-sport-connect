@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, RefreshControl, Switch, Share, Platform, Modal } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, RefreshControl, Switch, Share, Platform, Modal, KeyboardAvoidingView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,7 +26,7 @@ import { offlineManager } from '@/lib/offline';
 
 const CACHE_KEYS_TO_PURGE = ['vs_tournaments', 'vs_teams', 'vs_matches', 'vs_all_users', 'vs_follows', 'vs_notifications', 'vs_offline_queue', 'vs_last_sync'];
 
-type AdminTab = 'overview' | 'users' | 'teams' | 'matches' | 'tournaments' | 'tickets' | 'verifications' | 'payments' | 'payouts' | 'analytics' | 'activity' | 'settings';
+type AdminTab = 'overview' | 'users' | 'banned' | 'teams' | 'matches' | 'tournaments' | 'tickets' | 'verifications' | 'payments' | 'payouts' | 'analytics' | 'activity' | 'settings';
 
 interface ActivityLog {
   id: string;
@@ -62,6 +62,13 @@ export default function AdminScreen() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [selectedUserForBan, setSelectedUserForBan] = useState<{ id: string; name: string } | null>(null);
+  const [banDuration, setBanDuration] = useState<'24h' | '7d' | '30d' | 'permanent'>('7d');
+  const [banReason, setBanReason] = useState('');
+  const [isApplyingBan, setIsApplyingBan] = useState(false);
+  const [unbanningUserId, setUnbanningUserId] = useState<string | null>(null);
+  const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null);
+  const [deletingMatchId, setDeletingMatchId] = useState<string | null>(null);
 
   const pendingPayoutRequestsQuery = useQuery({
     queryKey: ['pending-payout-requests'],
@@ -111,6 +118,50 @@ export default function AdminScreen() {
     useCallback(() => {
       doRefresh();
     }, [doRefresh])
+  );
+
+  const renderBannedUsers = () => (
+    <Card style={styles.listCard}>
+      <View style={styles.listHeader}>
+        <Text style={styles.cardTitle}>Utilisateurs bannis ({bannedUsers.length})</Text>
+      </View>
+
+      {bannedUsers.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ban size={40} color={Colors.text.muted} />
+          <Text style={styles.emptyText}>Aucun utilisateur banni</Text>
+        </View>
+      ) : (
+        bannedUsers.map((u) => (
+          <View key={u.id} style={styles.userItem}>
+            <TouchableOpacity style={styles.userItemContent} onPress={() => router.push(`/user/${u.id}`)}>
+              <Avatar uri={u.avatar} name={u.fullName} size="medium" />
+              <View style={styles.userInfo}>
+                <View style={styles.userNameRow}>
+                  <Text style={styles.userName}>{u.fullName}</Text>
+                  <Ban size={14} color={Colors.status.error} />
+                </View>
+                <Text style={styles.userEmail}>{u.email ?? u.phone ?? '-'}</Text>
+                <Text style={styles.userMeta}>{u.city || '-'} • {formatDate(u.createdAt)}</Text>
+              </View>
+            </TouchableOpacity>
+            <View style={styles.userActions}>
+              <TouchableOpacity
+                style={[styles.actionBtnGreen, { width: 'auto', paddingHorizontal: 10, borderRadius: 10, flexDirection: 'row', gap: 6 }]}
+                onPress={() => handleUnbanUser(u.id, u.fullName)}
+                disabled={unbanningUserId === u.id}
+                accessibilityLabel={`Débannir ${u.fullName}`}
+              >
+                <CheckCircle size={16} color={Colors.status.success} />
+                <Text style={{ color: Colors.status.success, fontSize: 12, fontWeight: '600' as const }}>
+                  {unbanningUserId === u.id ? 'Débannissement...' : 'Débannir'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))
+      )}
+    </Card>
   );
 
   const onRefresh = doRefresh;
@@ -271,6 +322,19 @@ export default function AdminScreen() {
     return result;
   }, [users, searchQuery, filterStatus, sortBy, sortOrder]);
 
+  const bannedUsers = useMemo(() => {
+    let result = (users ?? []).filter(u => u?.isBanned);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(u =>
+        u?.fullName?.toLowerCase().includes(q)
+        || (u?.email ?? u?.phone ?? '').toLowerCase().includes(q)
+        || (u?.username ?? '').toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [users, searchQuery]);
+
   const filteredTeams = useMemo(() => {
     const safeTeams = teams ?? [];
     if (!searchQuery) return safeTeams;
@@ -292,32 +356,78 @@ export default function AdminScreen() {
     return safeTournaments.filter(t => t?.name?.toLowerCase().includes(q) || (t?.sport ?? '').toLowerCase().includes(q) || (t?.venue?.name ?? '').toLowerCase().includes(q));
   }, [tournaments, searchQuery]);
 
+  const getBanEndDate = (duration: '24h' | '7d' | '30d' | 'permanent'): Date | null => {
+    const now = new Date();
+    if (duration === 'permanent') return null;
+    if (duration === '24h') return new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    if (duration === '7d') return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    return new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  };
+
   const handleBanUser = async (userId: string, userName: string) => {
+    console.log('[Admin] handleBanUser called:', userId, userName);
     if (!userId?.trim()) {
       Alert.alert('Erreur', 'Utilisateur invalide.');
       return;
     }
-    Alert.alert('Bannir', `Bannir ${userName} ?`, [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Bannir',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await banUser(userId);
-            try {
-              await addNotification({ userId, type: 'system', title: 'Compte suspendu', message: 'Votre compte a été suspendu pour violation des règles.' });
-            } catch (_) {
-              // Notification échouée mais le ban a réussi
-            }
-            await queryClient.invalidateQueries({ queryKey: ['allUsers'] });
-            Alert.alert('Succès', `${userName} a été banni`);
-          } catch (e) {
-            Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de bannir l\'utilisateur.');
-          }
-        },
-      },
-    ]);
+    setBanDuration('7d');
+    setBanReason('');
+    setSelectedUserForBan({ id: userId, name: userName });
+    console.log('[Admin] Ban modal should now be visible');
+  };
+
+  const handleConfirmBan = async () => {
+    console.log('[Admin] handleConfirmBan called, selectedUser:', selectedUserForBan);
+    if (!selectedUserForBan?.id) return;
+
+    setIsApplyingBan(true);
+    try {
+      const bannedUntil = getBanEndDate(banDuration);
+      console.log('[Admin] Calling banUser with:', { userId: selectedUserForBan.id, banDuration, bannedUntil, banReason });
+      await banUser({
+        userId: selectedUserForBan.id,
+        bannedUntil,
+        banReason: banReason.trim() || null,
+      } as any);
+
+      const suspensionText = bannedUntil
+        ? `jusqu'au ${bannedUntil.toLocaleString('fr-FR')}`
+        : 'de manière permanente';
+
+      try {
+        await addNotification({
+          userId: selectedUserForBan.id,
+          type: 'system',
+          title: 'Compte suspendu',
+          message: `Votre compte a été suspendu ${suspensionText}.${banReason.trim() ? ` Motif : ${banReason.trim()}` : ''}`,
+        });
+      } catch (_) {
+        // Notification échouée mais le ban a réussi
+      }
+      setSelectedUserForBan(null);
+      Alert.alert('Succès', `${selectedUserForBan.name} a été banni ${suspensionText}.`);
+    } catch (e) {
+      Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de bannir l\'utilisateur.');
+    } finally {
+      setIsApplyingBan(false);
+    }
+  };
+
+  const performUnbanUser = async (userId: string, userName: string) => {
+    setUnbanningUserId(userId);
+    try {
+      await unbanUser(userId);
+      try {
+        await addNotification({ userId, type: 'system', title: 'Compte réactivé', message: 'Votre compte a été réactivé.' });
+      } catch (_) {
+        // Notification échouée mais le débannissement a réussi
+      }
+      Alert.alert('Succès', `${userName} a été débanni`);
+    } catch (e) {
+      Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de débannir l\'utilisateur.');
+    } finally {
+      setUnbanningUserId(null);
+    }
   };
 
   const handleUnbanUser = async (userId: string, userName: string) => {
@@ -325,23 +435,19 @@ export default function AdminScreen() {
       Alert.alert('Erreur', 'Utilisateur invalide.');
       return;
     }
+
+    // On mobile, execute directly to avoid Alert callback issues
+    if (Platform.OS !== 'web') {
+      await performUnbanUser(userId, userName);
+      return;
+    }
+
     Alert.alert('Débannir', `Débannir ${userName} ?`, [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Débannir',
-        onPress: async () => {
-          try {
-            await unbanUser(userId);
-            try {
-              await addNotification({ userId, type: 'system', title: 'Compte réactivé', message: 'Votre compte a été réactivé.' });
-            } catch (_) {
-              // Notification échouée mais le débannissement a réussi
-            }
-            await queryClient.invalidateQueries({ queryKey: ['allUsers'] });
-            Alert.alert('Succès', `${userName} a été débanni`);
-          } catch (e) {
-            Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de débannir l\'utilisateur.');
-          }
+        onPress: () => {
+          void performUnbanUser(userId, userName);
         },
       },
     ]);
@@ -447,30 +553,59 @@ export default function AdminScreen() {
     }
   };
 
+  const performDeleteTeam = async (teamId: string) => {
+    setDeletingTeamId(teamId);
+    try {
+      await deleteTeam({ teamId, userId: user?.id ?? '', asAdmin: true });
+      try {
+        await queryClient.invalidateQueries({ queryKey: ['teams'] });
+        await refetchTeams();
+      } catch (_) {}
+      Alert.alert('Succès', 'Équipe supprimée');
+    } catch (e) {
+      Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de supprimer l\'équipe.');
+    } finally {
+      setDeletingTeamId(null);
+    }
+  };
+
   const handleDeleteTeam = async (teamId: string, teamName: string) => {
     if (!teamId?.trim()) {
       Alert.alert('Erreur', 'Équipe invalide.');
       return;
     }
+
+    if (Platform.OS !== 'web') {
+      await performDeleteTeam(teamId);
+      return;
+    }
+
     Alert.alert('Supprimer l\'équipe', `Dissoudre « ${teamName} » ? Cette action est irréversible.`, [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Supprimer',
         style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteTeam({ teamId, userId: user?.id ?? '', asAdmin: true });
-            try {
-              await queryClient.invalidateQueries({ queryKey: ['teams'] });
-              await refetchTeams();
-            } catch (_) {}
-            Alert.alert('Succès', 'Équipe supprimée');
-          } catch (e) {
-            Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de supprimer l\'équipe.');
-          }
+        onPress: () => {
+          void performDeleteTeam(teamId);
         },
       },
     ]);
+  };
+
+  const performDeleteMatch = async (matchId: string) => {
+    setDeletingMatchId(matchId);
+    try {
+      await deleteMatch({ matchId, userId: user?.id ?? '', asAdmin: true });
+      try {
+        await queryClient.invalidateQueries({ queryKey: ['matches'] });
+        await refetchMatches();
+      } catch (_) {}
+      Alert.alert('Succès', 'Match supprimé');
+    } catch (e) {
+      Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de supprimer le match.');
+    } finally {
+      setDeletingMatchId(null);
+    }
   };
 
   const handleDeleteMatch = async (matchId: string, sportLabel: string) => {
@@ -478,22 +613,19 @@ export default function AdminScreen() {
       Alert.alert('Erreur', 'Match invalide.');
       return;
     }
+
+    if (Platform.OS !== 'web') {
+      await performDeleteMatch(matchId);
+      return;
+    }
+
     Alert.alert('Supprimer le match', `Supprimer ce match (${sportLabel}) ? Cette action est irréversible.`, [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Supprimer',
         style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteMatch({ matchId, userId: user?.id ?? '', asAdmin: true });
-            try {
-              await queryClient.invalidateQueries({ queryKey: ['matches'] });
-              await refetchMatches();
-            } catch (_) {}
-            Alert.alert('Succès', 'Match supprimé');
-          } catch (e) {
-            Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de supprimer le match.');
-          }
+        onPress: () => {
+          void performDeleteMatch(matchId);
         },
       },
     ]);
@@ -520,7 +652,6 @@ export default function AdminScreen() {
             }
           }
           setSelectedUsers([]);
-          await queryClient.invalidateQueries({ queryKey: ['allUsers'] });
           Alert.alert('Succès', `${success}/${selectedUsers.length} utilisateur(s) banni(s)`);
         },
       },
@@ -547,7 +678,6 @@ export default function AdminScreen() {
             }
           }
           setSelectedUsers([]);
-          await queryClient.invalidateQueries({ queryKey: ['allUsers'] });
           Alert.alert('Succès', `${success}/${selectedUsers.length} utilisateur(s) débanni(s)`);
         },
       },
@@ -702,6 +832,7 @@ export default function AdminScreen() {
   const tabs: { key: AdminTab; label: string; icon: React.ReactNode; badge?: number }[] = useMemo(() => [
     { key: 'overview', label: 'Vue d\'ensemble', icon: <BarChart3 size={16} color={activeTab === 'overview' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'users', label: 'Utilisateurs', icon: <Users size={16} color={activeTab === 'users' ? '#FFF' : Colors.text.secondary} /> },
+    { key: 'banned', label: 'Bannis', icon: <Ban size={16} color={activeTab === 'banned' ? '#FFF' : Colors.text.secondary} />, badge: stats.bannedUsers },
     { key: 'teams', label: 'Équipes', icon: <Shield size={16} color={activeTab === 'teams' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'matches', label: 'Matchs', icon: <Swords size={16} color={activeTab === 'matches' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'tournaments', label: 'Tournois', icon: <Award size={16} color={activeTab === 'tournaments' ? '#FFF' : Colors.text.secondary} /> },
@@ -1011,6 +1142,7 @@ export default function AdminScreen() {
               <Text style={styles.userEmail}>{u.email ?? u.phone ?? '-'}</Text>
               <Text style={styles.userMeta}>{u.city || '-'} • {formatDate(u.createdAt)}</Text>
             </View>
+            </TouchableOpacity>
             <View style={styles.userActions}>
               {u.isBanned ? (
                 <TouchableOpacity style={styles.actionBtnGreen} onPress={() => handleUnbanUser(u.id, u.fullName)}><CheckCircle size={16} color={Colors.status.success} /></TouchableOpacity>
@@ -1019,7 +1151,6 @@ export default function AdminScreen() {
               )}
               {!u.isVerified && <TouchableOpacity style={styles.actionBtnBlue} onPress={() => handleVerifyUser(u.id, u.fullName)}><CheckCircle size={16} color={Colors.primary.blue} /></TouchableOpacity>}
             </View>
-            </TouchableOpacity>
           </View>
         ))}
       </Card>
@@ -1041,7 +1172,14 @@ export default function AdminScreen() {
           </TouchableOpacity>
           <View style={styles.userActions}>
             <TouchableOpacity style={styles.actionBtnBlue} onPress={() => router.push(`/team/${team.id}`)} accessibilityLabel="Voir l'équipe"><Eye size={16} color={Colors.primary.blue} /></TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtnRed} onPress={() => handleDeleteTeam(team.id, team.name)} accessibilityLabel="Supprimer l'équipe"><Trash2 size={16} color={Colors.status.error} /></TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionBtnRed, deletingTeamId === team.id && { opacity: 0.5 }]}
+              onPress={() => handleDeleteTeam(team.id, team.name)}
+              disabled={deletingTeamId === team.id}
+              accessibilityLabel="Supprimer l'équipe"
+            >
+              <Trash2 size={16} color={Colors.status.error} />
+            </TouchableOpacity>
           </View>
         </View>
       ))}
@@ -1063,7 +1201,14 @@ export default function AdminScreen() {
           </TouchableOpacity>
           <View style={styles.userActions}>
             <TouchableOpacity style={styles.actionBtnBlue} onPress={() => router.push(`/match/${match.id}`)} accessibilityLabel="Voir le match"><Eye size={16} color={Colors.primary.blue} /></TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtnRed} onPress={() => handleDeleteMatch(match.id, (sportLabels as Record<string, string>)[match.sport] ?? match.sport)} accessibilityLabel="Supprimer le match"><Trash2 size={16} color={Colors.status.error} /></TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionBtnRed, deletingMatchId === match.id && { opacity: 0.5 }]}
+              onPress={() => handleDeleteMatch(match.id, (sportLabels as Record<string, string>)[match.sport] ?? match.sport)}
+              disabled={deletingMatchId === match.id}
+              accessibilityLabel="Supprimer le match"
+            >
+              <Trash2 size={16} color={Colors.status.error} />
+            </TouchableOpacity>
           </View>
         </View>
       ))}
@@ -1640,37 +1785,56 @@ export default function AdminScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView style={styles.safeArea} edges={['top']}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+              <ArrowLeft size={20} color={Colors.text.primary} />
+            </TouchableOpacity>
             <Text style={styles.headerTitle}>Administration</Text>
             <View style={styles.headerRight}>
-              <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push('/notifications')}>
-                <Bell size={18} color={Colors.text.primary} />
+              <TouchableOpacity style={styles.headerIconBtn} onPress={onRefresh}>
+                <RefreshCw size={18} color={Colors.text.primary} />
               </TouchableOpacity>
-              <View style={styles.adminBadge}><Shield size={14} color="#FFFFFF" /></View>
             </View>
           </View>
+
           <View style={styles.searchContainer}>
-            <Search size={20} color={Colors.text.muted} />
-            <TextInput style={styles.searchInput} placeholder="Rechercher..." placeholderTextColor={Colors.text.muted} value={searchQuery} onChangeText={setSearchQuery} />
-            {searchQuery.length > 0 && <TouchableOpacity onPress={() => setSearchQuery('')}><XCircle size={18} color={Colors.text.muted} /></TouchableOpacity>}
+            <Search size={18} color={Colors.text.muted} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Rechercher utilisateur, équipe, match..."
+              placeholderTextColor={Colors.text.muted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll} contentContainerStyle={styles.tabs}>
-            {tabs.map(tab => (
+
+          <ScrollView horizontal style={styles.tabsScroll} contentContainerStyle={styles.tabs} showsHorizontalScrollIndicator={false}>
+            {tabs.map((tab) => (
               <TouchableOpacity key={tab.key} style={[styles.tab, activeTab === tab.key && styles.tabActive]} onPress={() => setActiveTab(tab.key)}>
                 {tab.icon}
                 <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>{tab.label}</Text>
-                {tab.badge && tab.badge > 0 && <View style={styles.tabBadge}><Text style={styles.tabBadgeText}>{tab.badge}</Text></View>}
+                {!!tab.badge && tab.badge > 0 && (
+                  <View style={styles.tabBadge}>
+                    <Text style={styles.tabBadgeText}>{tab.badge > 99 ? '99+' : tab.badge}</Text>
+                  </View>
+                )}
               </TouchableOpacity>
             ))}
           </ScrollView>
-          <ScrollView testID="admin-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.blue} />}>
+
+          <ScrollView
+            testID="admin-scroll"
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.blue} />}
+          >
             {activeTab === 'overview' && renderOverview()}
             {activeTab === 'users' && renderUsers()}
+            {activeTab === 'banned' && renderBannedUsers()}
             {activeTab === 'teams' && renderTeams()}
             {activeTab === 'matches' && renderMatches()}
             {activeTab === 'tournaments' && renderTournaments()}
@@ -1681,44 +1845,103 @@ export default function AdminScreen() {
             {activeTab === 'activity' && renderActivity()}
             {activeTab === 'analytics' && renderAnalytics()}
             {activeTab === 'settings' && renderSettings()}
-          <View style={styles.bottomSpacer} />
-        </ScrollView>
-      </SafeAreaView>
-      
-      <Modal visible={selectedTicketForResponse !== null} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Répondre au ticket</Text>
-              <TouchableOpacity onPress={() => { setSelectedTicketForResponse(null); setTicketResponseText(''); }}>
-                <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
+            <View style={styles.bottomSpacer} />
+          </ScrollView>
+        </SafeAreaView>
+
+        <Modal visible={selectedUserForBan !== null} animationType="slide" transparent>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.modalOverlay}
+          >
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Bannir un utilisateur</Text>
+                <TouchableOpacity onPress={() => { if (!isApplyingBan) setSelectedUserForBan(null); }}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+
+              {selectedUserForBan && (
+                <>
+                  <Text style={styles.modalLabel}>Utilisateur: {selectedUserForBan.name}</Text>
+                  <Text style={styles.modalLabel}>Durée du bannissement</Text>
+                  <View style={styles.banDurationRow}>
+                    {([
+                      { key: '24h', label: '24h' },
+                      { key: '7d', label: '7 jours' },
+                      { key: '30d', label: '30 jours' },
+                      { key: 'permanent', label: 'Permanent' },
+                    ] as const).map((option) => (
+                      <TouchableOpacity
+                        key={option.key}
+                        style={[styles.banDurationChip, banDuration === option.key && styles.banDurationChipActive]}
+                        onPress={() => setBanDuration(option.key)}
+                        disabled={isApplyingBan}
+                      >
+                        <Text style={[styles.banDurationChipText, banDuration === option.key && styles.banDurationChipTextActive]}>
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <Text style={styles.modalLabel}>Motif (optionnel)</Text>
+                  <TextInput
+                    style={styles.modalTextInput}
+                    value={banReason}
+                    onChangeText={setBanReason}
+                    placeholder="Ex: propos inappropriés, spam, harcèlement..."
+                    placeholderTextColor={Colors.text.muted}
+                    editable={!isApplyingBan}
+                    multiline
+                    numberOfLines={4}
+                  />
+
+                  <View style={styles.modalActions}>
+                    <Button title="Annuler" onPress={() => setSelectedUserForBan(null)} variant="outline" style={styles.modalButton} disabled={isApplyingBan} />
+                    <Button title="Confirmer le ban" onPress={handleConfirmBan} variant="orange" style={styles.modalButton} loading={isApplyingBan} />
+                  </View>
+                </>
+              )}
             </View>
-            {selectedTicketForResponse && (
-              <>
-                <Text style={styles.modalLabel}>Sujet: {selectedTicketForResponse?.subject || ''}</Text>
-                <Text style={styles.modalLabel}>Message:</Text>
-                <Text style={styles.modalText}>{selectedTicketForResponse?.description || selectedTicketForResponse?.message || ''}</Text>
-                <Text style={styles.modalLabel}>Votre réponse:</Text>
-                <TextInput
-                  style={styles.modalTextInput}
-                  value={ticketResponseText}
-                  onChangeText={setTicketResponseText}
-                  placeholder="Tapez votre réponse..."
-                  multiline
-                  numberOfLines={6}
-                  placeholderTextColor={Colors.text.muted}
-                />
-                <View style={styles.modalActions}>
-                  <Button title="Annuler" onPress={() => { setSelectedTicketForResponse(null); setTicketResponseText(''); }} variant="outline" style={styles.modalButton} />
-                  <Button title="Envoyer" onPress={() => selectedTicketForResponse && handleRespondToTicket()} variant="primary" style={styles.modalButton} disabled={!selectedTicketForResponse || !ticketResponseText.trim()} />
-                </View>
-              </>
-            )}
+          </KeyboardAvoidingView>
+        </Modal>
+
+        <Modal visible={selectedTicketForResponse !== null} animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Répondre au ticket</Text>
+                <TouchableOpacity onPress={() => { setSelectedTicketForResponse(null); setTicketResponseText(''); }}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              {selectedTicketForResponse && (
+                <>
+                  <Text style={styles.modalLabel}>Sujet: {selectedTicketForResponse?.subject || ''}</Text>
+                  <Text style={styles.modalLabel}>Message:</Text>
+                  <Text style={styles.modalText}>{selectedTicketForResponse?.description || selectedTicketForResponse?.message || ''}</Text>
+                  <Text style={styles.modalLabel}>Votre réponse:</Text>
+                  <TextInput
+                    style={styles.modalTextInput}
+                    value={ticketResponseText}
+                    onChangeText={setTicketResponseText}
+                    placeholder="Tapez votre réponse..."
+                    multiline
+                    numberOfLines={6}
+                    placeholderTextColor={Colors.text.muted}
+                  />
+                  <View style={styles.modalActions}>
+                    <Button title="Annuler" onPress={() => { setSelectedTicketForResponse(null); setTicketResponseText(''); }} variant="outline" style={styles.modalButton} />
+                    <Button title="Envoyer" onPress={() => selectedTicketForResponse && handleRespondToTicket()} variant="primary" style={styles.modalButton} disabled={!selectedTicketForResponse || !ticketResponseText.trim()} />
+                  </View>
+                </>
+              )}
+            </View>
           </View>
-        </View>
-      </Modal>
-    </View>
+        </Modal>
+      </View>
     </>
   );
 }
@@ -1905,6 +2128,11 @@ const styles = StyleSheet.create({
   modalTextInput: { backgroundColor: Colors.background.cardLight, borderRadius: 12, padding: 16, color: Colors.text.primary, fontSize: 14, minHeight: 120, textAlignVertical: 'top' as const, marginBottom: 16 },
   modalActions: { flexDirection: 'row', gap: 12 },
   modalButton: { flex: 1 },
+  banDurationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  banDurationChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: Colors.border.light, backgroundColor: Colors.background.card },
+  banDurationChipActive: { backgroundColor: Colors.status.error, borderColor: Colors.status.error },
+  banDurationChipText: { color: Colors.text.secondary, fontSize: 13, fontWeight: '600' as const },
+  banDurationChipTextActive: { color: '#FFFFFF' },
   ticketResponses: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border.light },
   ticketResponsesTitle: { color: Colors.text.secondary, fontSize: 13, fontWeight: '600' as const, marginBottom: 8 },
   ticketResponseItem: { backgroundColor: Colors.background.cardLight, padding: 12, borderRadius: 8, marginBottom: 8 },

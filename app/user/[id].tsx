@@ -8,6 +8,7 @@ import { ArrowLeft, MapPin, Calendar, Trophy, Swords, Star, Users, MessageCircle
 import { Colors } from '@/constants/colors';
 import type { Team, User } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { useI18n } from '@/contexts/I18nContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { useTeams } from '@/contexts/TeamsContext';
 import { useNotifications } from '@/contexts/NotificationsContext';
@@ -21,6 +22,7 @@ import { sportLabels, levelLabels } from '@/mocks/data';
 
 export default function UserProfileScreen() {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const { id, fromTeamRequest, teamId, requestId } = useLocalSearchParams<{
     id: string;
     fromTeamRequest?: string;
@@ -28,7 +30,7 @@ export default function UserProfileScreen() {
     requestId?: string;
   }>();
   const { user: currentUser } = useAuth();
-  const { getUserById, isFollowing, follow, unfollow, getFollowers, getFollowing } = useUsers();
+  const { users, isFollowing, follow, unfollow } = useUsers();
   const { teams, getUserTeams, getTeamById, handleRequest, refetchTeams } = useTeams();
   const { notifyTeamRequest } = useNotifications();
   const [isHandlingRequest, setIsHandlingRequest] = useState(false);
@@ -38,14 +40,17 @@ export default function UserProfileScreen() {
   const requestTeamParam = (typeof teamId === 'string' ? teamId : Array.isArray(teamId) ? teamId[0] : '') || '';
   const requestIdParam = (typeof requestId === 'string' ? requestId : Array.isArray(requestId) ? requestId[0] : '') || '';
 
-  const { data: fetchedUser } = useQuery({
+  const { data: fetchedUser, error: fetchedUserError } = useQuery({
     queryKey: ['profileUser', profileUserId],
     queryFn: () => usersApi.getById(profileUserId),
     enabled: !!profileUserId,
     staleTime: 0,
+    retry: false,
   });
 
-  const profileUser = (fetchedUser ?? getUserById(profileUserId)) as User | undefined;
+  const localUser = users.find((u) => u.id === profileUserId);
+  const profileUser = (fetchedUser ?? localUser) as User | undefined;
+  const isInvisibleProfile = fetchedUserError instanceof Error && fetchedUserError.message === 'Profil indisponible';
 
   const teamIds = useMemo(() => (profileUser?.teams ?? []).filter(Boolean), [profileUser?.teams]);
 
@@ -126,8 +131,8 @@ export default function UserProfileScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>Utilisateur non trouvé</Text>
-            <TouchableOpacity onPress={() => router.back()}><Text style={styles.errorLink}>Retour</Text></TouchableOpacity>
+            <Text style={styles.errorText}>{isInvisibleProfile ? t('userProfile.invisibleProfile') : t('userProfile.userNotFound')}</Text>
+            <TouchableOpacity onPress={() => router.back()}><Text style={styles.errorLink}>{t('common.back')}</Text></TouchableOpacity>
           </View>
         </SafeAreaView>
       </View>
@@ -143,12 +148,12 @@ export default function UserProfileScreen() {
         await follow({ followerId: currentUser.id, followingId: id || '' });
       }
     } catch (error: any) {
-      Alert.alert('Erreur', error.message);
+      Alert.alert(t('common.error'), error.message);
     }
   };
 
   const handleMessage = () => {
-    Alert.alert('Info', 'Fonctionnalité bientôt disponible');
+    Alert.alert(t('userProfile.infoTitle'), t('userProfile.featureSoon'));
   };
 
   const handleRequestAction = async (action: 'accept' | 'reject') => {
@@ -168,16 +173,16 @@ export default function UserProfileScreen() {
         profileUserId
       );
       await refetchTeams();
-      Alert.alert('Succès', action === 'accept' ? 'Demande acceptée' : 'Demande refusée');
+      Alert.alert(t('common.success'), action === 'accept' ? t('userProfile.requestAccepted') : t('userProfile.requestRejected'));
       router.back();
     } catch (error: any) {
-      Alert.alert('Erreur', error?.message ?? 'Impossible de traiter la demande');
+      Alert.alert(t('common.error'), error?.message ?? t('userProfile.requestProcessFailed'));
     } finally {
       setIsHandlingRequest(false);
     }
   };
 
-  const formatDate = (date: Date) => new Date(date).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const formatDate = (date: Date) => new Date(date).toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR', { month: 'long', year: 'numeric' });
 
   return (
     <>
@@ -194,7 +199,7 @@ export default function UserProfileScreen() {
               <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
                 <ArrowLeft size={24} color={Colors.text.primary} />
               </TouchableOpacity>
-              <Text style={styles.headerTitle}>Profil</Text>
+              <Text style={styles.headerTitle}>{t('userProfile.title')}</Text>
               <View style={styles.placeholder} />
             </View>
 
@@ -214,11 +219,11 @@ export default function UserProfileScreen() {
                 <View style={styles.teamTagRow}>
                   <Shield size={14} color={Colors.primary.orange} />
                   <Text style={styles.teamTagText} numberOfLines={2}>
-                    Joue chez {displayTeams.length === 1
+                    {t('userProfile.playsFor')} {displayTeams.length === 1
                       ? displayTeams[0].name
                       : displayTeams.length === 2
-                        ? `${displayTeams[0].name} et ${displayTeams[1].name}`
-                        : `${displayTeams[0].name} et ${displayTeams.length - 1} autre${displayTeams.length > 2 ? 's' : ''}`}
+                        ? `${displayTeams[0].name} ${t('userProfile.and')} ${displayTeams[1].name}`
+                        : `${displayTeams[0].name} ${t('userProfile.and')} ${displayTeams.length - 1} ${displayTeams.length > 2 ? t('userProfile.otherPlural') : t('userProfile.otherSingle')}`}
                   </Text>
                 </View>
               )}
@@ -227,24 +232,24 @@ export default function UserProfileScreen() {
               <View style={styles.statsRow}>
                 <TouchableOpacity style={styles.statItem}>
                   <Text style={styles.statValue}>{profileUser.followers}</Text>
-                  <Text style={styles.statLabel}>Abonnés</Text>
+                  <Text style={styles.statLabel}>{t('userProfile.followers')}</Text>
                 </TouchableOpacity>
                 <View style={styles.statDivider} />
                 <TouchableOpacity style={styles.statItem}>
                   <Text style={styles.statValue}>{profileUser.following}</Text>
-                  <Text style={styles.statLabel}>Abonnements</Text>
+                  <Text style={styles.statLabel}>{t('userProfile.following')}</Text>
                 </TouchableOpacity>
                 <View style={styles.statDivider} />
                 <View style={styles.statItem}>
                   <Text style={styles.statValue}>{profileUser.reputation.toFixed(1)}</Text>
-                  <Text style={styles.statLabel}>Réputation</Text>
+                  <Text style={styles.statLabel}>{t('userProfile.reputation')}</Text>
                 </View>
               </View>
 
               {!isOwnProfile && (
                 <View style={styles.actionButtons}>
                   <Button
-                    title={following ? 'Se désabonner' : 'S\'abonner'}
+                    title={following ? t('userProfile.unfollow') : t('userProfile.follow')}
                     onPress={handleFollow}
                     variant={following ? 'secondary' : 'primary'}
                     size="medium"
@@ -259,7 +264,7 @@ export default function UserProfileScreen() {
               {canHandleThisRequest && (
                 <View style={styles.joinRequestActions}>
                   <Button
-                    title="Accepter"
+                    title={t('userProfile.accept')}
                     onPress={() => handleRequestAction('accept')}
                     variant="primary"
                     size="medium"
@@ -268,7 +273,7 @@ export default function UserProfileScreen() {
                     disabled={isHandlingRequest}
                   />
                   <Button
-                    title="Refuser"
+                    title={t('userProfile.reject')}
                     onPress={() => handleRequestAction('reject')}
                     variant="secondary"
                     size="medium"
@@ -280,28 +285,28 @@ export default function UserProfileScreen() {
               )}
             </View>
 
-            <Text style={styles.sectionTitle}>Statistiques</Text>
+            <Text style={styles.sectionTitle}>{t('userProfile.stats')}</Text>
             <View style={styles.statsGrid}>
-              <StatCard label="Matchs" value={profileUser.stats.matchesPlayed} icon={<Swords size={18} color={Colors.primary.blue} />} variant="blue" />
-              <StatCard label="Victoires" value={profileUser.stats.wins} icon={<Trophy size={18} color={Colors.status.success} />} variant="default" />
-              <StatCard label="MVP" value={profileUser.stats.mvpAwards} icon={<Award size={18} color={Colors.primary.orange} />} variant="orange" />
+              <StatCard label={t('userProfile.matches')} value={profileUser.stats.matchesPlayed} icon={<Swords size={18} color={Colors.primary.blue} />} variant="blue" />
+              <StatCard label={t('userProfile.wins')} value={profileUser.stats.wins} icon={<Trophy size={18} color={Colors.status.success} />} variant="default" />
+              <StatCard label={t('userProfile.mvp')} value={profileUser.stats.mvpAwards} icon={<Award size={18} color={Colors.primary.orange} />} variant="orange" />
             </View>
             <View style={styles.statsGrid}>
-              <StatCard label="Buts" value={profileUser.stats.goalsScored} icon={<Swords size={18} color={Colors.primary.orange} />} variant="orange" />
-              <StatCard label="Passes" value={profileUser.stats.assists} icon={<Users size={18} color={Colors.primary.blue} />} variant="blue" />
-              <StatCard label="Fair-play" value={profileUser.stats.fairPlayScore.toFixed(1)} icon={<Star size={18} color={Colors.status.success} />} variant="default" />
+              <StatCard label={t('userProfile.goals')} value={profileUser.stats.goalsScored} icon={<Swords size={18} color={Colors.primary.orange} />} variant="orange" />
+              <StatCard label={t('userProfile.assists')} value={profileUser.stats.assists} icon={<Users size={18} color={Colors.primary.blue} />} variant="blue" />
+              <StatCard label={t('userProfile.fairPlay')} value={profileUser.stats.fairPlayScore.toFixed(1)} icon={<Star size={18} color={Colors.status.success} />} variant="default" />
             </View>
 
             {profileUser.sports.length > 0 && (
               <>
-                <Text style={styles.sectionTitle}>Sports pratiqués</Text>
+                <Text style={styles.sectionTitle}>{t('userProfile.sportsPlayed')}</Text>
                 {profileUser.sports.map((sport, i) => (
                   <Card key={i} style={styles.sportCard}>
                     <View style={styles.sportRow}>
                       <View style={styles.sportInfo}>
                         <Text style={styles.sportName}>{sportLabels[sport.sport]}</Text>
-                        <Text style={styles.sportMeta}>{levelLabels[sport.level]} • {sport.position || 'Non défini'}</Text>
-                        <Text style={styles.sportYears}>{sport.yearsPlaying} ans d'expérience</Text>
+                        <Text style={styles.sportMeta}>{levelLabels[sport.level]} • {sport.position || t('userProfile.undefinedPosition')}</Text>
+                        <Text style={styles.sportYears}>{t('userProfile.yearsExperience', { years: sport.yearsPlaying })}</Text>
                       </View>
                       <View style={styles.sportLevel}>
                         <Text style={styles.sportLevelText}>{levelLabels[sport.level]}</Text>
@@ -312,7 +317,7 @@ export default function UserProfileScreen() {
               </>
             )}
 
-            <Text style={styles.sectionTitle}>Équipes ({displayTeams.length})</Text>
+            <Text style={styles.sectionTitle}>{t('userProfile.teams', { count: displayTeams.length })}</Text>
             {displayTeams.length > 0 ? (
               displayTeams.map((team) => (
                 <Card key={team.id} style={styles.teamCard} onPress={() => router.push(`/team/${team.id}`)}>
@@ -329,7 +334,7 @@ export default function UserProfileScreen() {
                     {team.captainId === id && (
                       <View style={styles.captainBadge}>
                         <Shield size={14} color={Colors.primary.orange} />
-                        <Text style={styles.captainText}>Capitaine</Text>
+                        <Text style={styles.captainText}>{t('userProfile.captain')}</Text>
                       </View>
                     )}
                   </View>
@@ -337,13 +342,13 @@ export default function UserProfileScreen() {
               ))
             ) : (
               <Card style={styles.teamCardEmpty}>
-                <Text style={styles.teamEmptyText}>Aucune équipe pour le moment</Text>
+                <Text style={styles.teamEmptyText}>{t('userProfile.noTeams')}</Text>
               </Card>
             )}
 
             <View style={styles.joinedRow}>
               <Calendar size={14} color={Colors.text.muted} />
-              <Text style={styles.joinedText}>Membre depuis {formatDate(profileUser.createdAt)}</Text>
+              <Text style={styles.joinedText}>{t('userProfile.memberSince', { date: formatDate(profileUser.createdAt) })}</Text>
             </View>
 
             <View style={styles.bottomSpacer} />

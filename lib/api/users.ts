@@ -1,11 +1,11 @@
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { getApiBaseUrl } from '@/lib/api-base-url';
 import { logger } from '@/lib/logger';
 import type { User, UserSport, UserStats } from '@/types';
 
 /** Colonnes user sans password_hash : à utiliser pour tout select exposé au client */
 const USER_PUBLIC_COLUMNS =
-  'id,email,username,full_name,avatar,phone,city,country,bio,sports,stats,reputation,wallet_balance,teams,followers,following,is_verified,is_premium,is_banned,role,location_lat,location_lng,location_city,location_country,availability,referral_code,created_at';
+  'id,email,username,full_name,avatar,phone,city,country,bio,sports,stats,reputation,wallet_balance,teams,followers,following,is_verified,is_premium,is_banned,banned_until,ban_reason,role,location_lat,location_lng,location_city,location_country,availability,referral_code,created_at';
 
 function getAuthBaseUrl(): string {
   return getApiBaseUrl();
@@ -53,6 +53,9 @@ export interface UserRow {
   is_verified: boolean;
   is_premium: boolean;
   is_banned: boolean;
+  is_profile_visible?: boolean;
+  banned_until: string | null;
+  ban_reason: string | null;
   role: string;
   location_lat: number | null;
   location_lng: number | null;
@@ -87,6 +90,9 @@ export const mapUserRowToUser = (row: UserRow): User => ({
   isVerified: row.is_verified ?? false,
   isPremium: row.is_premium ?? false,
   isBanned: row.is_banned ?? false,
+  isProfileVisible: row.is_profile_visible ?? true,
+  bannedUntil: row.banned_until ? new Date(row.banned_until) : undefined,
+  banReason: row.ban_reason ?? undefined,
   role: (row.role as 'user' | 'admin') ?? 'user',
   location: row.location_lat && row.location_lng ? {
     latitude: row.location_lat,
@@ -99,6 +105,29 @@ export const mapUserRowToUser = (row: UserRow): User => ({
   createdAt: new Date(row.created_at),
 });
 
+async function getViewerContext(): Promise<{ viewerId: string | null; isAdmin: boolean }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) return { viewerId: null, isAdmin: false };
+
+  const { data } = await (supabase
+    .from('users')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle() as any);
+
+  return {
+    viewerId: user.id,
+    isAdmin: data?.role === 'admin',
+  };
+}
+
+function canViewerSeeUser(target: User, viewerId: string | null, isAdmin: boolean): boolean {
+  if (isAdmin) return true;
+  if (!viewerId) return target.isProfileVisible !== false;
+  if (target.id === viewerId) return true;
+  return target.isProfileVisible !== false;
+}
+
 export const usersApi = {
   async getAll(options?: { page?: number; limit?: number }) {
     const page = options?.page ?? 1;
@@ -109,14 +138,18 @@ export const usersApi = {
     logger.debug('UsersAPI', 'Getting all users', { page, limit });
     const { data, error, count } = await (supabase
       .from('users')
-      .select(USER_PUBLIC_COLUMNS, { count: 'exact' })
-      .eq('is_banned', false)
+      .select('*', { count: 'exact' })
       .range(from, to)
       .order('created_at', { ascending: false }) as any);
     
     if (error) throw error;
+
+    const { viewerId, isAdmin } = await getViewerContext();
+    const mappedUsers = ((data || []) as UserRow[]).map(row => mapUserRowToUser(row));
+    const visibleUsers = mappedUsers.filter(u => canViewerSeeUser(u, viewerId, isAdmin));
+
     return {
-      users: ((data || []) as UserRow[]).map(row => mapUserRowToUser(row)),
+      users: visibleUsers,
       total: count ?? 0,
       page,
       limit,
@@ -128,20 +161,25 @@ export const usersApi = {
     logger.debug('UsersAPI', 'Getting user by id:', id);
     const { data, error } = await (supabase
       .from('users')
-      .select(USER_PUBLIC_COLUMNS)
+      .select('*')
       .eq('id', id)
       .single() as any);
     
     if (error) throw error;
     if (!data) throw new Error('Utilisateur non trouvé');
-    return mapUserRowToUser(data as UserRow);
+    const mapped = mapUserRowToUser(data as UserRow);
+    const { viewerId, isAdmin } = await getViewerContext();
+    if (!canViewerSeeUser(mapped, viewerId, isAdmin)) {
+      throw new Error('Profil indisponible');
+    }
+    return mapped;
   },
 
   async getByPhone(phone: string) {
     logger.debug('UsersAPI', 'Getting user by phone');
     const { data, error } = await (supabase
       .from('users')
-      .select(USER_PUBLIC_COLUMNS)
+      .select('*')
       .eq('phone', phone)
       .single() as any);
     
@@ -235,7 +273,7 @@ export const usersApi = {
     const { data, error } = await (supabase
       .from('users')
       .insert(insertData as any)
-      .select(USER_PUBLIC_COLUMNS)
+      .select('*')
       .single() as any);
     
     if (error) {
@@ -289,11 +327,53 @@ export const usersApi = {
     const { data, error } = await ((supabase.from('users') as any)
       .update(dbUpdates)
       .eq('id', id)
-      .select(USER_PUBLIC_COLUMNS)
+      .select('*')
       .single());
     
     if (error) throw error;
     return mapUserRowToUser(data as UserRow);
+  },
+
+  async setBanStatus(id: string, isBanned: boolean, bannedUntil?: string | null, banReason?: string | null) {
+    console.log('[UsersAPI] setBanStatus called:', { id, isBanned, bannedUntil, banReason });
+
+    // Use admin client (service role key) to bypass RLS
+    const client = supabaseAdmin || supabase;
+    const isAdmin = !!supabaseAdmin;
+    console.log('[UsersAPI] Using', isAdmin ? 'ADMIN (service role)' : 'ANON', 'client');
+
+    // Important: avoid banned_until / ban_reason here because PostgREST schema cache
+    // may still not expose those columns (PGRST204). is_banned is enough for enforcement.
+    const { error } = await client
+      .from('users')
+      .update({ is_banned: isBanned })
+      .eq('id', id);
+
+    console.log('[UsersAPI] Ban update result:', { error });
+
+    if (error) {
+      console.error('[UsersAPI] Ban update failed:', error);
+      throw error;
+    }
+
+    const { data: verifyData, error: verifyError } = await client
+      .from('users')
+      .select('id,is_banned')
+      .eq('id', id)
+      .maybeSingle();
+
+    console.log('[UsersAPI] Ban verify result:', { verifyData, verifyError });
+
+    if (verifyError) {
+      throw verifyError;
+    }
+
+    if (!verifyData || verifyData.is_banned !== isBanned) {
+      throw new Error('La mise à jour du statut de ban a échoué.');
+    }
+
+    console.log('[UsersAPI] Ban status updated successfully for user:', id);
+    return { success: true };
   },
 
   async update(id: string, updates: Partial<{
@@ -309,6 +389,8 @@ export const usersApi = {
     teams: string[];
     isVerified: boolean;
     isPremium: boolean;
+    isBanned: boolean;
+    isProfileVisible: boolean;
     role: string;
   }>) {
     logger.debug('UsersAPI', 'Updating user (admin):', id);
@@ -326,12 +408,14 @@ export const usersApi = {
     if (updates.teams !== undefined) dbUpdates.teams = updates.teams;
     if (updates.isVerified !== undefined) dbUpdates.is_verified = updates.isVerified;
     if (updates.isPremium !== undefined) dbUpdates.is_premium = updates.isPremium;
+    if (updates.isBanned !== undefined) dbUpdates.is_banned = updates.isBanned;
+    if (updates.isProfileVisible !== undefined) dbUpdates.is_profile_visible = updates.isProfileVisible;
     if (updates.role !== undefined) dbUpdates.role = updates.role;
     
     const { data, error } = await ((supabase.from('users') as any)
       .update(dbUpdates)
       .eq('id', id)
-      .select(USER_PUBLIC_COLUMNS)
+      .select('*')
       .single());
     
     if (error) throw error;
@@ -340,12 +424,27 @@ export const usersApi = {
 
   async delete(id: string) {
     logger.debug('UsersAPI', 'Deleting user:', id);
-    const { error } = await (supabase
+
+    const client = supabaseAdmin || supabase;
+
+    // 1) Delete profile row
+    const { error: profileDeleteError } = await (client
       .from('users')
       .delete()
       .eq('id', id) as any);
-    
-    if (error) throw error;
+
+    if (profileDeleteError) {
+      throw profileDeleteError;
+    }
+
+    // 2) Delete auth account when service role is available
+    if (supabaseAdmin) {
+      const { error: authDeleteError } = await supabaseAdmin.auth.admin.deleteUser(id);
+      if (authDeleteError) {
+        throw authDeleteError;
+      }
+    }
+
     return { success: true };
   },
 
@@ -360,7 +459,7 @@ export const usersApi = {
     logger.debug('UsersAPI', 'Searching users');
     let query = supabase
       .from('users')
-      .select(USER_PUBLIC_COLUMNS)
+      .select('*')
       .eq('is_banned', false) as any;
 
     if (params.city) {
@@ -376,7 +475,10 @@ export const usersApi = {
     const { data, error } = await query;
     if (error) throw error;
 
-    let users = ((data || []) as UserRow[]).map(row => mapUserRowToUser(row));
+    const { viewerId, isAdmin } = await getViewerContext();
+    let users = ((data || []) as UserRow[])
+      .map(row => mapUserRowToUser(row))
+      .filter(u => canViewerSeeUser(u, viewerId, isAdmin));
 
     if (params.query) {
       const q = params.query.toLowerCase();
@@ -444,7 +546,7 @@ export const usersApi = {
 
     const { data: users, error: usersError } = await (supabase
       .from('users')
-      .select(USER_PUBLIC_COLUMNS)
+      .select('*')
       .in('id', followerIds) as any);
     
     if (usersError) throw usersError;
@@ -465,7 +567,7 @@ export const usersApi = {
 
     const { data: users, error: usersError } = await (supabase
       .from('users')
-      .select(USER_PUBLIC_COLUMNS)
+      .select('*')
       .in('id', followingIds) as any);
     
     if (usersError) throw usersError;

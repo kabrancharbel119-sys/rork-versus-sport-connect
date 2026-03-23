@@ -1,6 +1,67 @@
 import { supabase } from '../supabase';
 import { usersApi } from './users';
 
+function formatBanEndDate(date: Date): string {
+  try {
+    return date.toLocaleString('fr-FR');
+  } catch {
+    return date.toISOString();
+  }
+}
+
+async function getBanPeriodFromNotification(userId: string): Promise<string | null> {
+  const { data, error } = await (supabase
+    .from('notifications')
+    .select('message,created_at')
+    .eq('user_id', userId)
+    .eq('type', 'system')
+    .eq('title', 'Compte suspendu')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle() as any);
+
+  if (error || !data?.message) return null;
+
+  const message = String(data.message);
+
+  const untilMatch = message.match(/jusqu'au\s+(.+?)(?:\.|$)/i);
+  if (untilMatch?.[1]) return `jusqu'au ${untilMatch[1].trim()}`;
+
+  if (message.toLowerCase().includes('de manière permanente')) {
+    return 'de manière permanente';
+  }
+
+  return null;
+}
+
+async function enforceBanPolicy(userId: string) {
+  const profile = await usersApi.getById(userId);
+  if (!profile?.isBanned) return;
+
+  const now = new Date();
+  const banEnd = profile.bannedUntil;
+  const isTemporaryBanExpired = !!banEnd && banEnd.getTime() <= now.getTime();
+
+  if (isTemporaryBanExpired) {
+    await usersApi.setBanStatus(userId, false, null, null);
+    return;
+  }
+
+  let suspensionMessage = 'Ce compte a été suspendu';
+
+  if (banEnd) {
+    suspensionMessage = `Compte suspendu jusqu'au ${formatBanEndDate(banEnd)}`;
+  } else {
+    const notificationPeriod = await getBanPeriodFromNotification(userId);
+    if (notificationPeriod) {
+      suspensionMessage = `Compte suspendu ${notificationPeriod}`;
+    }
+  }
+
+  await supabase.auth.signOut();
+  throw new Error(suspensionMessage);
+}
+
 export async function signUp(data: {
   email: string;
   password: string;
@@ -74,6 +135,9 @@ export async function signIn(email: string, password: string) {
   });
 
   if (error) throw new Error(error.message);
+  if (data.user?.id) {
+    await enforceBanPolicy(data.user.id);
+  }
   return data;
 }
 
@@ -92,5 +156,6 @@ export async function resetPassword(email: string) {
 export async function getCurrentUser() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
+  await enforceBanPolicy(user.id);
   return usersApi.getById(user.id);
 }

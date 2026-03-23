@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Calendar, Clock, MapPin, Users, Trophy, DollarSign, Share2, Edit2, Trash2, Play, Radio, Square, Circle } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
+import { useI18n } from '@/contexts/I18nContext';
 import { useMatches } from '@/contexts/MatchesContext';
 import { useNotifications } from '@/contexts/NotificationsContext';
 import { useUsers } from '@/contexts/UsersContext';
@@ -19,11 +20,13 @@ import { rankingApi } from '@/lib/api/ranking';
 
 export default function MatchDetailScreen() {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const { id } = useLocalSearchParams<{ id: string }>();
+
   const { user } = useAuth();
   const { getMatchById, joinMatch, leaveMatch, updateMatch, deleteMatch, isUpdating, refetchMatches } = useMatches();
   const { notifyMatchUpdate } = useNotifications();
-  const { getUserById } = useUsers();
+  const { users } = useUsers();
   const [isJoining, setIsJoining] = useState(false);
   const [isLiveScoring, setIsLiveScoring] = useState(false);
   const [isStartingLive, setIsStartingLive] = useState(false);
@@ -42,8 +45,8 @@ export default function MatchDetailScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>Match non trouvé</Text>
-            <Button title="Retour" onPress={() => router.back()} variant="outline" />
+            <Text style={styles.errorText}>{t('matchDetail.notFound')}</Text>
+            <Button title={t('common.back')} onPress={() => router.back()} variant="outline" />
           </View>
         </SafeAreaView>
       </View>
@@ -56,12 +59,12 @@ export default function MatchDetailScreen() {
 
   const formatDate = (date: Date) => {
     const d = new Date(date);
-    return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    return d.toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   };
 
   const formatTime = (date: Date) => {
     const d = new Date(date);
-    return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString(locale === 'en' ? 'en-US' : 'fr-FR', { hour: '2-digit', minute: '2-digit' });
   };
 
   const handleJoin = async () => {
@@ -70,28 +73,28 @@ export default function MatchDetailScreen() {
     try {
       await joinMatch({ matchId: match.id, userId: user.id });
       await notifyMatchUpdate(match.id, 'joined', match.venue?.name, user.id);
-      Alert.alert('Succès', 'Vous êtes inscrit !');
+      Alert.alert(t('common.success'), t('matchDetail.joinSuccess'));
     } catch (error: any) {
-      Alert.alert('Erreur', error.message);
+      Alert.alert(t('common.error'), error.message);
     }
     setIsJoining(false);
   };
 
   const handleLeave = () => {
     Alert.alert(
-      'Se désinscrire',
-      'Êtes-vous sûr de vouloir vous désinscrire de ce match ?',
+      t('matchDetail.leaveTitle'),
+      t('matchDetail.leaveMessage'),
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Se désinscrire',
+          text: t('matchDetail.leaveAction'),
           style: 'destructive',
           onPress: async () => {
             try {
               await leaveMatch({ matchId: match.id, userId: user!.id });
               await notifyMatchUpdate(match.id, 'left', match.venue?.name, user!.id);
             } catch (error: any) {
-              Alert.alert('Erreur', error.message);
+              Alert.alert(t('common.error'), error.message);
             }
           },
         },
@@ -105,22 +108,22 @@ export default function MatchDetailScreen() {
 
   const handleDelete = () => {
     Alert.alert(
-      'Supprimer le match',
-      'Êtes-vous sûr de vouloir supprimer ce match ? Cette action est irréversible.',
+      t('matchDetail.deleteTitle'),
+      t('matchDetail.deleteMessage'),
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Supprimer',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             try {
               const registeredIds = [...(match.registeredPlayers ?? [])];
               await deleteMatch({ matchId: match.id, userId: user!.id });
               await notifyMatchUpdate(match.id, 'cancelled', match.venue?.name, registeredIds.filter((id) => id !== user!.id));
-              Alert.alert('Succès', 'Match supprimé');
+              Alert.alert(t('common.success'), t('matchDetail.deleteSuccess'));
               router.back();
             } catch (error: any) {
-              Alert.alert('Erreur', error.message);
+              Alert.alert(t('common.error'), error.message);
             }
           },
         },
@@ -139,10 +142,10 @@ export default function MatchDetailScreen() {
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case 'open': return 'Ouvert aux inscriptions';
-      case 'confirmed': return 'Confirmé';
-      case 'in_progress': return 'En cours';
-      case 'completed': return 'Terminé';
+      case 'open': return t('matchDetail.statusOpen');
+      case 'confirmed': return t('matchDetail.statusConfirmed');
+      case 'in_progress': return t('matchDetail.statusInProgress');
+      case 'completed': return t('matchDetail.statusCompleted');
       default: return status;
     }
   };
@@ -158,12 +161,12 @@ export default function MatchDetailScreen() {
       
       await liveScoringApi.startLiveMatch(match.id, homeTeamId, awayTeamId);
       setIsLiveScoring(true);
-      Alert.alert('Live Scoring', 'Le match est maintenant en direct ! 🏁');
+      Alert.alert(t('matchDetail.liveStartTitle'), t('matchDetail.liveStartMessage'));
       
       // Mettre à jour le statut du match
-      await updateMatch({ matchId: match.id, status: 'in_progress' });
+      await updateMatch({ matchId: match.id, updates: { status: 'in_progress' } as any });
     } catch (error: any) {
-      Alert.alert('Erreur', 'Impossible de démarrer le live scoring');
+      Alert.alert(t('common.error'), t('matchDetail.liveStartError'));
     }
     setIsStartingLive(false);
   };
@@ -172,26 +175,26 @@ export default function MatchDetailScreen() {
     if (!user || !isCreator) return;
     
     Alert.alert(
-      'Terminer le match',
-      'Êtes-vous sûr de vouloir terminer le match ?',
+      t('matchDetail.endMatchTitle'),
+      t('matchDetail.endMatchMessage'),
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Terminer',
+          text: t('matchDetail.endMatchAction'),
           style: 'destructive',
           onPress: async () => {
             try {
               await liveScoringApi.endLiveMatch(match.id);
               setIsLiveScoring(false);
-              Alert.alert('Match terminé', 'Le live scoring a été arrêté');
+              Alert.alert(t('matchDetail.endMatchDoneTitle'), t('matchDetail.endMatchDoneMessage'));
               
               // Mettre à jour le statut du match
-              await updateMatch({ matchId: match.id, status: 'completed' });
+              await updateMatch({ matchId: match.id, updates: { status: 'completed' } as any });
               
               // Mettre à jour les classements (à implémenter)
               // await updatePlayerRankings();
             } catch (error: any) {
-              Alert.alert('Erreur', 'Impossible de terminer le match');
+              Alert.alert(t('common.error'), t('matchDetail.endMatchError'));
             }
           },
         },
@@ -239,11 +242,11 @@ export default function MatchDetailScreen() {
             <View style={styles.matchHeader}>
               <View style={[styles.typeBadge, { backgroundColor: match.type === 'ranked' ? Colors.primary.orange : Colors.primary.blue }]}>
                 <Text style={styles.typeText}>
-                  {match.type === 'friendly' ? '⚽ Amical' : '🏆 Match classé'}
+                  {match.type === 'friendly' ? t('matchDetail.friendlyType') : t('matchDetail.rankedType')}
                 </Text>
               </View>
               {match.type === 'ranked' && (
-                <Text style={styles.rankedImportance}>Compte pour le classement et la réputation</Text>
+                <Text style={styles.rankedImportance}>{t('matchDetail.rankedImportance')}</Text>
               )}
 
               <Text style={styles.matchTitle}>
@@ -262,7 +265,7 @@ export default function MatchDetailScreen() {
               <View style={styles.infoRow}>
                 <Calendar size={20} color={Colors.primary.blue} />
                 <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>Date</Text>
+                  <Text style={styles.infoLabel}>{t('matchDetail.date')}</Text>
                   <Text style={styles.infoValue}>{formatDate(match.dateTime)}</Text>
                 </View>
               </View>
@@ -270,7 +273,7 @@ export default function MatchDetailScreen() {
               <View style={styles.infoRow}>
                 <Clock size={20} color={Colors.primary.blue} />
                 <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>Heure</Text>
+                  <Text style={styles.infoLabel}>{t('matchDetail.time')}</Text>
                   <Text style={styles.infoValue}>{formatTime(match.dateTime)} • {match.duration} min</Text>
                 </View>
               </View>
@@ -279,7 +282,7 @@ export default function MatchDetailScreen() {
                 <View style={styles.infoRow}>
                   <MapPin size={20} color={Colors.primary.blue} />
                   <View style={styles.infoContent}>
-                    <Text style={styles.infoLabel}>Lieu</Text>
+                    <Text style={styles.infoLabel}>{t('matchDetail.venue')}</Text>
                     <Text style={styles.infoValue}>{match.venue.name}</Text>
                     {match.venue.address && <Text style={styles.infoSubValue}>{match.venue.address}</Text>}
                   </View>
@@ -300,15 +303,15 @@ export default function MatchDetailScreen() {
               <Card style={styles.rankedStakesCard}>
                 <View style={styles.rankedStakesHeader}>
                   <Trophy size={20} color={Colors.primary.orange} />
-                  <Text style={styles.rankedStakesTitle}>À quoi sert ce match ?</Text>
+                  <Text style={styles.rankedStakesTitle}>{t('matchDetail.rankedWhyTitle')}</Text>
                 </View>
                 <Text style={styles.rankedStakesDesc}>
-                  Aucun argent en jeu. Ce match compte pour ton classement et ta réputation. Victoire ou défaite seront enregistrées dans tes statistiques officielles.
+                  {t('matchDetail.rankedWhyDesc')}
                 </Text>
                 <View style={styles.rankedBullets}>
-                  <Text style={styles.rankedBullet}>• Impact sur ton rang</Text>
-                  <Text style={styles.rankedBullet}>• Réputation mise à jour</Text>
-                  <Text style={styles.rankedBullet}>• Stats V / D enregistrées</Text>
+                  <Text style={styles.rankedBullet}>{t('matchDetail.rankedPoint1')}</Text>
+                  <Text style={styles.rankedBullet}>{t('matchDetail.rankedPoint2')}</Text>
+                  <Text style={styles.rankedBullet}>{t('matchDetail.rankedPoint3')}</Text>
                 </View>
               </Card>
             )}
@@ -320,7 +323,7 @@ export default function MatchDetailScreen() {
                     <View style={styles.prizeItem}>
                       <DollarSign size={20} color={Colors.text.muted} />
                       <View>
-                        <Text style={styles.prizeLabel}>Mise</Text>
+                        <Text style={styles.prizeLabel}>{t('matchDetail.stake')}</Text>
                         <Text style={styles.prizeValue}>{match.entryFee.toLocaleString()} FCFA</Text>
                       </View>
                     </View>
@@ -329,7 +332,7 @@ export default function MatchDetailScreen() {
                     <View style={styles.prizeItem}>
                       <Trophy size={20} color={Colors.primary.orange} />
                       <View>
-                        <Text style={styles.prizeLabel}>Récompense</Text>
+                        <Text style={styles.prizeLabel}>{t('matchDetail.prize')}</Text>
                         <Text style={[styles.prizeValue, styles.prizeHighlight]}>{match.prize.toLocaleString()} FCFA</Text>
                       </View>
                     </View>
@@ -342,7 +345,7 @@ export default function MatchDetailScreen() {
               <View style={styles.sectionHeader}>
                 <Users size={20} color={Colors.text.primary} />
                 <Text style={styles.sectionTitle}>
-                  Joueurs inscrits ({(match.registeredPlayers ?? []).length}/{match.maxPlayers})
+                  {t('matchDetail.registeredPlayers', { count: (match.registeredPlayers ?? []).length, max: match.maxPlayers })}
                 </Text>
               </View>
 
@@ -357,16 +360,16 @@ export default function MatchDetailScreen() {
 
               <View style={styles.playersList}>
                 {(match.registeredPlayers ?? []).map((playerId) => {
-                  const player = getUserById(playerId);
+                  const player = users.find((u) => u.id === playerId);
                   return (
                     <View key={playerId} style={styles.playerItem}>
                       <Avatar uri={playerId === user?.id ? user?.avatar : player?.avatar} name={playerId === user?.id ? user?.fullName : player?.fullName || player?.username} size="small" />
                       <Text style={styles.playerName}>
-                        {playerId === user?.id ? 'Vous' : player?.fullName || player?.username || 'Joueur'}
+                        {playerId === user?.id ? t('matchDetail.you') : player?.fullName || player?.username || t('matchDetail.player')}
                       </Text>
                       {playerId === match.createdBy && (
                         <View style={styles.organizerBadge}>
-                          <Text style={styles.organizerText}>Organisateur</Text>
+                          <Text style={styles.organizerText}>{t('matchDetail.organizer')}</Text>
                         </View>
                       )}
                     </View>
@@ -375,7 +378,7 @@ export default function MatchDetailScreen() {
                 {[...Array(Math.max(0, match.maxPlayers - (match.registeredPlayers ?? []).length))].map((_, index) => (
                   <View key={`empty-${index}`} style={styles.playerItem}>
                     <View style={styles.emptyAvatar} />
-                    <Text style={styles.emptyPlayerName}>Place disponible</Text>
+                    <Text style={styles.emptyPlayerName}>{t('matchDetail.availableSlot')}</Text>
                   </View>
                 ))}
               </View>
@@ -385,7 +388,7 @@ export default function MatchDetailScreen() {
               {isRegistered ? (
                 <>
                   <View style={styles.registeredBanner}>
-                    <Text style={styles.registeredText}>✓ Vous êtes inscrit</Text>
+                    <Text style={styles.registeredText}>{t('matchDetail.registeredBanner')}</Text>
                   </View>
                   
                   {/* Boutons Live Scoring pour le créateur */}
@@ -393,7 +396,7 @@ export default function MatchDetailScreen() {
                     <View style={styles.liveScoringActions}>
                       {!isLiveScoring && match.status === 'confirmed' && (
                         <Button
-                          title="🏁 Démarrer le Live Scoring"
+                          title={t('matchDetail.startLive')}
                           onPress={handleStartLiveScoring}
                           loading={isStartingLive}
                           variant="orange"
@@ -408,13 +411,13 @@ export default function MatchDetailScreen() {
                             onPress={handleOpenLiveScoring}
                           >
                             <Radio size={20} color={Colors.primary.orange} />
-                            <Text style={styles.liveScoringBannerText}>🔴 Match en direct - Cliquez pour suivre</Text>
+                            <Text style={styles.liveScoringBannerText}>{t('matchDetail.liveFollowCreator')}</Text>
                           </TouchableOpacity>
                           
                           <Button
-                            title="⏹️ Terminer le match"
+                            title={t('matchDetail.endLive')}
                             onPress={handleEndLiveScoring}
-                            variant="destructive"
+                            variant="secondary"
                             style={styles.liveScoringButton}
                           />
                         </>
@@ -429,13 +432,13 @@ export default function MatchDetailScreen() {
                       onPress={handleOpenLiveScoring}
                     >
                       <Radio size={20} color={Colors.primary.orange} />
-                      <Text style={styles.liveScoringBannerText}>🔴 Match en direct - Suivre en temps réel</Text>
+                      <Text style={styles.liveScoringBannerText}>{t('matchDetail.liveFollowParticipant')}</Text>
                     </TouchableOpacity>
                   )}
                   
                   {!isCreator && (
                     <Button
-                      title="Se désinscrire"
+                      title={t('matchDetail.leaveAction')}
                       onPress={handleLeave}
                       variant="outline"
                       style={styles.actionButton}
@@ -444,7 +447,7 @@ export default function MatchDetailScreen() {
                 </>
               ) : isFull ? (
                 <Button
-                  title="Match complet"
+                  title={t('matchDetail.full')}
                   onPress={() => {}}
                   variant="secondary"
                   disabled
@@ -452,7 +455,7 @@ export default function MatchDetailScreen() {
                 />
               ) : match.status === 'open' ? (
                 <Button
-                  title={match.type === 'ranked' ? "S'inscrire (compte pour ton rang)" : match.entryFee ? `S'inscrire (${match.entryFee.toLocaleString()} FCFA)` : "S'inscrire"}
+                  title={match.type === 'ranked' ? t('matchDetail.joinRanked') : match.entryFee ? t('matchDetail.joinFee', { fee: match.entryFee.toLocaleString() }) : t('matchDetail.join')}
                   onPress={handleJoin}
                   loading={isJoining}
                   variant="orange"
@@ -461,7 +464,7 @@ export default function MatchDetailScreen() {
                 />
               ) : (
                 <Button
-                  title="Inscriptions fermées"
+                  title={t('matchDetail.registrationClosed')}
                   onPress={() => {}}
                   variant="secondary"
                   disabled

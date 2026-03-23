@@ -14,6 +14,7 @@ import { PaymentInstructions } from '@/components/PaymentInstructions';
 import { PaymentSubmissionModal } from '@/components/PaymentSubmissionModal';
 import { TeamStatusBadge } from '@/components/TeamStatusBadge';
 import { useAuth } from '@/contexts/AuthContext';
+import { useI18n } from '@/contexts/I18nContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
 import { useTeams } from '@/contexts/TeamsContext';
 import { tournamentsApi } from '@/lib/api/tournaments';
@@ -25,6 +26,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function TournamentDetailScreen() {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, isAdmin } = useAuth();
   const { getTournamentById, registerTeam, unregisterTeam, refetchTournaments, isRegistering } = useTournaments();
@@ -99,9 +101,9 @@ export default function TournamentDetailScreen() {
 
   const getErrorMessage = useCallback((e: unknown) => {
     const msg = (e as Error)?.message ?? '';
-    if (!msg || msg.includes('fetch') || msg.includes('network') || msg.includes('Failed')) return 'Problème de connexion. Réessayez.';
+    if (!msg || msg.includes('fetch') || msg.includes('network') || msg.includes('Failed')) return t('tournamentDetail.connectionProblem');
     return msg;
-  }, []);
+  }, [t]);
 
   const standings = React.useMemo(() => {
     const map: Record<string, { teamId: string; played: number; wins: number; draws: number; losses: number; goalsFor: number; goalsAgainst: number }> = {};
@@ -190,10 +192,10 @@ export default function TournamentDetailScreen() {
   const isFull = tournament ? reservedSpots >= tournament.maxTeams : false;
   const userIsRegistered = !!(user && (myTeamInTournament || activeRegisteredTeamIds.some((tid) => getTeamById(tid)?.captainId === user.id)));
   const joinLabel = teamsEligibleToRegister.length === 1
-    ? `Inscrire ${teamsEligibleToRegister[0].name}`
+    ? t('tournamentDetail.joinSingle', { team: teamsEligibleToRegister[0].name })
     : teamsEligibleToRegister.length > 1
-      ? 'Choisir une équipe à inscrire'
-      : 'Rejoindre le tournoi';
+      ? t('tournamentDetail.joinChoose')
+      : t('tournamentDetail.joinDefault');
 
   if (loading && !tournament) {
     return (
@@ -206,7 +208,7 @@ export default function TournamentDetailScreen() {
               <TouchableOpacity style={styles.backButton} onPress={goBack}>
                 <ArrowLeft size={24} color={Colors.text.primary} />
               </TouchableOpacity>
-              <Text style={styles.headerTitle}>Tournoi</Text>
+              <Text style={styles.headerTitle}>{t('tournamentDetail.fallbackTitle')}</Text>
               <View style={styles.placeholder} />
             </View>
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
@@ -247,13 +249,13 @@ export default function TournamentDetailScreen() {
               <TouchableOpacity style={styles.backButton} onPress={goBack}>
                 <ArrowLeft size={24} color={Colors.text.primary} />
               </TouchableOpacity>
-              <Text style={styles.headerTitle}>Tournoi</Text>
+              <Text style={styles.headerTitle}>{t('tournamentDetail.fallbackTitle')}</Text>
               <View style={styles.placeholder} />
             </View>
             <View style={styles.notFoundContainer}>
               <Trophy size={64} color={Colors.text.muted} />
-              <Text style={styles.notFoundTitle}>Tournoi introuvable</Text>
-              <Button title="Retour" onPress={goBack} variant="primary" />
+              <Text style={styles.notFoundTitle}>{t('tournamentDetail.notFound')}</Text>
+              <Button title={t('common.back')} onPress={goBack} variant="primary" />
             </View>
           </SafeAreaView>
         </View>
@@ -265,15 +267,15 @@ export default function TournamentDetailScreen() {
     if (date == null) return '–';
     const d = new Date(date);
     if (Number.isNaN(d.getTime())) return '–';
-    return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    return d.toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   };
 
   const getStatusLabel = (status: string | undefined) => {
     switch (status) {
-      case 'registration': return 'Inscriptions ouvertes';
+      case 'registration': return t('tournamentDetail.statusRegistration');
       case 'in_progress':
-      case 'ongoing': return 'En cours';
-      case 'completed': return 'Terminé';
+      case 'ongoing': return t('tournamentDetail.statusInProgress');
+      case 'completed': return t('tournamentDetail.statusCompleted');
       default: return status ?? '–';
     }
   };
@@ -290,14 +292,14 @@ export default function TournamentDetailScreen() {
 
   const handleRegister = () => {
     if (tournament.status !== 'registration') {
-      Alert.alert('Inscriptions fermées', 'Les inscriptions pour ce tournoi sont terminées.');
+      Alert.alert(t('tournamentDetail.registerClosedTitle'), t('tournamentDetail.registerClosedMessage'));
       return;
     }
     if (teamsEligibleToRegister.length === 0) {
       if (teamsWhereCaptain.length > 0) {
-        Alert.alert('Déjà inscrites', 'Toutes vos équipes dont vous êtes capitaine sont déjà inscrites à ce tournoi.');
+        Alert.alert(t('tournamentDetail.alreadyRegisteredTitle'), t('tournamentDetail.alreadyRegisteredMessage'));
       } else {
-        Alert.alert('Réservé au capitaine', 'Seul le capitaine d\'une équipe peut l\'inscrire à un tournoi. Vous n\'êtes actuellement capitaine d\'aucune équipe.');
+        Alert.alert(t('tournamentDetail.captainOnlyTitle'), t('tournamentDetail.captainOnlyMessage'));
       }
       return;
     }
@@ -306,12 +308,12 @@ export default function TournamentDetailScreen() {
       : null;
     if (teamToRegister) {
       Alert.alert(
-        'Inscription au tournoi',
-        `Inscrire ${teamToRegister.name} au tournoi "${tournament.name}" ?\n\nFrais d'inscription : ${(tournament.entryFee ?? 0).toLocaleString()} FCFA`,
+        t('tournamentDetail.registerTitle'),
+        t('tournamentDetail.registerConfirm', { team: teamToRegister.name, tournament: tournament.name, fee: (tournament.entryFee ?? 0).toLocaleString() }),
         [
-          { text: 'Annuler', style: 'cancel' },
+          { text: t('common.cancel'), style: 'cancel' },
           {
-            text: 'Confirmer',
+            text: t('common.confirm'),
             onPress: async () => {
               try {
                 await registerTeam({ tournamentId: tournament.id, teamId: teamToRegister.id });
@@ -320,9 +322,9 @@ export default function TournamentDetailScreen() {
                   const updated = await tournamentsApi.getById(id).catch(() => null);
                   if (updated) setFetchedTournament(updated);
                 }
-                setSuccessMessage(`${teamToRegister.name} inscrite au tournoi !`);
+                setSuccessMessage(t('tournamentDetail.registerSuccess', { team: teamToRegister.name }));
               } catch (e: unknown) {
-                Alert.alert('Erreur', getErrorMessage(e));
+                Alert.alert(t('common.error'), getErrorMessage(e));
               }
             },
           },
@@ -330,36 +332,36 @@ export default function TournamentDetailScreen() {
       );
       return;
     }
-    const buttons = teamsEligibleToRegister.slice(0, 4).map((t) => ({
-      text: t.name,
+    const buttons = teamsEligibleToRegister.slice(0, 4).map((teamOption) => ({
+      text: teamOption.name,
       onPress: async () => {
         try {
-          await registerTeam({ tournamentId: tournament.id, teamId: t.id });
+          await registerTeam({ tournamentId: tournament.id, teamId: teamOption.id });
           await refetchTournaments();
           if (id) {
             const updated = await tournamentsApi.getById(id).catch(() => null);
             if (updated) setFetchedTournament(updated);
           }
-          setSuccessMessage(`${t.name} inscrite au tournoi !`);
+          setSuccessMessage(t('tournamentDetail.registerSuccess', { team: teamOption.name }));
         } catch (e: unknown) {
-          Alert.alert('Erreur', getErrorMessage(e));
+          Alert.alert(t('common.error'), getErrorMessage(e));
         }
       },
     }));
     Alert.alert(
-      'Choisir l\'équipe à inscrire',
-      `Frais d'inscription : ${tournament.entryFee.toLocaleString()} FCFA par équipe`,
-      [{ text: 'Annuler', style: 'cancel' }, ...buttons]
+      t('tournamentDetail.chooseTeamTitle'),
+      t('tournamentDetail.feePerTeam', { fee: tournament.entryFee.toLocaleString() }),
+      [{ text: t('common.cancel'), style: 'cancel' }, ...buttons]
     );
   };
 
   const handleUnregister = (teamId: string) => {
     const team = getTeamById(teamId);
-    const name = team?.name ?? 'Cette équipe';
-    Alert.alert('Se désinscrire', `Retirer ${name} du tournoi ?`, [
-      { text: 'Annuler', style: 'cancel' },
+    const name = team?.name ?? t('tournamentDetail.tabTeams');
+    Alert.alert(t('tournamentDetail.unregisterTitle'), t('tournamentDetail.unregisterConfirm', { team: name }), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Oui',
+        text: t('tournamentDetail.yes'),
         onPress: async () => {
           try {
             await unregisterTeam({ tournamentId: tournament.id, teamId });
@@ -369,9 +371,9 @@ export default function TournamentDetailScreen() {
               const updated = await tournamentsApi.getById(id).catch(() => null);
               if (updated) setFetchedTournament(updated);
             }
-            setSuccessMessage('Équipe retirée du tournoi.');
+            setSuccessMessage(t('tournamentDetail.teamRemoved'));
           } catch (e: unknown) {
-            Alert.alert('Erreur', getErrorMessage(e));
+            Alert.alert(t('common.error'), getErrorMessage(e));
           }
         },
       },
@@ -381,7 +383,11 @@ export default function TournamentDetailScreen() {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `${tournament.name} — ${(sportLabels?.[tournament.sport]) ?? tournament.sport}\n${(tournament.prizePool ?? 0).toLocaleString()} FCFA à gagner\nRejoins le tournoi sur VersUS !`,
+        message: t('tournamentDetail.shareMessage', {
+          name: tournament.name,
+          sport: (sportLabels?.[tournament.sport]) ?? tournament.sport,
+          prize: (tournament.prizePool ?? 0).toLocaleString(),
+        }),
       });
     } catch (_) {}
   };
@@ -397,11 +403,11 @@ export default function TournamentDetailScreen() {
   const daysUntilEnd = getDaysUntil(tournament.endDate);
   const countdownText = tournament.status === 'registration'
     ? daysUntilStart != null && daysUntilStart >= 0
-      ? daysUntilStart === 0 ? "Commence aujourd'hui" : daysUntilStart === 1 ? 'Commence demain' : `Commence dans ${daysUntilStart} jours`
+      ? daysUntilStart === 0 ? t('tournamentDetail.startsToday') : daysUntilStart === 1 ? t('tournamentDetail.startsTomorrow') : t('tournamentDetail.startsInDays', { days: daysUntilStart })
       : null
     : tournament.status === 'in_progress'
       ? daysUntilEnd != null && daysUntilEnd >= 0
-        ? daysUntilEnd === 0 ? 'Dernier jour' : `${daysUntilEnd}j restants`
+        ? daysUntilEnd === 0 ? t('tournamentDetail.lastDay') : t('tournamentDetail.daysRemaining', { days: daysUntilEnd })
         : null
       : null;
 
@@ -459,7 +465,7 @@ export default function TournamentDetailScreen() {
   }, [sortedMatches, matchFilter]);
   const filteredByRound: Record<string, Match[]> = {};
   filteredMatches.forEach(m => {
-    const key = m.roundLabel || 'Matchs';
+    const key = m.roundLabel || t('tournamentDetail.tabMatches');
     if (!filteredByRound[key]) filteredByRound[key] = [];
     filteredByRound[key].push(m);
   });
@@ -476,7 +482,7 @@ export default function TournamentDetailScreen() {
   }, [tournamentMatches]);
   const matchesByRound: Record<string, Match[]> = {};
   sortedMatches.forEach(m => {
-    const key = m.roundLabel || 'Matchs';
+    const key = m.roundLabel || t('tournamentDetail.tabMatches');
     if (!matchesByRound[key]) matchesByRound[key] = [];
     matchesByRound[key].push(m);
   });
@@ -535,8 +541,8 @@ export default function TournamentDetailScreen() {
     ]);
     setShowPaymentSubmission(false);
     setShowPaymentInstructions(false);
-    setSuccessMessage('Paiement soumis. En attente de validation admin.');
-  }, [tournamentTeamsQuery, myPaymentQuery, refetchTournaments]);
+    setSuccessMessage(t('tournamentDetail.paymentSubmittedPending'));
+  }, [tournamentTeamsQuery, myPaymentQuery, refetchTournaments, t]);
 
   return (
     <>
@@ -549,7 +555,7 @@ export default function TournamentDetailScreen() {
             <TouchableOpacity style={styles.backButton} onPress={goBack}>
               <ArrowLeft size={22} color={Colors.text.primary} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle} numberOfLines={1}>{tournament?.name ?? 'Tournoi'}</Text>
+            <Text style={styles.headerTitle} numberOfLines={1}>{tournament?.name ?? t('tournamentDetail.fallbackTitle')}</Text>
             <View style={styles.headerActions}>
               <TouchableOpacity style={styles.headerIconBtn} onPress={handleShare}>
                 <Share2 size={18} color={Colors.text.primary} />
@@ -566,10 +572,10 @@ export default function TournamentDetailScreen() {
           <View style={styles.tabBar}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBarInner}>
               {([
-                { key: 'overview' as TabKey, label: 'Aperçu', icon: <Info size={14} color={activeTab === 'overview' ? Colors.primary.orange : Colors.text.muted} /> },
-                ...(hasMatches ? [{ key: 'matches' as TabKey, label: 'Matchs', icon: <Target size={14} color={activeTab === 'matches' ? Colors.primary.orange : Colors.text.muted} />, badge: liveCount > 0 ? liveCount : undefined }] : []),
-                ...(hasStandings ? [{ key: 'standings' as TabKey, label: 'Classement', icon: <Trophy size={14} color={activeTab === 'standings' ? Colors.primary.orange : Colors.text.muted} /> }] : []),
-                { key: 'teams' as TabKey, label: 'Équipes', icon: <Users size={14} color={activeTab === 'teams' ? Colors.primary.orange : Colors.text.muted} /> },
+                { key: 'overview' as TabKey, label: t('tournamentDetail.tabOverview'), icon: <Info size={14} color={activeTab === 'overview' ? Colors.primary.orange : Colors.text.muted} /> },
+                ...(hasMatches ? [{ key: 'matches' as TabKey, label: t('tournamentDetail.tabMatches'), icon: <Target size={14} color={activeTab === 'matches' ? Colors.primary.orange : Colors.text.muted} />, badge: liveCount > 0 ? liveCount : undefined }] : []),
+                ...(hasStandings ? [{ key: 'standings' as TabKey, label: t('tournamentDetail.tabStandings'), icon: <Trophy size={14} color={activeTab === 'standings' ? Colors.primary.orange : Colors.text.muted} /> }] : []),
+                { key: 'teams' as TabKey, label: t('tournamentDetail.tabTeams'), icon: <Users size={14} color={activeTab === 'teams' ? Colors.primary.orange : Colors.text.muted} /> },
               ] as { key: TabKey; label: string; icon: React.ReactNode; badge?: number }[]).map((tab) => (
                 <TouchableOpacity key={tab.key} style={[styles.tabItem, activeTab === tab.key && styles.tabItemActive]} onPress={() => switchTab(tab.key)}>
                   {tab.icon}
@@ -602,7 +608,7 @@ export default function TournamentDetailScreen() {
                   </View>
                   <Text style={styles.heroSport}>{(sportLabels?.[tournament.sport]) ?? tournament.sport ?? '–'}</Text>
                 </View>
-                <Text style={styles.tournamentName}>{tournament?.name ?? 'Tournoi'}</Text>
+                <Text style={styles.tournamentName}>{tournament?.name ?? t('tournamentDetail.fallbackTitle')}</Text>
                 <View style={styles.heroQuickInfo}>
                   <Text style={styles.heroQuickText}>{tournament.format ?? '–'} • {(levelLabels?.[tournament.level]) ?? tournament.level ?? '–'}</Text>
                 </View>
@@ -613,18 +619,18 @@ export default function TournamentDetailScreen() {
                   </View>
                 )}
                 <View style={styles.heroStatsRow}>
-                  <View style={styles.heroStat}><Text style={styles.heroStatValue}>{reservedSpots}/{tournament.maxTeams}</Text><Text style={styles.heroStatLabel}>équipes</Text></View>
-                  {hasMatches && <View style={styles.heroStat}><Text style={styles.heroStatValue}>{tournamentMatches.length}</Text><Text style={styles.heroStatLabel}>matchs</Text></View>}
-                  {completedCount > 0 && <View style={styles.heroStat}><Text style={styles.heroStatValue}>{completedCount}</Text><Text style={styles.heroStatLabel}>joués</Text></View>}
-                  {tournamentStats.totalGoals > 0 && <View style={styles.heroStat}><Text style={styles.heroStatValue}>{tournamentStats.totalGoals}</Text><Text style={styles.heroStatLabel}>buts</Text></View>}
+                  <View style={styles.heroStat}><Text style={styles.heroStatValue}>{reservedSpots}/{tournament.maxTeams}</Text><Text style={styles.heroStatLabel}>{t('tournamentDetail.teamsLabel')}</Text></View>
+                  {hasMatches && <View style={styles.heroStat}><Text style={styles.heroStatValue}>{tournamentMatches.length}</Text><Text style={styles.heroStatLabel}>{t('tournamentDetail.matchesLabel')}</Text></View>}
+                  {completedCount > 0 && <View style={styles.heroStat}><Text style={styles.heroStatValue}>{completedCount}</Text><Text style={styles.heroStatLabel}>{t('tournamentDetail.playedLabel')}</Text></View>}
+                  {tournamentStats.totalGoals > 0 && <View style={styles.heroStat}><Text style={styles.heroStatValue}>{tournamentStats.totalGoals}</Text><Text style={styles.heroStatLabel}>{t('tournamentDetail.goalsLabel')}</Text></View>}
                 </View>
                 {tournament.status === 'registration' && (
                   <View style={styles.progressBarContainer}>
                     <View style={styles.progressBarBg}><View style={[styles.progressBarFill, { width: `${Math.min(registrationPct, 100)}%` }]} /></View>
                     <View style={styles.progressBarRow}>
-                      <Text style={styles.progressBarText}>{registrationPct >= 100 ? 'Complet' : `${registrationPct}% rempli`}</Text>
+                      <Text style={styles.progressBarText}>{registrationPct >= 100 ? t('tournamentDetail.full') : t('tournamentDetail.filledPercent', { pct: registrationPct })}</Text>
                       {registrationPct >= 80 && registrationPct < 100 && (
-                        <Text style={styles.urgencyText}>Plus que {Math.max(tournament.maxTeams - reservedSpots, 0)} place{Math.max(tournament.maxTeams - reservedSpots, 0) > 1 ? 's' : ''} !</Text>
+                        <Text style={styles.urgencyText}>{t('tournamentDetail.remainingSpots', { count: Math.max(tournament.maxTeams - reservedSpots, 0) })}</Text>
                       )}
                     </View>
                   </View>
@@ -632,7 +638,7 @@ export default function TournamentDetailScreen() {
                 {tournament.status === 'in_progress' && hasMatches && (
                   <View style={styles.progressBarContainer}>
                     <View style={styles.progressBarBg}><View style={[styles.progressBarFill, { width: `${tournamentStats.progressPct}%`, backgroundColor: Colors.status.success }]} /></View>
-                    <Text style={styles.progressBarText}>{tournamentStats.progressPct}% du tournoi terminé</Text>
+                    <Text style={styles.progressBarText}>{t('tournamentDetail.progressDone', { pct: tournamentStats.progressPct })}</Text>
                   </View>
                 )}
                 {countdownText && <View style={styles.countdownBadge}><Clock size={13} color="#FFFFFF" /><Text style={styles.countdownText}>{countdownText}</Text></View>}
@@ -647,8 +653,8 @@ export default function TournamentDetailScreen() {
                 </View>
                 <Trophy size={26} color="#1A1A2E" />
                 <View style={styles.winnerBannerContent}>
-                  <Text style={styles.winnerBannerLabel}>CHAMPION</Text>
-                  <Text style={styles.winnerBannerName}>{getTeamById(tournament.winnerId)?.name ?? 'Équipe gagnante'}</Text>
+                  <Text style={styles.winnerBannerLabel}>{t('tournamentDetail.champion')}</Text>
+                  <Text style={styles.winnerBannerName}>{getTeamById(tournament.winnerId)?.name ?? t('tournamentDetail.winnerFallback')}</Text>
                 </View>
                 <Trophy size={26} color="#1A1A2E" />
                 <View style={styles.winnerBannerDecor}>
@@ -664,12 +670,12 @@ export default function TournamentDetailScreen() {
               <LinearGradient colors={[Colors.status.error + '12', Colors.status.error + '05']} style={styles.liveCardGradient}>
                 <View style={styles.liveHeader}>
                   <Animated.View style={[styles.livePulse, { opacity: pulseAnim }]} />
-                  <Text style={styles.liveHeaderText}>EN DIRECT</Text>
+                  <Text style={styles.liveHeaderText}>{t('tournamentDetail.live')}</Text>
                   <View style={styles.liveCountBox}><Text style={styles.liveCountBadge}>{liveCount}</Text></View>
                 </View>
                 {sortedMatches.filter(m => m.status === 'in_progress').map((m) => {
-                  const hN = getTeamById(m.homeTeamId ?? '')?.name ?? 'TBD';
-                  const aN = getTeamById(m.awayTeamId ?? '')?.name ?? 'TBD';
+                  const hN = getTeamById(m.homeTeamId ?? '')?.name ?? t('tournamentDetail.tbd');
+                  const aN = getTeamById(m.awayTeamId ?? '')?.name ?? t('tournamentDetail.tbd');
                   return (
                     <View key={m.id} style={styles.liveMatchRow}>
                       {m.roundLabel ? <Text style={styles.liveRoundLabel}>{m.roundLabel}</Text> : null}
@@ -702,7 +708,7 @@ export default function TournamentDetailScreen() {
                   <TouchableOpacity style={styles.lastResultCard} onPress={() => switchTab('matches')} activeOpacity={0.8}>
                     <View style={styles.lastResultHeader}>
                       <View style={styles.lastResultDot} />
-                      <Text style={styles.lastResultLabel}>DERNIER RÉSULTAT</Text>
+                      <Text style={styles.lastResultLabel}>{t('tournamentDetail.lastResult')}</Text>
                       {lastResult.roundLabel && <Text style={styles.lastResultRound}>{lastResult.roundLabel}</Text>}
                     </View>
                     <View style={styles.lastResultBody}>
@@ -727,12 +733,12 @@ export default function TournamentDetailScreen() {
                     <LinearGradient colors={[Colors.primary.blue + '12', Colors.primary.blue + '04']} style={styles.nextMatchGradient}>
                       <View style={styles.nextMatchHeader}>
                         <Clock size={12} color={Colors.primary.blue} />
-                        <Text style={styles.nextMatchLabel}>PROCHAIN MATCH</Text>
+                        <Text style={styles.nextMatchLabel}>{t('tournamentDetail.nextMatch')}</Text>
                         {nextMatch.roundLabel && <Text style={styles.nextMatchRound}>{nextMatch.roundLabel}</Text>}
                       </View>
                       <View style={styles.nextMatchBody}>
-                        <Text style={styles.nextMatchTeams} numberOfLines={1}>{getTeamById(nextMatch.homeTeamId ?? '')?.name ?? 'TBD'} vs {getTeamById(nextMatch.awayTeamId ?? '')?.name ?? 'TBD'}</Text>
-                        <Text style={styles.nextMatchTime}>{new Date(nextMatch.dateTime).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</Text>
+                        <Text style={styles.nextMatchTeams} numberOfLines={1}>{getTeamById(nextMatch.homeTeamId ?? '')?.name ?? t('tournamentDetail.tbd')} {t('tournamentDetail.vs')} {getTeamById(nextMatch.awayTeamId ?? '')?.name ?? t('tournamentDetail.tbd')}</Text>
+                        <Text style={styles.nextMatchTime}>{new Date(nextMatch.dateTime).toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</Text>
                       </View>
                     </LinearGradient>
                   </TouchableOpacity>
@@ -743,7 +749,7 @@ export default function TournamentDetailScreen() {
                   <View style={styles.statsSection}>
                     <View style={styles.statsSectionHeader}>
                       <TrendingUp size={15} color={Colors.primary.orange} />
-                      <Text style={styles.sectionTitle}>Statistiques</Text>
+                      <Text style={styles.sectionTitle}>{t('tournamentDetail.statsTitle')}</Text>
                     </View>
                     <View style={styles.statsRow}>
                       <View style={styles.statTile}>
@@ -752,7 +758,7 @@ export default function TournamentDetailScreen() {
                             <Target size={16} color={Colors.primary.orange} />
                           </View>
                           <Text style={styles.statTileValue}>{tournamentStats.totalGoals}</Text>
-                          <Text style={styles.statTileLabel}>Buts marqués</Text>
+                          <Text style={styles.statTileLabel}>{t('tournamentDetail.goalsScored')}</Text>
                         </LinearGradient>
                       </View>
                       <View style={styles.statTile}>
@@ -761,7 +767,7 @@ export default function TournamentDetailScreen() {
                             <TrendingUp size={16} color={Colors.primary.blue} />
                           </View>
                           <Text style={styles.statTileValue}>{tournamentStats.avgGoals}</Text>
-                          <Text style={styles.statTileLabel}>Buts/match</Text>
+                          <Text style={styles.statTileLabel}>{t('tournamentDetail.goalsPerMatch')}</Text>
                         </LinearGradient>
                       </View>
                     </View>
@@ -772,7 +778,7 @@ export default function TournamentDetailScreen() {
                             <CheckCircle size={16} color={Colors.status.success} />
                           </View>
                           <Text style={styles.statTileValue}>{tournamentStats.completedMatches}</Text>
-                          <Text style={styles.statTileLabel}>Matchs joués</Text>
+                          <Text style={styles.statTileLabel}>{t('tournamentDetail.matchesLabel')}</Text>
                         </LinearGradient>
                       </View>
                       <View style={styles.statTile}>
@@ -781,7 +787,7 @@ export default function TournamentDetailScreen() {
                             <Zap size={16} color="#A855F7" />
                           </View>
                           <Text style={styles.statTileValue}>{tournamentStats.biggestWin?.diff ?? 0}</Text>
-                          <Text style={styles.statTileLabel}>Plus gros écart</Text>
+                          <Text style={styles.statTileLabel}>{t('tournamentDetail.biggestGap')}</Text>
                         </LinearGradient>
                       </View>
                     </View>
@@ -789,7 +795,7 @@ export default function TournamentDetailScreen() {
                       <View style={styles.biggestWinCard}>
                         <Flame size={14} color={Colors.primary.orange} />
                         <Text style={styles.biggestWinText}>
-                          Plus gros score : {getTeamById(tournamentStats.biggestWin.match.homeTeamId ?? '')?.name ?? '?'} {tournamentStats.biggestWin.match.score?.home} - {tournamentStats.biggestWin.match.score?.away} {getTeamById(tournamentStats.biggestWin.match.awayTeamId ?? '')?.name ?? '?'}
+                          {t('tournamentDetail.biggestScore', { text: `${getTeamById(tournamentStats.biggestWin.match.homeTeamId ?? '')?.name ?? '?'} ${tournamentStats.biggestWin.match.score?.home} - ${tournamentStats.biggestWin.match.score?.away} ${getTeamById(tournamentStats.biggestWin.match.awayTeamId ?? '')?.name ?? '?'}` })}
                         </Text>
                       </View>
                     )}
@@ -799,22 +805,22 @@ export default function TournamentDetailScreen() {
                 {/* Inscription */}
                 {tournament.status === 'registration' && (
                   <Card style={styles.actionsCard}>
-                    <View style={styles.actionsTitleRow}><Zap size={16} color={Colors.primary.orange} /><Text style={styles.sectionTitle}>Inscription</Text></View>
+                    <View style={styles.actionsTitleRow}><Zap size={16} color={Colors.primary.orange} /><Text style={styles.sectionTitle}>{t('tournamentDetail.registrationTitle')}</Text></View>
                     {userIsRegistered ? (
-                      <View style={styles.dejaInscritBadge}><CheckCircle size={18} color={Colors.status.success} /><Text style={styles.dejaInscritText}>Votre équipe est inscrite</Text></View>
+                      <View style={styles.dejaInscritBadge}><CheckCircle size={18} color={Colors.status.success} /><Text style={styles.dejaInscritText}>{t('tournamentDetail.teamRegistered')}</Text></View>
                     ) : isFull ? (
-                      <View style={styles.fullBadge}><Text style={styles.fullBadgeText}>Complet ({reservedSpots}/{tournament.maxTeams})</Text></View>
+                      <View style={styles.fullBadge}><Text style={styles.fullBadgeText}>{t('tournamentDetail.fullWithCount', { reserved: reservedSpots, max: tournament.maxTeams })}</Text></View>
                     ) : !user ? (
-                      <Text style={styles.actionsMutedText}>Connectez-vous pour rejoindre.</Text>
+                      <Text style={styles.actionsMutedText}>{t('tournamentDetail.loginToJoin')}</Text>
                     ) : (
                       <>
-                        <Button title={isRegistering ? 'Inscription...' : joinLabel} onPress={handleRegister} variant="orange" disabled={isFull || isRegistering} style={isFull ? styles.joinBtnDisabled : undefined} />
-                        <Text style={styles.joinHint}>En tant que capitaine, inscrivez une de vos équipes.</Text>
+                        <Button title={isRegistering ? t('tournamentDetail.registering') : joinLabel} onPress={handleRegister} variant="orange" disabled={isFull || isRegistering} style={isFull ? styles.joinBtnDisabled : undefined} />
+                        <Text style={styles.joinHint}>{t('tournamentDetail.captainHint')}</Text>
                       </>
                     )}
                   </Card>
                 )}
-                {tournament.status === 'completed' && !tournament.winnerId && <Card style={styles.actionsCard}><Text style={styles.tournamentEndedText}>Ce tournoi est terminé.</Text></Card>}
+                {tournament.status === 'completed' && !tournament.winnerId && <Card style={styles.actionsCard}><Text style={styles.tournamentEndedText}>{t('tournamentDetail.ended')}</Text></Card>}
 
                 {/* Description */}
                 {tournament.description && (
@@ -822,14 +828,14 @@ export default function TournamentDetailScreen() {
                     <View style={styles.descHeader}>
                       <View style={styles.descAccent} />
                       <View>
-                        <Text style={styles.descTitle}>À propos</Text>
+                        <Text style={styles.descTitle}>{t('tournamentDetail.about')}</Text>
                         <Text style={styles.descSubtitle}>{tournament.name}</Text>
                       </View>
                     </View>
                     <Text style={styles.descText} numberOfLines={descExpanded || !descIsLong ? undefined : 3}>{tournament.description}</Text>
                     {descIsLong && (
                       <TouchableOpacity onPress={() => setDescExpanded(!descExpanded)} style={styles.readMoreBtn}>
-                        <Text style={styles.readMoreText}>{descExpanded ? 'Voir moins' : 'Lire la suite'}</Text>
+                        <Text style={styles.readMoreText}>{descExpanded ? t('tournamentDetail.readLess') : t('tournamentDetail.readMore')}</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -840,7 +846,7 @@ export default function TournamentDetailScreen() {
                   <View style={styles.progressCard}>
                     <View style={styles.progressHeader}>
                       <Target size={15} color={Colors.primary.orange} />
-                      <Text style={styles.sectionTitle}>Progression</Text>
+                      <Text style={styles.sectionTitle}>{t('tournamentDetail.progression')}</Text>
                       <View style={styles.progressPctBadge}><Text style={styles.progressPctText}>{tournamentStats.progressPct}%</Text></View>
                     </View>
                     <View style={styles.progressTimeline}>
@@ -880,23 +886,23 @@ export default function TournamentDetailScreen() {
                   <View style={styles.infoStripItem}>
                     <Calendar size={14} color={Colors.primary.blue} />
                     <View>
-                      <Text style={styles.infoStripLabel}>Début</Text>
-                      <Text style={styles.infoStripValue}>{tournament.startDate ? new Date(tournament.startDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}</Text>
+                      <Text style={styles.infoStripLabel}>{t('tournamentDetail.start')}</Text>
+                      <Text style={styles.infoStripValue}>{tournament.startDate ? new Date(tournament.startDate).toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}</Text>
                     </View>
                   </View>
                   <View style={styles.infoStripDivider} />
                   <View style={styles.infoStripItem}>
                     <Calendar size={14} color={Colors.primary.orange} />
                     <View>
-                      <Text style={styles.infoStripLabel}>Fin</Text>
-                      <Text style={styles.infoStripValue}>{tournament.endDate ? new Date(tournament.endDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}</Text>
+                      <Text style={styles.infoStripLabel}>{t('tournamentDetail.end')}</Text>
+                      <Text style={styles.infoStripValue}>{tournament.endDate ? new Date(tournament.endDate).toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}</Text>
                     </View>
                   </View>
                   <View style={styles.infoStripDivider} />
                   <View style={styles.infoStripItem}>
                     <DollarSign size={14} color={Colors.status.success} />
                     <View>
-                      <Text style={styles.infoStripLabel}>Frais</Text>
+                      <Text style={styles.infoStripLabel}>{t('tournamentDetail.fees')}</Text>
                       <Text style={styles.infoStripValue}>{(tournament.entryFee ?? 0).toLocaleString()} F</Text>
                     </View>
                   </View>
@@ -919,23 +925,23 @@ export default function TournamentDetailScreen() {
                 <View style={styles.detailsCard}>
                   <View style={styles.detailsHeader}>
                     <Info size={14} color={Colors.primary.blue} />
-                    <Text style={styles.sectionTitle}>Détails du tournoi</Text>
+                    <Text style={styles.sectionTitle}>{t('tournamentDetail.detailsTitle')}</Text>
                   </View>
                   <View style={styles.detailsGrid}>
                     <View style={styles.detailsItem}>
-                      <Text style={styles.detailsLabel}>Sport</Text>
+                      <Text style={styles.detailsLabel}>{t('tournamentDetail.sport')}</Text>
                       <Text style={styles.detailsValue}>{(sportLabels?.[tournament.sport]) ?? '–'}</Text>
                     </View>
                     <View style={styles.detailsItem}>
-                      <Text style={styles.detailsLabel}>Format</Text>
+                      <Text style={styles.detailsLabel}>{t('tournamentDetail.format')}</Text>
                       <Text style={styles.detailsValue}>{tournament.format ?? '–'}</Text>
                     </View>
                     <View style={styles.detailsItem}>
-                      <Text style={styles.detailsLabel}>Niveau</Text>
+                      <Text style={styles.detailsLabel}>{t('tournamentDetail.level')}</Text>
                       <Text style={styles.detailsValue}>{(levelLabels?.[tournament.level]) ?? '–'}</Text>
                     </View>
                     <View style={styles.detailsItem}>
-                      <Text style={styles.detailsLabel}>Max équipes</Text>
+                      <Text style={styles.detailsLabel}>{t('tournamentDetail.maxTeams')}</Text>
                       <Text style={styles.detailsValue}>{tournament.maxTeams ?? '–'}</Text>
                     </View>
                   </View>
@@ -944,7 +950,7 @@ export default function TournamentDetailScreen() {
                 {/* Prizes */}
                 {(tournament.prizes ?? []).length > 0 && (
                   <Card style={styles.prizesCard}>
-                    <View style={styles.prizesTitleRow}><Award size={16} color="#FFD700" /><Text style={styles.sectionTitle}>Récompenses</Text></View>
+                    <View style={styles.prizesTitleRow}><Award size={16} color="#FFD700" /><Text style={styles.sectionTitle}>{t('tournamentDetail.rewards')}</Text></View>
                     {(tournament.prizes ?? []).map((prize, idx) => {
                       const medalColors = ['#FFD700', '#C0C0C0', '#CD7F32'];
                       const medalColor = medalColors[idx] ?? Colors.text.muted;
@@ -961,7 +967,7 @@ export default function TournamentDetailScreen() {
                   </Card>
                 )}
 
-                {tournament.sponsorName && <Card style={styles.sponsorCard}><Shield size={16} color={Colors.text.muted} /><View><Text style={styles.sponsorLabel}>Sponsorisé par</Text><Text style={styles.sponsorName}>{tournament.sponsorName}</Text></View></Card>}
+                {tournament.sponsorName && <Card style={styles.sponsorCard}><Shield size={16} color={Colors.text.muted} /><View><Text style={styles.sponsorLabel}>{t('tournamentDetail.sponsoredBy')}</Text><Text style={styles.sponsorName}>{tournament.sponsorName}</Text></View></Card>}
               </Animated.View>
             )}
 
@@ -969,19 +975,19 @@ export default function TournamentDetailScreen() {
             {activeTab === 'matches' && hasMatches && (
               <Animated.View style={{ opacity: tabFade }}>
                 <View style={styles.matchStatsRow}>
-                  <View style={styles.matchStatChip}><Text style={styles.matchStatNum}>{tournamentMatches.length}</Text><Text style={styles.matchStatLabel}>total</Text></View>
-                  {completedCount > 0 && <View style={[styles.matchStatChip, { backgroundColor: Colors.status.success + '18' }]}><Text style={[styles.matchStatNum, { color: Colors.status.success }]}>{completedCount}</Text><Text style={styles.matchStatLabel}>joués</Text></View>}
-                  {liveCount > 0 && <View style={[styles.matchStatChip, { backgroundColor: Colors.status.error + '18' }]}><Text style={[styles.matchStatNum, { color: Colors.status.error }]}>{liveCount}</Text><Text style={styles.matchStatLabel}>live</Text></View>}
-                  {upcomingCount > 0 && <View style={[styles.matchStatChip, { backgroundColor: Colors.primary.blue + '18' }]}><Text style={[styles.matchStatNum, { color: Colors.primary.blue }]}>{upcomingCount}</Text><Text style={styles.matchStatLabel}>à venir</Text></View>}
+                  <View style={styles.matchStatChip}><Text style={styles.matchStatNum}>{tournamentMatches.length}</Text><Text style={styles.matchStatLabel}>{t('tournamentDetail.total')}</Text></View>
+                  {completedCount > 0 && <View style={[styles.matchStatChip, { backgroundColor: Colors.status.success + '18' }]}><Text style={[styles.matchStatNum, { color: Colors.status.success }]}>{completedCount}</Text><Text style={styles.matchStatLabel}>{t('tournamentDetail.playedLabel')}</Text></View>}
+                  {liveCount > 0 && <View style={[styles.matchStatChip, { backgroundColor: Colors.status.error + '18' }]}><Text style={[styles.matchStatNum, { color: Colors.status.error }]}>{liveCount}</Text><Text style={styles.matchStatLabel}>{t('tournamentDetail.liveLabel')}</Text></View>}
+                  {upcomingCount > 0 && <View style={[styles.matchStatChip, { backgroundColor: Colors.primary.blue + '18' }]}><Text style={[styles.matchStatNum, { color: Colors.primary.blue }]}>{upcomingCount}</Text><Text style={styles.matchStatLabel}>{t('tournamentDetail.upcoming')}</Text></View>}
                 </View>
 
                 {/* Match filter chips */}
                 <View style={styles.matchFilterRow}>
                   {([
-                    { key: 'all' as MatchFilter, label: 'Tous', count: tournamentMatches.length },
-                    ...(liveCount > 0 ? [{ key: 'live' as MatchFilter, label: 'Live', count: liveCount }] : []),
-                    { key: 'completed' as MatchFilter, label: 'Terminés', count: completedCount },
-                    { key: 'upcoming' as MatchFilter, label: 'À venir', count: upcomingCount },
+                    { key: 'all' as MatchFilter, label: t('tournamentDetail.all'), count: tournamentMatches.length },
+                    ...(liveCount > 0 ? [{ key: 'live' as MatchFilter, label: t('tournamentDetail.liveLabel'), count: liveCount }] : []),
+                    { key: 'completed' as MatchFilter, label: t('tournamentDetail.completed'), count: completedCount },
+                    { key: 'upcoming' as MatchFilter, label: t('tournamentDetail.upcomingTab'), count: upcomingCount },
                   ]).map(f => (
                     <TouchableOpacity key={f.key} style={[styles.matchFilterChip, matchFilter === f.key && styles.matchFilterChipActive]} onPress={() => setMatchFilter(f.key)}>
                       <Text style={[styles.matchFilterChipText, matchFilter === f.key && styles.matchFilterChipTextActive]}>{f.label}</Text>
@@ -993,8 +999,8 @@ export default function TournamentDetailScreen() {
                 {filteredMatches.length === 0 && (
                   <View style={styles.emptyTabState}>
                     <Target size={32} color={Colors.text.muted} />
-                    <Text style={styles.emptyTabTitle}>Aucun match trouvé</Text>
-                    <Text style={styles.emptyTabSub}>Changez le filtre pour voir d'autres matchs.</Text>
+                    <Text style={styles.emptyTabTitle}>{t('tournamentDetail.noMatchFound')}</Text>
+                    <Text style={styles.emptyTabSub}>{t('tournamentDetail.changeFilterHint')}</Text>
                   </View>
                 )}
 
@@ -1003,20 +1009,20 @@ export default function TournamentDetailScreen() {
                     <View style={styles.roundTitleRow}>
                       <View style={styles.roundTitleDot} />
                       <Text style={styles.roundTitle}>{roundLabel}</Text>
-                      <Text style={styles.roundTitleCount}>{roundMatches.length} match{roundMatches.length > 1 ? 's' : ''}</Text>
+                      <Text style={styles.roundTitleCount}>{roundMatches.length} {t('tournamentDetail.matchesLabel')}</Text>
                     </View>
                     {roundMatches.map((m) => {
                       const done = m.status === 'completed' && m.score != null;
                       const live = m.status === 'in_progress';
-                      const hN = getTeamById(m.homeTeamId ?? '')?.name ?? 'TBD';
-                      const aN = getTeamById(m.awayTeamId ?? '')?.name ?? 'TBD';
+                      const hN = getTeamById(m.homeTeamId ?? '')?.name ?? t('tournamentDetail.tbd');
+                      const aN = getTeamById(m.awayTeamId ?? '')?.name ?? t('tournamentDetail.tbd');
                       const matchDate = new Date(m.dateTime);
                       const now = new Date();
                       const diffH = Math.round((matchDate.getTime() - now.getTime()) / 3600000);
-                      const relTime = live ? '' : done ? '' : diffH > 24 ? `Dans ${Math.round(diffH / 24)}j` : diffH > 0 ? `Dans ${diffH}h` : '';
+                      const relTime = live ? '' : done ? '' : diffH > 24 ? t('tournamentDetail.inDays', { days: Math.round(diffH / 24) }) : diffH > 0 ? t('tournamentDetail.inHours', { hours: diffH }) : '';
                       return (
                         <View key={m.id} style={[styles.matchCard, live && styles.matchCardLive, done && styles.matchCardDone]}>
-                          {live && <View style={styles.matchCardLiveBanner}><Animated.View style={[styles.matchCardLiveDot, { opacity: pulseAnim }]} /><Text style={styles.matchCardLiveText}>EN DIRECT</Text></View>}
+                          {live && <View style={styles.matchCardLiveBanner}><Animated.View style={[styles.matchCardLiveDot, { opacity: pulseAnim }]} /><Text style={styles.matchCardLiveText}>{t('tournamentDetail.live')}</Text></View>}
                           <View style={styles.matchCardTeams}>
                             <View style={styles.matchCardTeamRow}>
                               <Avatar uri={getTeamById(m.homeTeamId ?? '')?.logo} name={hN} size="small" />
@@ -1034,7 +1040,7 @@ export default function TournamentDetailScreen() {
                             <View style={styles.matchCardFooterLeft}>
                               {live && <View style={styles.liveDot} />}
                               <Text style={[styles.matchCardStatus, live && { color: Colors.status.error }]}>
-                                {live ? 'En cours' : done ? 'Terminé' : matchDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                {live ? t('tournamentDetail.statusInProgress') : done ? t('tournamentDetail.statusCompleted') : matchDate.toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                               </Text>
                             </View>
                             {done && m.score!.home !== m.score!.away && (
@@ -1058,7 +1064,7 @@ export default function TournamentDetailScreen() {
               <Animated.View style={{ opacity: tabFade }}>
                 {standings.length >= 2 && (
                   <View style={styles.podiumContainer}>
-                    <Text style={styles.podiumTitle}>Podium</Text>
+                    <Text style={styles.podiumTitle}>{t('tournamentDetail.standingsPodium')}</Text>
                     <View style={styles.podiumRow}>
                       {[1, 0, 2].map((pos) => {
                         const s = standings[pos];
@@ -1070,7 +1076,7 @@ export default function TournamentDetailScreen() {
                           <TouchableOpacity key={s.teamId} style={styles.podiumSlot} onPress={() => router.push(`/team/${s.teamId}` as any)} activeOpacity={0.7}>
                             <Avatar uri={getTeamById(s.teamId)?.logo} name={teamName} size="small" />
                             <Text style={styles.podiumName} numberOfLines={2}>{teamName}</Text>
-                            <Text style={[styles.podiumPts, { color: medals[pos] }]}>{s.points} pts</Text>
+                            <Text style={[styles.podiumPts, { color: medals[pos] }]}>{s.points} {t('tournamentDetail.pointsShort')}</Text>
                             <View style={[styles.podiumBar, { height: heights[pos], backgroundColor: medals[pos] + '30', borderColor: medals[pos] + '50' }]}>
                               <Text style={[styles.podiumRank, { color: medals[pos] }]}>{pos + 1}</Text>
                             </View>
@@ -1081,8 +1087,8 @@ export default function TournamentDetailScreen() {
                   </View>
                 )}
                 <View style={styles.standingsTableHeader}>
-                  <Text style={styles.standingsHeaderText}>Classement complet</Text>
-                  <Text style={styles.standingsHeaderSub}>{standings.length} équipe{standings.length > 1 ? 's' : ''}</Text>
+                  <Text style={styles.standingsHeaderText}>{t('tournamentDetail.fullStandings')}</Text>
+                  <Text style={styles.standingsHeaderSub}>{t('tournamentDetail.teamsCount', { count: standings.length })}</Text>
                 </View>
                 <Card style={styles.standingsCard}>
                   {standings.map((s, i) => {
@@ -1107,14 +1113,14 @@ export default function TournamentDetailScreen() {
                           </View>
                           <View style={styles.standingsPointsCol}>
                             <Text style={[styles.standingsPointsBig, i < 3 && { color: medals[i] }]}>{s.points}</Text>
-                            <Text style={styles.standingsPointsLabel}>pts</Text>
+                            <Text style={styles.standingsPointsLabel}>{t('tournamentDetail.pointsShort')}</Text>
                           </View>
                         </View>
                         <View style={styles.standingsStatsRow}>
-                          <Text style={styles.standingsStatItem}>{s.played} MJ</Text>
-                          <Text style={[styles.standingsStatItem, { color: Colors.status.success }]}>{s.wins} V</Text>
-                          <Text style={styles.standingsStatItem}>{s.draws} N</Text>
-                          <Text style={[styles.standingsStatItem, { color: Colors.status.error }]}>{s.losses} D</Text>
+                          <Text style={styles.standingsStatItem}>{s.played} {t('tournamentDetail.playedShort')}</Text>
+                          <Text style={[styles.standingsStatItem, { color: Colors.status.success }]}>{s.wins} {t('tournamentDetail.winsShort')}</Text>
+                          <Text style={styles.standingsStatItem}>{s.draws} {t('tournamentDetail.drawsShort')}</Text>
+                          <Text style={[styles.standingsStatItem, { color: Colors.status.error }]}>{s.losses} {t('tournamentDetail.lossesShort')}</Text>
                           <Text style={styles.standingsStatItem}>{s.goalsFor}:{s.goalsAgainst}</Text>
                           <Text style={[styles.standingsStatItem, { color: s.diff > 0 ? Colors.status.success : s.diff < 0 ? Colors.status.error : Colors.text.muted }]}>{s.diff > 0 ? '+' : ''}{s.diff}</Text>
                           <Text style={[styles.standingsStatItem, { color: winPct >= 50 ? Colors.status.success : Colors.text.muted }]}>{winPct}%</Text>
@@ -1133,12 +1139,12 @@ export default function TournamentDetailScreen() {
                 <View style={styles.teamsSummaryRow}>
                   <View style={styles.teamsSummaryChip}>
                     <Users size={14} color={Colors.primary.blue} />
-                    <Text style={styles.teamsSummaryText}>{reservedSpots}/{tournament.maxTeams} places réservées</Text>
+                    <Text style={styles.teamsSummaryText}>{t('tournamentDetail.reservedSpots', { reserved: reservedSpots, max: tournament.maxTeams })}</Text>
                   </View>
-                  {registrationPct >= 100 && <View style={[styles.teamsSummaryChip, { backgroundColor: Colors.status.error + '15' }]}><Text style={[styles.teamsSummaryText, { color: Colors.status.error }]}>Complet</Text></View>}
+                  {registrationPct >= 100 && <View style={[styles.teamsSummaryChip, { backgroundColor: Colors.status.error + '15' }]}><Text style={[styles.teamsSummaryText, { color: Colors.status.error }]}>{t('tournamentDetail.full')}</Text></View>}
                   {registrationPct < 100 && tournament.status === 'registration' && (
                     <View style={[styles.teamsSummaryChip, { backgroundColor: Colors.status.success + '15' }]}>
-                      <Text style={[styles.teamsSummaryText, { color: Colors.status.success }]}>{Math.max(tournament.maxTeams - reservedSpots, 0)} place{Math.max(tournament.maxTeams - reservedSpots, 0) > 1 ? 's' : ''} restante{Math.max(tournament.maxTeams - reservedSpots, 0) > 1 ? 's' : ''}</Text>
+                      <Text style={[styles.teamsSummaryText, { color: Colors.status.success }]}>{t('tournamentDetail.spotsLeft', { count: Math.max(tournament.maxTeams - reservedSpots, 0) })}</Text>
                     </View>
                   )}
                 </View>
@@ -1148,7 +1154,7 @@ export default function TournamentDetailScreen() {
                     <View style={styles.paymentPanelHeader}>
                       <View style={styles.paymentPanelTitleRow}>
                         <CreditCard size={16} color={Colors.primary.orange} />
-                        <Text style={styles.sectionTitle}>Paiement d'inscription</Text>
+                        <Text style={styles.sectionTitle}>{t('tournamentDetail.paymentRegistration')}</Text>
                       </View>
                       <TeamStatusBadge status={myTeamInTournament.status} size="small" />
                     </View>
@@ -1157,7 +1163,7 @@ export default function TournamentDetailScreen() {
                       <>
                         {!showPaymentInstructions ? (
                           <Button
-                            title="Voir les instructions de paiement"
+                            title={t('tournamentDetail.paymentViewInstructions')}
                             onPress={() => setShowPaymentInstructions(true)}
                             variant="outline"
                           />
@@ -1166,11 +1172,11 @@ export default function TournamentDetailScreen() {
                             <PaymentInstructions
                               amount={tournament.entryFee}
                               tournamentName={tournament.name}
-                              teamName={getTeamById(myTeamInTournament.teamId)?.name || 'Mon équipe'}
+                              teamName={getTeamById(myTeamInTournament.teamId)?.name || t('tournamentDetail.myTeam')}
                               onMethodSelect={setSelectedPaymentMethod}
                             />
                             <Button
-                              title="J'ai payé"
+                              title={t('tournamentDetail.paymentDone')}
                               onPress={() => setShowPaymentSubmission(true)}
                               variant="orange"
                               style={styles.paymentSubmitBtn}
@@ -1182,19 +1188,19 @@ export default function TournamentDetailScreen() {
 
                     {myTeamInTournament.status === 'payment_submitted' && (
                       <Text style={styles.paymentInfoText}>
-                        Paiement soumis{myPayment?.createdAt ? ` le ${new Date(myPayment.createdAt).toLocaleDateString('fr-FR')}` : ''}. En attente de validation par un administrateur.
+                        {t('tournamentDetail.paymentSubmittedOn', { datePart: myPayment?.createdAt ? ` ${new Date(myPayment.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR')}` : '' })}
                       </Text>
                     )}
 
                     {myTeamInTournament.status === 'confirmed' && (
-                      <Text style={[styles.paymentInfoText, { color: Colors.status.success }]}>Paiement validé. Votre équipe est confirmée pour le tournoi.</Text>
+                      <Text style={[styles.paymentInfoText, { color: Colors.status.success }]}>{t('tournamentDetail.paymentValidated')}</Text>
                     )}
 
                     {(myTeamInTournament.status === 'rejected' || myTeamInTournament.status === 'cancelled') && (
                       <View style={styles.paymentRejectedWrap}>
-                        <Text style={[styles.paymentInfoText, { color: Colors.status.error }]}>Votre paiement a été refusé ou expiré. Vous pouvez soumettre une nouvelle preuve.</Text>
+                        <Text style={[styles.paymentInfoText, { color: Colors.status.error }]}>{t('tournamentDetail.paymentRejected')}</Text>
                         <Button
-                          title="Soumettre une nouvelle preuve"
+                          title={t('tournamentDetail.paymentResubmit')}
                           onPress={() => {
                             setShowPaymentInstructions(true);
                             setShowPaymentSubmission(true);
@@ -1212,7 +1218,7 @@ export default function TournamentDetailScreen() {
                     <Search size={14} color={Colors.text.muted} />
                     <TextInput
                       style={styles.teamSearchInput}
-                      placeholder="Rechercher une équipe..."
+                      placeholder={t('tournamentDetail.searchTeamPlaceholder')}
                       placeholderTextColor={Colors.text.muted}
                       value={teamSearch}
                       onChangeText={setTeamSearch}
@@ -1222,7 +1228,7 @@ export default function TournamentDetailScreen() {
 
                 {(() => {
                   const myTeamIn = user && registeredTeamIds.some((tid: string) => getTeamById(tid)?.captainId === user.id);
-                  return myTeamIn ? <View style={styles.inscritBadge}><CheckCircle size={14} color={Colors.status.success} /><Text style={styles.inscritBadgeText}>Vous êtes inscrit</Text></View> : null;
+                  return myTeamIn ? <View style={styles.inscritBadge}><CheckCircle size={14} color={Colors.status.success} /><Text style={styles.inscritBadgeText}>{t('tournamentDetail.youAreRegistered')}</Text></View> : null;
                 })()}
 
                 {filteredTeams.length > 0 ? (
@@ -1240,24 +1246,24 @@ export default function TournamentDetailScreen() {
                             <Avatar uri={team?.logo} name={team?.name} size="small" />
                             <View style={styles.registeredTeamInfo}>
                               <View style={styles.teamNameRow}>
-                                <Text style={styles.registeredTeamName}>{team?.name ?? `Équipe ${teamId.slice(0, 8)}`}</Text>
-                                {isMyTeam && <View style={styles.myTeamBadge}><Text style={styles.myTeamBadgeText}>Mon équipe</Text></View>}
+                                <Text style={styles.registeredTeamName}>{team?.name ?? t('tournamentDetail.teamFallback', { id: teamId.slice(0, 8) })}</Text>
+                                {isMyTeam && <View style={styles.myTeamBadge}><Text style={styles.myTeamBadgeText}>{t('tournamentDetail.myTeam')}</Text></View>}
                                 {rank === 0 && standings.length > 0 && <Trophy size={12} color="#FFD700" />}
                               </View>
                               {teamStatus && <TeamStatusBadge status={teamStatus} size="small" />}
                               {standing != null ? (
                                 <View style={styles.teamStatsLine}>
-                                  <Text style={styles.teamRankBadge}>{rank + 1}e</Text>
-                                  <Text style={styles.registeredTeamMeta}>{standing.points} pts</Text>
+                                  <Text style={styles.teamRankBadge}>{t('tournamentDetail.rankOrdinal', { rank: rank + 1 })}</Text>
+                                  <Text style={styles.registeredTeamMeta}>{standing.points} {t('tournamentDetail.pointsShort')}</Text>
                                   <View style={styles.teamMiniBar}>
                                     <View style={[styles.teamMiniBarWin, { flex: standing.wins || 0.01 }]} />
                                     <View style={[styles.teamMiniBarDraw, { flex: standing.draws || 0.01 }]} />
                                     <View style={[styles.teamMiniBarLoss, { flex: standing.losses || 0.01 }]} />
                                   </View>
-                                  <Text style={styles.teamWDL}>{standing.wins}V {standing.draws}N {standing.losses}D</Text>
+                                  <Text style={styles.teamWDL}>{standing.wins}{t('tournamentDetail.winsShort')} {standing.draws}{t('tournamentDetail.drawsShort')} {standing.losses}{t('tournamentDetail.lossesShort')}</Text>
                                 </View>
                               ) : (
-                                <Text style={styles.registeredTeamMeta}>{team?.members?.length ?? 0} joueurs</Text>
+                                <Text style={styles.registeredTeamMeta}>{t('tournamentDetail.playersCount', { count: team?.members?.length ?? 0 })}</Text>
                               )}
                             </View>
                           </TouchableOpacity>
@@ -1274,14 +1280,14 @@ export default function TournamentDetailScreen() {
                 ) : teamSearch.trim() ? (
                   <View style={styles.emptyTabState}>
                     <Search size={32} color={Colors.text.muted} />
-                    <Text style={styles.emptyTabTitle}>Aucun résultat</Text>
-                    <Text style={styles.emptyTabSub}>Aucune équipe ne correspond à "{teamSearch}"</Text>
+                    <Text style={styles.emptyTabTitle}>{t('tournamentDetail.noResults')}</Text>
+                    <Text style={styles.emptyTabSub}>{t('tournamentDetail.noTeamMatchesSearch', { query: teamSearch })}</Text>
                   </View>
                 ) : (
                   <View style={styles.emptyTabState}>
                     <Users size={32} color={Colors.text.muted} />
-                    <Text style={styles.emptyTabTitle}>Aucun participant</Text>
-                    <Text style={styles.emptyTabSub}>Les équipes n'ont pas encore rejoint ce tournoi.</Text>
+                    <Text style={styles.emptyTabTitle}>{t('tournamentDetail.noParticipants')}</Text>
+                    <Text style={styles.emptyTabSub}>{t('tournamentDetail.noParticipantsHint')}</Text>
                   </View>
                 )}
               </Animated.View>
@@ -1292,8 +1298,8 @@ export default function TournamentDetailScreen() {
               <LinearGradient colors={canManage ? [Colors.primary.orange + '20', Colors.primary.orange + '08'] : [Colors.primary.blue + '20', Colors.primary.blue + '08']} style={styles.manageBtnGradient}>
                 <Settings size={20} color={canManage ? Colors.primary.orange : Colors.primary.blue} />
                 <View style={styles.manageTournamentBtnContent}>
-                  <Text style={styles.manageTournamentBtnText}>{canManage ? 'Gérer le tournoi' : 'Voir les détails'}</Text>
-                  <Text style={styles.manageTournamentBtnSubtext}>{canManage ? 'Scores, matchs, administration' : 'Matchs, classement, statistiques'}</Text>
+                  <Text style={styles.manageTournamentBtnText}>{canManage ? t('tournamentDetail.manageTournament') : t('tournamentDetail.viewDetails')}</Text>
+                  <Text style={styles.manageTournamentBtnSubtext}>{canManage ? t('tournamentDetail.manageSubtext') : t('tournamentDetail.viewSubtext')}</Text>
                 </View>
                 <ChevronRight size={20} color={Colors.text.muted} />
               </LinearGradient>
@@ -1308,8 +1314,8 @@ export default function TournamentDetailScreen() {
                 <LinearGradient colors={[Colors.status.warning + '22', Colors.status.warning + '10']} style={styles.manageBtnGradient}>
                   <FileText size={20} color={Colors.status.warning} />
                   <View style={styles.manageTournamentBtnContent}>
-                    <Text style={styles.manageTournamentBtnText}>Demander une avance</Text>
-                    <Text style={styles.manageTournamentBtnSubtext}>Soumettre une demande de reversement anticipé</Text>
+                    <Text style={styles.manageTournamentBtnText}>{t('tournamentDetail.requestAdvance')}</Text>
+                    <Text style={styles.manageTournamentBtnSubtext}>{t('tournamentDetail.requestAdvanceSubtext')}</Text>
                   </View>
                   <ChevronRight size={20} color={Colors.text.muted} />
                 </LinearGradient>
@@ -1324,7 +1330,7 @@ export default function TournamentDetailScreen() {
             <View style={styles.footer}>
               {canRegisterTeam && !isFull ? (
                 <Button
-                  title={isRegistering ? 'Inscription...' : joinLabel}
+                  title={isRegistering ? t('tournamentDetail.registering') : joinLabel}
                   onPress={handleRegister}
                   variant="orange"
                   size="large"
@@ -1332,9 +1338,9 @@ export default function TournamentDetailScreen() {
                   disabled={isRegistering}
                 />
               ) : isFull ? (
-                <Text style={styles.footerMutedText}>Ce tournoi est complet.</Text>
+                <Text style={styles.footerMutedText}>{t('tournamentDetail.tournamentFull')}</Text>
               ) : (
-                <Text style={styles.footerMutedText}>Seul le capitaine d&apos;une équipe peut l&apos;inscrire.</Text>
+                <Text style={styles.footerMutedText}>{t('tournamentDetail.captainOnlyFooter')}</Text>
               )}
             </View>
           )}
