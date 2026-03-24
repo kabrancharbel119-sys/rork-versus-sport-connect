@@ -12,6 +12,7 @@ import { useI18n } from '@/contexts/I18nContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { useTeams } from '@/contexts/TeamsContext';
 import { useNotifications } from '@/contexts/NotificationsContext';
+import { useChat } from '@/contexts/ChatContext';
 import { usersApi } from '@/lib/api/users';
 import { teamsApi } from '@/lib/api/teams';
 import { Avatar } from '@/components/Avatar';
@@ -33,6 +34,7 @@ export default function UserProfileScreen() {
   const { users, isFollowing, follow, unfollow } = useUsers();
   const { teams, getUserTeams, getTeamById, handleRequest, refetchTeams } = useTeams();
   const { notifyTeamRequest } = useNotifications();
+  const { chatRooms, createChatRequest, getSentChatRequests } = useChat();
   const [isHandlingRequest, setIsHandlingRequest] = useState(false);
 
   const profileUserId = (typeof id === 'string' ? id : Array.isArray(id) ? id[0] : '') || '';
@@ -152,8 +154,56 @@ export default function UserProfileScreen() {
     }
   };
 
-  const handleMessage = () => {
-    Alert.alert(t('userProfile.infoTitle'), t('userProfile.featureSoon'));
+  const handleMessage = async () => {
+    if (!currentUser || !profileUser) return;
+    
+    // Check if there's already a direct chat room
+    const existingDirectRoom = chatRooms.find(r => 
+      r.type === 'direct' && 
+      r.participants.includes(currentUser.id) && 
+      r.participants.includes(profileUserId)
+    );
+    
+    if (existingDirectRoom) {
+      // Navigate directly to existing chat
+      router.push(`/chat/${existingDirectRoom.id}`);
+      return;
+    }
+    
+    // Check if there's a pending request
+    const sentRequests = getSentChatRequests();
+    const pendingRequest = sentRequests.find(r => r.recipientId === profileUserId);
+    
+    if (pendingRequest) {
+      Alert.alert(t('chatList.pendingRequestTitle'), t('chatList.pendingRequestMessage'));
+      return;
+    }
+    
+    // Send message request with confirmation
+    Alert.alert(
+      t('chatList.sendRequest'),
+      t('chatList.sendRequestQuestion', { user: profileUser.fullName || profileUser.username }),
+      [
+        {
+          text: t('common.no'),
+          style: 'cancel'
+        },
+        {
+          text: t('chatList.sendRequestConfirm'),
+          onPress: async () => {
+            try {
+              await createChatRequest({ recipientId: profileUserId });
+              Alert.alert(
+                t('chatList.requestSent'),
+                t('chatList.requestSentMessage', { user: profileUser.fullName || profileUser.username })
+              );
+            } catch (error: any) {
+              Alert.alert(t('common.error'), error.message || t('chatList.cannotSendRequest'));
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleRequestAction = async (action: 'accept' | 'reject') => {

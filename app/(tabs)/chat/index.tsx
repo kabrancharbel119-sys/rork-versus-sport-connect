@@ -3,7 +3,7 @@ import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Modal, TextInput,
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MessageCircle, Users, Hash, Zap, Plus, X, Search, UserPlus, ChevronRight } from 'lucide-react-native';
+import { MessageCircle, Users, Hash, Zap, Plus, X, Search, UserPlus, ChevronRight, Inbox } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useChat } from '@/contexts/ChatContext';
 import { useTeams } from '@/contexts/TeamsContext';
@@ -21,28 +21,86 @@ export default function ChatScreen() {
   const { user } = useAuth();
   const { chatRooms, createRoom, createTeamChats, isCreatingRoom, createChatRequest, getPendingChatRequests, getSentChatRequests, respondToChatRequest, isCreatingRequest } = useChat();
   const { getUserTeams } = useTeams();
-  const { users } = useUsers();
+  const { users, getUserById } = useUsers();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
-  const [showRequestModal, setShowRequestModal] = useState(false);
-  const [selectedUserForRequest, setSelectedUserForRequest] = useState<string | null>(null);
-  const [requestMessage, setRequestMessage] = useState('');
+  const [sendingRequestTo, setSendingRequestTo] = useState<string | null>(null);
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomType, setNewRoomType] = useState<'general' | 'match' | 'strategy'>('general');
   const [searchQuery, setSearchQuery] = useState('');
   const [conversationSearch, setConversationSearch] = useState('');
+  const [loadedUsers, setLoadedUsers] = useState<Map<string, any>>(new Map());
 
   const myTeams = user ? getUserTeams(user.id) : [];
 
+  // Load missing users for chat requests
+  React.useEffect(() => {
+    const loadMissingUsers = async () => {
+      const pendingRequests = getPendingChatRequests() ?? [];
+      const sentRequests = getSentChatRequests() ?? [];
+      const allRequests = [...pendingRequests, ...sentRequests];
+      const userIds = new Set<string>();
+      
+      allRequests.forEach(req => {
+        userIds.add(req.requesterId);
+        userIds.add(req.recipientId);
+      });
+
+      (chatRooms ?? []).forEach((room) => {
+        if (room.type !== 'direct') return;
+        if (!user?.id || !room.participants.includes(user.id)) return;
+        const otherParticipantId = room.participants.find((id) => id !== user.id);
+        if (otherParticipantId) {
+          userIds.add(otherParticipantId);
+        }
+      });
+
+      const newLoadedUsers = new Map(loadedUsers);
+      let hasNewUsers = false;
+
+      for (const userId of userIds) {
+        if (!newLoadedUsers.has(userId)) {
+          try {
+            const userData = await getUserById(userId);
+            if (userData) {
+              newLoadedUsers.set(userId, userData);
+              hasNewUsers = true;
+            }
+          } catch (e) {
+            console.log('[ChatList] Failed to load user:', userId);
+          }
+        }
+      }
+
+      if (hasNewUsers) {
+        setLoadedUsers(newLoadedUsers);
+      }
+    };
+
+    loadMissingUsers();
+  }, [chatRooms, user?.id, getPendingChatRequests, getSentChatRequests, getUserById]);
+
   const filteredUsers = useMemo(() => {
-    if (!searchQuery.trim()) return [];
+    if (!searchQuery.trim()) {
+      // Show verified users when no search query
+      return (users ?? [])
+        .filter(u => u.isProfileVisible !== false && u.isVerified)
+        .slice(0, 8);
+    }
     const q = searchQuery.toLowerCase();
-    return (users ?? []).filter(u =>
-      u.isProfileVisible !== false
-      &&
-      (u.username.toLowerCase().includes(q) || u.fullName.toLowerCase().includes(q))
-    ).slice(0, 10);
+    return (users ?? [])
+      .filter(u =>
+        u.isProfileVisible !== false &&
+        (u.username.toLowerCase().includes(q) || u.fullName.toLowerCase().includes(q))
+      )
+      .sort((a, b) => {
+        // Verified users first
+        if (a.isVerified && !b.isVerified) return -1;
+        if (!a.isVerified && b.isVerified) return 1;
+        return 0;
+      })
+      .slice(0, 15);
   }, [users, searchQuery]);
 
   const formatTime = (date: Date) => {
@@ -68,19 +126,32 @@ export default function ChatScreen() {
   const usersById = useMemo(() => {
     const map = new Map<string, (typeof users)[number]>();
     (users ?? []).forEach((u) => map.set(u.id, u));
+    // Merge with loaded users
+    loadedUsers.forEach((u, id) => {
+      if (!map.has(id)) {
+        map.set(id, u);
+      }
+    });
     return map;
-  }, [users]);
-
-  const selectedUser = useMemo(() => {
-    if (!selectedUserForRequest) return undefined;
-    return usersById.get(selectedUserForRequest);
-  }, [selectedUserForRequest, usersById]);
+  }, [users, loadedUsers]);
 
   const getLastMessageSender = (senderId: string) => {
     if (senderId === user?.id) return t('chatList.youPrefix');
     if (senderId === 'system') return '';
     const sender = usersById.get(senderId);
     return sender?.username ? `${sender.username} : ` : '';
+  };
+
+  const getConversationTitle = (room: (typeof chatRooms)[number], otherUser?: (typeof users)[number], otherParticipantId?: string) => {
+    if (room.type === 'direct') {
+      if (otherUser) {
+        return otherUser.fullName || otherUser.username || t('chatList.userFallback');
+      }
+      if (otherParticipantId) {
+        return 'Discussion privée';
+      }
+    }
+    return room.name;
   };
 
   const handleCreateTeamChats = async (teamId: string, teamName: string, members: string[]) => {
@@ -121,7 +192,7 @@ export default function ChatScreen() {
     if (targetUserId === user.id) {
       setShowNewChatModal(false);
       setSearchQuery('');
-      Alert.alert(t('common.search'), t('chatList.cannotMessageSelf'));
+      Alert.alert(t('common.error'), t('chatList.cannotMessageSelf'));
       return;
     }
     
@@ -139,21 +210,10 @@ export default function ChatScreen() {
       return;
     }
     
-    // Check if there's a pending request
-    const sentRequests = getSentChatRequests();
-    const pendingRequest = sentRequests.find(r => r.recipientId === targetUserId);
-    
-    if (pendingRequest) {
-      Alert.alert(t('chatList.pendingRequestTitle'), t('chatList.pendingRequestMessage'));
-      setShowNewChatModal(false);
-      setSearchQuery('');
-      return;
-    }
-    
-    setSelectedUserForRequest(targetUserId);
-    setRequestMessage('');
+    // Navigate to user profile to preview before sending request
     setShowNewChatModal(false);
-    setShowRequestModal(true);
+    setSearchQuery('');
+    router.push(`/user/${targetUserId}` as any);
   };
 
   const userRooms = useMemo(() => {
@@ -177,8 +237,28 @@ export default function ChatScreen() {
       <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>{t('chatList.title')}</Text>
+          <View style={styles.headerInfo}>
+            <Text style={styles.headerTitle}>{t('chatList.title')}</Text>
+            <Text style={styles.headerSubtitle}>
+              {filteredConversations.length > 0
+                ? `${filteredConversations.length} discussion${filteredConversations.length > 1 ? 's' : ''}`
+                : 'Vos conversations privées et d\'équipe'}
+            </Text>
+          </View>
           <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.headerBtn} 
+              onPress={() => router.push('/chat-requests' as any)}
+            >
+              <Inbox size={20} color={Colors.text.primary} />
+              {getPendingChatRequests().length > 0 && (
+                <View style={styles.requestBadge}>
+                  <Text style={styles.requestBadgeText}>
+                    {getPendingChatRequests().length}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
             <TouchableOpacity testID="btn-new-direct-message" style={styles.headerBtn} onPress={() => setShowNewChatModal(true)}>
               <UserPlus size={20} color={Colors.text.primary} />
             </TouchableOpacity>
@@ -213,13 +293,12 @@ export default function ChatScreen() {
         <ScrollView testID="chat-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {(() => {
             const pendingRequests = getPendingChatRequests() ?? [];
-            const sentRequests = getSentChatRequests() ?? [];
             
             return (
               <>
                 {pendingRequests.length > 0 && (
                   <View style={styles.requestsSection}>
-                    <Text style={styles.sectionTitle}>{t('chatList.receivedRequests', { count: pendingRequests.length })}</Text>
+                    <Text style={styles.sectionTitle}>{pendingRequests.length} demande{pendingRequests.length > 1 ? 's' : ''} reçue{pendingRequests.length > 1 ? 's' : ''}</Text>
                     {pendingRequests.map((request) => {
                       const requester = usersById.get(request.requesterId);
                       return (
@@ -270,30 +349,10 @@ export default function ChatScreen() {
                   </View>
                 )}
                 
-                {sentRequests.length > 0 && (
-                  <View style={styles.requestsSection}>
-                    <Text style={styles.sectionTitle}>{t('chatList.sentRequests', { count: sentRequests.length })}</Text>
-                    {sentRequests.map((request) => {
-                      const recipient = usersById.get(request.recipientId);
-                      return (
-                        <Card key={request.id} style={styles.requestCard}>
-                          <View style={styles.requestHeader}>
-                            <Avatar uri={recipient?.avatar} name={recipient?.fullName || recipient?.username || ''} size="small" />
-                            <View style={styles.requestInfo}>
-                              <Text style={styles.requestName}>{recipient?.fullName || recipient?.username || t('chatList.userFallback')}</Text>
-                              <Text style={styles.requestStatus}>{t('chatList.waitingResponse')}</Text>
-                            </View>
-                          </View>
-                        </Card>
-                      );
-                    })}
-                  </View>
-                )}
-                
                 {filteredConversations.length > 0 && (
                   <View style={styles.conversationsSection}>
                     <Text style={styles.sectionTitle}>
-                      {conversationSearch.trim() ? t('chatList.results', { count: filteredConversations.length }) : t('chatList.recentConversations')}
+                      {conversationSearch.trim() ? `${filteredConversations.length} résultat(s)` : 'Conversations récentes'}
                     </Text>
                     {filteredConversations.map((room) => {
                       const RoomIcon = getRoomIcon(room.type);
@@ -323,7 +382,7 @@ export default function ChatScreen() {
                           <View style={styles.chatContent}>
                             <View style={styles.chatTop}>
                               <Text style={styles.chatName} numberOfLines={1}>
-                                {isDirectChat && otherUser ? (otherUser.fullName || otherUser.username || t('chatList.userFallback')) : room.name}
+                                {getConversationTitle(room, otherUser, otherParticipantId || undefined)}
                               </Text>
                               {room.lastMessage && (
                                 <Text style={styles.chatTime}>{formatTime(room.lastMessage.createdAt)}</Text>
@@ -348,14 +407,14 @@ export default function ChatScreen() {
                   </View>
                 )}
                 
-                {filteredConversations.length === 0 && pendingRequests.length === 0 && sentRequests.length === 0 && userRooms.length > 0 && conversationSearch.trim() && (
+                {filteredConversations.length === 0 && pendingRequests.length === 0 && userRooms.length > 0 && conversationSearch.trim() && (
             <View style={styles.emptySearch}>
               <Search size={40} color={Colors.text.muted} />
               <Text style={styles.emptySearchText}>{t('chatList.noConversationMatch', { query: conversationSearch })}</Text>
             </View>
                 )}
                 
-                {filteredConversations.length === 0 && pendingRequests.length === 0 && sentRequests.length === 0 && myTeams.length > 0 && !conversationSearch.trim() && (
+                {filteredConversations.length === 0 && pendingRequests.length === 0 && myTeams.length > 0 && !conversationSearch.trim() && (
             <View style={styles.noChatsSection}>
               <Card style={styles.noChatsCard}>
                 <MessageCircle size={48} color={Colors.text.muted} />
@@ -376,7 +435,7 @@ export default function ChatScreen() {
             </View>
                 )}
                 
-                {filteredConversations.length === 0 && pendingRequests.length === 0 && sentRequests.length === 0 && myTeams.length === 0 && !conversationSearch.trim() && (
+                {filteredConversations.length === 0 && pendingRequests.length === 0 && myTeams.length === 0 && !conversationSearch.trim() && (
                   <View style={styles.emptyState}>
               <View style={styles.emptyIconWrapper}>
                 <MessageCircle size={64} color={Colors.text.muted} />
@@ -459,13 +518,16 @@ export default function ChatScreen() {
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalSearchWrapper}>
               <SafeAreaView style={styles.modalSearchSafe} edges={['top']}>
                 <View style={styles.modalSearchHeader}>
-                  <Text style={styles.modalTitle}>{t('chatList.newConversation')}</Text>
+                  <View>
+                    <Text style={styles.modalTitle}>{t('chatList.newConversation')}</Text>
+                    <Text style={styles.modalSubtitle}>{t('chatList.searchOrSelect')}</Text>
+                  </View>
                   <TouchableOpacity style={styles.modalClose} onPress={() => { setShowNewChatModal(false); setSearchQuery(''); }}>
                     <X size={24} color={Colors.text.primary} />
                   </TouchableOpacity>
                 </View>
                 <View style={styles.modalSearchBarContainer}>
-                  <Search size={22} color={Colors.text.muted} />
+                  <Search size={20} color={Colors.primary.blue} />
                   <TextInput
                     style={styles.modalSearchInput}
                     placeholder={t('chatList.searchPlayerPlaceholder')}
@@ -477,42 +539,58 @@ export default function ChatScreen() {
                   />
                   {searchQuery.length > 0 && (
                     <TouchableOpacity hitSlop={8} onPress={() => setSearchQuery('')}>
-                      <X size={20} color={Colors.text.muted} />
+                      <X size={18} color={Colors.text.muted} />
                     </TouchableOpacity>
                   )}
                 </View>
               </SafeAreaView>
               <View style={styles.modalUserListContainer}>
                 {filteredUsers.length > 0 ? (
-                  <FlatList
-                    data={filteredUsers}
-                    keyExtractor={(u) => u.id}
-                    keyboardShouldPersistTaps="handled"
-                    contentContainerStyle={styles.userListContent}
-                    renderItem={({ item: u }) => (
-                      <TouchableOpacity style={styles.userItem} onPress={() => startDirectChat(u.id)}>
-                        <Avatar uri={u.avatar} name={u.fullName} size="medium" />
-                        <View style={styles.userInfo}>
-                          <Text style={styles.userName}>{u.fullName}</Text>
-                          <Text style={styles.userHandle}>@{u.username}</Text>
-                        </View>
-                        {u.isVerified && (
-                          <View style={styles.verifiedBadge}>
-                            <Text style={styles.verifiedText}>✓</Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
+                  <>
+                    {!searchQuery.trim() && (
+                      <View style={styles.sectionHeaderContainer}>
+                        <Text style={styles.sectionHeaderText}>{t('chatList.verifiedUsers')}</Text>
+                      </View>
                     )}
-                  />
+                    <FlatList
+                      data={filteredUsers}
+                      keyExtractor={(u) => u.id}
+                      keyboardShouldPersistTaps="handled"
+                      contentContainerStyle={styles.userListContent}
+                      renderItem={({ item: u }) => (
+                        <TouchableOpacity style={styles.userItem} onPress={() => startDirectChat(u.id)}>
+                          <Avatar uri={u.avatar} name={u.fullName} size="medium" />
+                          <View style={styles.userInfo}>
+                            <View style={styles.userNameRow}>
+                              <Text style={styles.userName}>{u.fullName}</Text>
+                              {u.isVerified && (
+                                <View style={styles.verifiedBadgeInline}>
+                                  <Text style={styles.verifiedText}>✓</Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={styles.userHandle}>@{u.username}</Text>
+                          </View>
+                          <ChevronRight size={20} color={Colors.text.muted} />
+                        </TouchableOpacity>
+                      )}
+                    />
+                  </>
                 ) : searchQuery.trim() ? (
                   <View style={styles.searchEmptyState}>
-                    <Search size={48} color={Colors.text.muted} />
-                    <Text style={styles.noResults}>{t('chatList.noPlayerFound', { query: searchQuery })}</Text>
+                    <View style={styles.emptyIconCircle}>
+                      <Search size={32} color={Colors.text.muted} />
+                    </View>
+                    <Text style={styles.emptyTitle}>{t('chatList.noPlayerFound', { query: searchQuery })}</Text>
+                    <Text style={styles.emptyHint}>{t('chatList.tryDifferentSearch')}</Text>
                   </View>
                 ) : (
                   <View style={styles.searchEmptyState}>
-                    <Search size={48} color={Colors.text.muted} />
-                    <Text style={styles.searchHint}>{t('chatList.searchHint')}</Text>
+                    <View style={styles.emptyIconCircle}>
+                      <UserPlus size={32} color={Colors.primary.blue} />
+                    </View>
+                    <Text style={styles.emptyTitle}>{t('chatList.startNewChat')}</Text>
+                    <Text style={styles.emptyHint}>{t('chatList.searchHint')}</Text>
                   </View>
                 )}
               </View>
@@ -520,63 +598,6 @@ export default function ChatScreen() {
           </View>
         </Modal>
 
-        <Modal visible={showRequestModal} animationType="slide" transparent>
-          <View style={styles.modalOverlay}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-              keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
-              style={styles.modalKeyboardContainer}
-            >
-              <View style={styles.modalContent}>
-                <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>{t('chatList.sendRequest')}</Text>
-                  <TouchableOpacity onPress={() => { setShowRequestModal(false); setSelectedUserForRequest(null); setRequestMessage(''); }}>
-                    <X size={24} color={Colors.text.primary} />
-                  </TouchableOpacity>
-                </View>
-                {selectedUserForRequest && (
-                  <>
-                    <>
-                      <Text style={styles.modalLabel}>
-                        {t('chatList.sendRequestQuestion', { user: selectedUser?.fullName || selectedUser?.username || t('chatList.userFallback') })}
-                      </Text>
-                      <Text style={styles.modalLabel}>{t('chatList.optionalMessage')}</Text>
-                      <TextInput
-                        style={styles.modalTextInput}
-                        value={requestMessage}
-                        onChangeText={setRequestMessage}
-                        placeholder={t('chatList.optionalMessagePlaceholder')}
-                        placeholderTextColor={Colors.text.muted}
-                        multiline
-                        numberOfLines={3}
-                      />
-                    </>
-                    <View style={styles.modalActions}>
-                      <Button title={t('common.cancel')} onPress={() => { setShowRequestModal(false); setSelectedUserForRequest(null); setRequestMessage(''); }} variant="outline" style={styles.modalButton} />
-                      <Button 
-                        title={t('chatList.sendRequest')} 
-                        onPress={async () => {
-                          try {
-                            await createChatRequest({ recipientId: selectedUserForRequest!, message: requestMessage.trim() || undefined });
-                            setShowRequestModal(false);
-                            setSelectedUserForRequest(null);
-                            setRequestMessage('');
-                            Alert.alert(t('common.success'), t('chatList.requestSent'));
-                          } catch (error: any) {
-                            Alert.alert(t('common.error'), error.message || t('chatList.cannotSendRequest'));
-                          }
-                        }} 
-                        variant="primary" 
-                        style={styles.modalButton}
-                        loading={isCreatingRequest}
-                      />
-                    </View>
-                  </>
-                )}
-              </View>
-            </KeyboardAvoidingView>
-          </View>
-        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -585,24 +606,28 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16 },
-  headerTitle: { color: Colors.text.primary, fontSize: 28, fontWeight: '700' as const },
+  header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 14 },
+  headerInfo: { flex: 1, paddingRight: 12 },
+  headerTitle: { color: Colors.text.primary, fontSize: 32, fontWeight: '800' as const, letterSpacing: 0.2 },
+  headerSubtitle: { color: Colors.text.muted, fontSize: 13, marginTop: 2 },
   headerActions: { flexDirection: 'row', gap: 8 },
-  headerBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
+  headerBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.background.cardLight, alignItems: 'center', justifyContent: 'center', position: 'relative' as const, borderWidth: 1, borderColor: Colors.border.light, marginTop: 4 },
+  requestBadge: { position: 'absolute' as const, top: -2, right: -2, backgroundColor: Colors.primary.orange, borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 2, borderColor: Colors.background.dark },
+  requestBadgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' as const },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 20 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 24 },
   conversationsSection: { marginBottom: 24 },
-  sectionTitle: { color: Colors.text.secondary, fontSize: 13, fontWeight: '600' as const, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 12 },
-  chatItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.card, padding: 14, borderRadius: 16, marginBottom: 10, borderWidth: 1, borderColor: Colors.border.light },
+  sectionTitle: { color: Colors.text.secondary, fontSize: 13, fontWeight: '700' as const, marginBottom: 12, textTransform: 'uppercase' as const, letterSpacing: 0.6 },
+  chatItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.cardLight, padding: 15, borderRadius: 18, marginBottom: 10, borderWidth: 1, borderColor: Colors.border.light },
   chatIconContainer: { marginRight: 12 },
-  iconWrapper: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(21, 101, 192, 0.1)', alignItems: 'center', justifyContent: 'center' },
+  iconWrapper: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(21, 101, 192, 0.14)', alignItems: 'center', justifyContent: 'center' },
   chatContent: { flex: 1 },
   chatTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  chatName: { flex: 1, color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const, marginRight: 8 },
-  chatTime: { color: Colors.text.muted, fontSize: 12 },
-  chatPreview: { color: Colors.text.secondary, fontSize: 13 },
+  chatName: { flex: 1, color: Colors.text.primary, fontSize: 16, fontWeight: '700' as const, marginRight: 8 },
+  chatTime: { color: Colors.text.muted, fontSize: 12, fontWeight: '600' as const },
+  chatPreview: { color: Colors.text.secondary, fontSize: 14, lineHeight: 20 },
   chatPreviewEmpty: { color: Colors.text.muted, fontSize: 13, fontStyle: 'italic' as const },
-  unreadBadge: { backgroundColor: Colors.primary.orange, borderRadius: 12, minWidth: 22, height: 22, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, marginLeft: 8 },
+  unreadBadge: { backgroundColor: Colors.primary.orange, borderRadius: 12, minWidth: 24, height: 24, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, marginLeft: 8 },
   unreadText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' as const },
   noChatsSection: { paddingTop: 40 },
   noChatsCard: { alignItems: 'center', paddingVertical: 32 },
@@ -617,23 +642,23 @@ const styles = StyleSheet.create({
   findTeamBtn: { marginTop: 24 },
   searchUsersBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, paddingVertical: 12, paddingHorizontal: 20 },
   searchUsersBtnText: { color: Colors.primary.blue, fontSize: 14, fontWeight: '500' as const },
-  searchBarWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.card, marginHorizontal: 20, marginBottom: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: Colors.border.light },
-  searchIcon: { marginRight: 10 },
+  searchBarWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.cardLight, marginHorizontal: 20, marginBottom: 16, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1, borderColor: Colors.border.light },
+  searchIcon: { marginRight: 10, opacity: 0.85 },
   conversationSearchInput: { flex: 1, color: Colors.text.primary, fontSize: 16, paddingVertical: 12 },
   searchClear: { padding: 4 },
   emptySearch: { alignItems: 'center', paddingVertical: 48 },
   emptySearchText: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' as const, marginTop: 12, paddingHorizontal: 24 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   modalKeyboardContainer: { width: '100%' },
-  modalSearchOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)' },
+  modalSearchOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', paddingTop: 60 },
   modalContent: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%' },
   modalSearchWrapper: { flex: 1, backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
-  modalSearchSafe: { backgroundColor: Colors.background.dark, paddingTop: 8, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
-  modalSearchHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  modalSearchBarContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.card, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: Colors.border.light, gap: 10 },
+  modalSearchSafe: { backgroundColor: Colors.background.dark, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
+  modalSearchHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 },
+  modalSearchBarContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.card, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, borderWidth: 1, borderColor: Colors.border.light, gap: 12 },
   modalSearchInput: { flex: 1, color: Colors.text.primary, fontSize: 16, paddingVertical: 2 },
   modalUserListContainer: { flex: 1, minHeight: 200 },
-  userListContent: { paddingHorizontal: 16, paddingBottom: 24 },
+  userListContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
   searchEmptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 48, paddingHorizontal: 24 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
   modalTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const },
@@ -652,7 +677,7 @@ const styles = StyleSheet.create({
   createBtn: { marginTop: 12, marginBottom: 40 },
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.card, margin: 20, marginTop: 0, paddingHorizontal: 16, borderRadius: 12, gap: 12 },
   searchInput: { flex: 1, color: Colors.text.primary, fontSize: 15, paddingVertical: 14 },
-  userItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border.light, gap: 12 },
+  userItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border.light, gap: 14 },
   userInfo: { flex: 1 },
   userName: { color: Colors.text.primary, fontSize: 15, fontWeight: '500' as const },
   userHandle: { color: Colors.text.muted, fontSize: 13, marginTop: 2 },
@@ -661,7 +686,7 @@ const styles = StyleSheet.create({
   noResults: { color: Colors.text.muted, fontSize: 15, textAlign: 'center' as const, marginTop: 16 },
   searchHint: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' as const, marginTop: 12, lineHeight: 20 },
   requestsSection: { marginBottom: 24 },
-  requestCard: { marginBottom: 12 },
+  requestCard: { marginBottom: 12, borderWidth: 1, borderColor: Colors.border.light, backgroundColor: Colors.background.cardLight },
   requestHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   requestInfo: { flex: 1 },
   requestName: { color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const },
@@ -675,4 +700,11 @@ const styles = StyleSheet.create({
   modalTextInput: { backgroundColor: Colors.background.cardLight, borderRadius: 12, padding: 16, color: Colors.text.primary, fontSize: 14, minHeight: 100, textAlignVertical: 'top' as const, marginBottom: 16 },
   modalActions: { flexDirection: 'row', gap: 12, paddingTop: 12 },
   modalButton: { flex: 1 },
+  modalSubtitle: { color: Colors.text.muted, fontSize: 14, marginTop: 6, lineHeight: 20 },
+  sectionHeaderContainer: { paddingHorizontal: 20, paddingVertical: 14, backgroundColor: Colors.background.cardLight, marginBottom: 4 },
+  sectionHeaderText: { color: Colors.text.secondary, fontSize: 12, fontWeight: '600' as const, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  userNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  verifiedBadgeInline: { width: 16, height: 16, borderRadius: 8, backgroundColor: Colors.primary.blue, alignItems: 'center', justifyContent: 'center' },
+  emptyIconCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  emptyHint: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' as const, marginTop: 8, lineHeight: 20 },
 });

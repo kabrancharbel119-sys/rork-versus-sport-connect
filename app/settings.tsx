@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Switch, Alert, Modal, Platform, TextInput } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Switch, Alert, Modal, Platform, TextInput, ToastAndroid } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -41,6 +41,8 @@ export default function SettingsScreen() {
   const [adminCode, setAdminCode] = useState('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [showClearCacheModal, setShowClearCacheModal] = useState(false);
+  const [isClearingCache, setIsClearingCache] = useState(false);
 
   const unlockedTrophies = user ? getUnlockedCount(user.id) : 0;
   const totalXP = user ? getTotalXP(user.id) : 0;
@@ -161,7 +163,43 @@ export default function SettingsScreen() {
       Alert.alert(t('common.error'), t('settings.deleteFailed'));
     }
   };
-  const handleClearCache = () => Alert.alert(t('settings.clearCacheTitle'), t('settings.clearCacheMessage'), [{ text: t('common.cancel'), style: 'cancel' }, { text: t('settings.clearAction'), onPress: async () => { await offlineManager.clearCache(); Alert.alert(t('common.success'), t('settings.cacheCleared')); } }]);
+  const handleClearCache = () => setShowClearCacheModal(true);
+  const confirmClearCache = async () => {
+    setIsClearingCache(true);
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const explicitCacheKeys = [
+        'vs_tournaments',
+        'vs_teams',
+        'vs_matches',
+        'vs_all_users',
+        'vs_follows',
+        'vs_chats',
+        'vs_messages',
+        'vs_referrals',
+        'vs_support_tickets',
+        'vs_verification_requests',
+        'vs_user_trophies',
+        'vs_offline_queue',
+        'vs_last_sync',
+      ];
+      const toRemove = keys.filter(k =>
+        k.startsWith('vs_cache_') ||
+        k.startsWith('vs_notifications') ||
+        explicitCacheKeys.includes(k)
+      );
+      if (toRemove.length > 0) {
+        await AsyncStorage.multiRemove(toRemove);
+      }
+      await offlineManager.clearCache();
+      setPendingSync(await offlineManager.getPendingCount());
+      setShowClearCacheModal(false);
+    } catch (e) {
+      console.log('[Settings] Clear cache error:', e);
+    } finally {
+      setIsClearingCache(false);
+    }
+  };
   const handleClearNotifications = () => Alert.alert(t('settings.clearNotificationsTitle'), t('settings.clearNotificationsMessage'), [{ text: t('common.cancel'), style: 'cancel' }, { text: t('settings.clearAction'), style: 'destructive', onPress: async () => { await clearNotifications(); Alert.alert(t('common.success'), t('settings.notificationsCleared')); } }]);
   const handleRefreshTrophies = async () => { if (!user) return; const unlocked = await checkAndUnlockTrophies(user.id, { matchesPlayed: user.stats.matchesPlayed, wins: user.stats.wins, goalsScored: user.stats.goalsScored, assists: user.stats.assists, mvpAwards: user.stats.mvpAwards, tournamentWins: user.stats.tournamentWins, followers: user.followers, isVerified: user.isVerified || isAdmin, isPremium: user.isPremium || isAdmin, isCaptain: isAdmin, fairPlayScore: user.stats.fairPlayScore, hasTeam: (user.teams?.length || 0) > 0 || isAdmin, profileComplete: !!(user.fullName && user.city && user.sports?.length > 0) || isAdmin }); if (unlocked.length === 0) Alert.alert(t('settings.trophiesTitle'), t('settings.trophiesUpToDate')); };
 
@@ -262,6 +300,52 @@ export default function SettingsScreen() {
             <View style={styles.bottomSpacer} />
           </ScrollView>
         </SafeAreaView>
+
+        <Modal visible={showClearCacheModal} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.clearCacheModal}>
+              <LinearGradient
+                colors={['rgba(59, 130, 246, 0.15)', 'rgba(59, 130, 246, 0.05)', 'transparent']}
+                style={styles.clearCacheGradientBg}
+              />
+              <View style={styles.clearCacheIconWrapper}>
+                <View style={styles.clearCacheIconCircle}>
+                  <Database size={32} color="#FFFFFF" />
+                </View>
+              </View>
+              <Text style={styles.clearCacheTitle}>{t('settings.clearCacheTitle')}</Text>
+              <Text style={styles.clearCacheSubtitle}>{t('settings.clearCacheMessage')}</Text>
+              <View style={styles.clearCacheActions}>
+                <TouchableOpacity
+                  style={styles.clearCacheCancelButton}
+                  onPress={() => setShowClearCacheModal(false)}
+                  disabled={isClearingCache}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.clearCacheCancelText}>{t('common.cancel')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.clearCacheConfirmButton, isClearingCache && { opacity: 0.7 }]}
+                  onPress={confirmClearCache}
+                  disabled={isClearingCache}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient
+                    colors={[Colors.primary.blue, '#2563EB']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.clearCacheConfirmGradient}
+                  >
+                    <Trash2 size={18} color="#FFFFFF" />
+                    <Text style={styles.clearCacheConfirmText}>
+                      {isClearingCache ? t('settings.clearing') : t('settings.clearAction')}
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         <Modal visible={showLogoutModal} transparent animationType="fade">
           <View style={styles.modalOverlay}>
@@ -506,4 +590,16 @@ const styles = StyleSheet.create({
   deleteConfirmButtonDisabled: { opacity: 0.4 },
   deleteConfirmInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16 },
   deleteConfirmText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' as const },
+  clearCacheModal: { backgroundColor: Colors.background.dark, borderRadius: 28, padding: 0, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: Colors.border.medium, overflow: 'hidden' },
+  clearCacheGradientBg: { position: 'absolute', top: 0, left: 0, right: 0, height: 150, borderRadius: 28 },
+  clearCacheIconWrapper: { marginTop: 32, marginBottom: 20 },
+  clearCacheIconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: Colors.primary.blue, alignItems: 'center', justifyContent: 'center', shadowColor: Colors.primary.blue, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 8 },
+  clearCacheTitle: { color: Colors.text.primary, fontSize: 22, fontWeight: '700' as const, marginBottom: 8, letterSpacing: -0.5 },
+  clearCacheSubtitle: { color: Colors.text.secondary, fontSize: 15, textAlign: 'center', lineHeight: 22, paddingHorizontal: 24, marginBottom: 28 },
+  clearCacheActions: { flexDirection: 'column', gap: 10, width: '100%', paddingHorizontal: 24, paddingBottom: 28 },
+  clearCacheCancelButton: { paddingVertical: 16, borderRadius: 14, backgroundColor: Colors.background.cardLight, alignItems: 'center', borderWidth: 1, borderColor: Colors.border.light },
+  clearCacheCancelText: { color: Colors.text.primary, fontSize: 16, fontWeight: '600' as const },
+  clearCacheConfirmButton: { borderRadius: 14, overflow: 'hidden' },
+  clearCacheConfirmGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16 },
+  clearCacheConfirmText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' as const },
 });

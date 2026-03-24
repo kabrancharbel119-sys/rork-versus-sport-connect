@@ -41,8 +41,8 @@ export default function TournamentDetailScreen() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>('wave');
   useEffect(() => {
     if (!successMessage) return;
-    const t = setTimeout(() => setSuccessMessage(null), 2500);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setSuccessMessage(null), 2500);
+    return () => clearTimeout(timer);
   }, [successMessage]);
   const tournamentMatchesQuery = useQuery({
     queryKey: ['tournament-matches', id],
@@ -62,7 +62,7 @@ export default function TournamentDetailScreen() {
   // Récupérer le statut de paiement de l'équipe de l'utilisateur
   const myTeamInTournament = useMemo(() => {
     if (!user) return null;
-    const myTeams = getUserTeams(user.id).filter(t => t.captainId === user.id);
+    const myTeams = getUserTeams(user.id).filter(tm => tm.captainId === user.id);
     return tournamentTeams.find(tt => myTeams.some(mt => mt.id === tt.teamId));
   }, [user, tournamentTeams, getUserTeams]);
 
@@ -78,8 +78,8 @@ export default function TournamentDetailScreen() {
     try {
       await refetchTournaments();
       if (id) {
-        const t = await tournamentsApi.getById(id);
-        setFetchedTournament(t);
+        const fetched = await tournamentsApi.getById(id);
+        setFetchedTournament(fetched);
       }
       await tournamentMatchesQuery?.refetch?.();
       await tournamentTeamsQuery?.refetch?.();
@@ -528,8 +528,8 @@ export default function TournamentDetailScreen() {
     if (!teamSearch.trim()) return teams;
     const q = teamSearch.toLowerCase();
     return teams.filter((tid: string) => {
-      const t = getTeamById(tid);
-      return t?.name?.toLowerCase().includes(q);
+      const team = getTeamById(tid);
+      return team?.name?.toLowerCase().includes(q);
     });
   }, [registeredTeamIds, teamSearch, getTeamById]);
 

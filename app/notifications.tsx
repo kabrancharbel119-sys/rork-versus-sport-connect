@@ -15,14 +15,20 @@ import type { Notification } from '@/types';
 export default function NotificationsScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { notifications, markAsRead, markAllAsRead, deleteNotification, getUnreadCount, refetchNotifications, notifyTeamRequest } = useNotifications();
+  const { notifications, markAsRead, markAllAsRead, deleteNotification, refetchNotifications, notifyTeamRequest } = useNotifications();
   const { teams, getPendingRequests, handleRequest, refetchTeams } = useTeams();
-  const { getUserById } = useUsers();
+  const { users } = useUsers();
   const [refreshing, setRefreshing] = React.useState(false);
   const [processingRequestId, setProcessingRequestId] = React.useState<string | null>(null);
 
+  const usersById = useMemo(() => {
+    const map = new Map<string, (typeof users)[number]>();
+    (users ?? []).forEach((u) => map.set(u.id, u));
+    return map;
+  }, [users]);
+
   const notificationsWithTeamRequests = useMemo(() => {
-    const list: (Notification & { _synthetic?: boolean; _teamId?: string; _requestId?: string; _requestUserId?: string })[] = [...notifications];
+    const list: (Notification & { _synthetic?: boolean; _teamId?: string; _requestId?: string; _requestUserId?: string })[] = notifications.filter((n) => n.type !== 'chat');
     if (!user) return list;
     for (const team of teams) {
       const isCaptain = team.captainId === user.id;
@@ -30,7 +36,8 @@ export default function NotificationsScreen() {
       const route = `/team/${team.id}`;
       const pending = getPendingRequests(team.id);
       for (const req of pending) {
-        const requesterName = getUserById(req.userId)?.fullName || getUserById(req.userId)?.username || 'Un joueur';
+        const requester = usersById.get(req.userId);
+        const requesterName = requester?.fullName || requester?.username || 'Un joueur';
         list.push({
           id: `team-req-${team.id}-${req.id}`,
           userId: user.id,
@@ -48,9 +55,9 @@ export default function NotificationsScreen() {
       }
     }
     return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [notifications, user, teams, getPendingRequests, getUserById]);
+  }, [notifications, user, teams, getPendingRequests, usersById]);
 
-  const unreadCount = getUnreadCount() + notificationsWithTeamRequests.filter((n) => n._synthetic).length;
+  const unreadCount = notificationsWithTeamRequests.filter((n) => !n.isRead).length;
 
   useFocusEffect(
     useCallback(() => {
@@ -153,7 +160,7 @@ export default function NotificationsScreen() {
           const requesterName = notification.message.split(' souhaite rejoindre')[0]?.trim();
           const matched = pending.find((req) => {
             if (requestIdFromData && req.id === requestIdFromData) return true;
-            const u = getUserById(req.userId);
+            const u = usersById.get(req.userId);
             const fullName = u?.fullName?.trim();
             const username = u?.username?.trim();
             return requesterName && (fullName === requesterName || username === requesterName);

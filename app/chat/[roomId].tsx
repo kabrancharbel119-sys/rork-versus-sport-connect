@@ -22,20 +22,26 @@ export default function ChatRoomScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const { user } = useAuth();
   const { chatRooms, getRoomMessages, sendMessage, markAsRead, removeParticipant, deleteMessage, isSending } = useChat();
-  const { getUserById } = useUsers();
+  const { users, getUserById } = useUsers();
   const { getTeamById } = useTeams();
   const [messageText, setMessageText] = useState('');
   const [roomSearchQuery, setRoomSearchQuery] = useState('');
   const [showSearchBar, setShowSearchBar] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [loadedUsers, setLoadedUsers] = useState<Map<string, any>>(new Map());
   const scrollViewRef = useRef<ScrollView>(null);
 
-  const getSenderName = (senderId: string) => {
-    if (senderId === user?.id) return 'Vous';
-    if (senderId === 'system') return 'Système';
-    const sender = getUserById(senderId);
-    return sender?.username || sender?.fullName || 'Utilisateur';
-  };
+  // Build users map with loaded users
+  const usersById = useMemo(() => {
+    const map = new Map();
+    (users ?? []).forEach((u) => map.set(u.id, u));
+    loadedUsers.forEach((u, id) => {
+      if (!map.has(id)) {
+        map.set(id, u);
+      }
+    });
+    return map;
+  }, [users, loadedUsers]);
 
   const room = chatRooms.find(r => r.id === roomId);
   const team = room?.teamId ? getTeamById(room.teamId) : null;
@@ -44,6 +50,48 @@ export default function ChatRoomScreen() {
   const canAccessChat = isDirectChat || !team || isTeamMember;
   
   const allMessages = getRoomMessages(roomId || '');
+
+  // Load missing users for messages
+  useEffect(() => {
+    const loadMissingUsers = async () => {
+      const senderIds = new Set<string>();
+      allMessages.forEach(msg => senderIds.add(msg.senderId));
+      if (room) {
+        room.participants.forEach(id => senderIds.add(id));
+      }
+
+      const newLoadedUsers = new Map(loadedUsers);
+      let hasNewUsers = false;
+
+      for (const senderId of senderIds) {
+        if (!usersById.has(senderId) && !newLoadedUsers.has(senderId)) {
+          try {
+            const userData = await getUserById(senderId);
+            if (userData) {
+              newLoadedUsers.set(senderId, userData);
+              hasNewUsers = true;
+            }
+          } catch (e) {
+            console.log('[ChatRoom] Failed to load user:', senderId);
+          }
+        }
+      }
+
+      if (hasNewUsers) {
+        setLoadedUsers(newLoadedUsers);
+      }
+    };
+
+    loadMissingUsers();
+  }, [allMessages, room?.participants, getUserById]);
+
+  const getSenderName = (senderId: string) => {
+    if (senderId === user?.id) return 'Vous';
+    if (senderId === 'system') return 'Système';
+    const sender = usersById.get(senderId);
+    return sender?.fullName || sender?.username || 'Utilisateur';
+  };
+
   const messages = useMemo(() => {
     if (!roomSearchQuery.trim()) return allMessages;
     const q = roomSearchQuery.toLowerCase().trim();
@@ -129,7 +177,11 @@ export default function ChatRoomScreen() {
   };
 
   const participantNames = room
-    ? room.participants.map((id) => (id === user?.id ? 'Vous' : getUserById(id)?.fullName || getUserById(id)?.username || id)).join(', ')
+    ? room.participants.map((id) => {
+        if (id === user?.id) return 'Vous';
+        const participant = usersById.get(id);
+        return participant?.fullName || participant?.username || id;
+      }).join(', ')
     : '';
 
   const handleSearchPress = () => {
@@ -328,6 +380,11 @@ export default function ChatRoomScreen() {
                 const showDateLabel = dateLabel !== lastDateLabel;
                 lastDateLabel = dateLabel;
 
+                // Check if we should show timestamp (different sender or time gap > 5 min)
+                const prevMessage = index > 0 ? messages[index - 1] : null;
+                const timeDiff = prevMessage ? (new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime()) / 60000 : 999;
+                const showTimestamp = !prevMessage || prevMessage.senderId !== message.senderId || timeDiff > 5;
+
                 const bubble = (
                   <View style={[
                     styles.messageBubble,
@@ -346,16 +403,13 @@ export default function ChatRoomScreen() {
                       <Text style={[
                         styles.messageText,
                         isOwnMessage && styles.ownMessageText
-                      ]}>
+                      ]}
+                        textBreakStrategy="simple"
+                        android_hyphenationFrequency="none"
+                      >
                         {message.content}
                       </Text>
                     )}
-                    <Text style={[
-                      styles.messageTime,
-                      isOwnMessage && styles.ownMessageTime
-                    ]}>
-                      {formatTime(message.createdAt)}
-                    </Text>
                   </View>
                 );
 
@@ -366,12 +420,17 @@ export default function ChatRoomScreen() {
                         <Text style={styles.dateLabelText}>{dateLabel}</Text>
                       </View>
                     )}
+                    {showTimestamp && (
+                      <Text style={styles.timestampLabel}>
+                        {formatTime(message.createdAt)}
+                      </Text>
+                    )}
                     <View style={[
                       styles.messageWrapper,
                       isOwnMessage ? styles.ownMessageWrapper : styles.otherMessageWrapper
                     ]}>
                       {!isOwnMessage && (
-                        <Avatar uri={getUserById(message.senderId)?.avatar} name={getSenderName(message.senderId)} size="small" />
+                        <Avatar uri={usersById.get(message.senderId)?.avatar} name={getSenderName(message.senderId)} size="small" />
                       )}
                       {canDelete ? (
                         <Pressable
@@ -403,7 +462,6 @@ export default function ChatRoomScreen() {
               })
               )}
             </ScrollView>
-
             <View style={styles.inputContainer}>
               <Pressable style={styles.attachButton} onPress={handleAttach} hitSlop={8}>
                 <ImageIcon size={22} color={Colors.text.muted} />
@@ -591,7 +649,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   messageBubble: {
-    maxWidth: '75%',
+    maxWidth: '85%',
     padding: 12,
     borderRadius: 16,
   },
@@ -609,10 +667,14 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     marginBottom: 4,
   },
+  messageContentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    flexWrap: 'wrap',
+  },
   messageText: {
     color: Colors.text.primary,
     fontSize: 15,
-    lineHeight: 20,
   },
   messageImage: {
     width: 200,
@@ -629,8 +691,19 @@ const styles = StyleSheet.create({
     marginTop: 6,
     alignSelf: 'flex-end',
   },
+  messageTimeInline: {
+    marginTop: 0,
+    marginLeft: 4,
+    alignSelf: 'flex-end',
+  },
   ownMessageTime: {
     color: 'rgba(255,255,255,0.7)',
+  },
+  timestampLabel: {
+    color: Colors.text.muted,
+    fontSize: 11,
+    textAlign: 'center',
+    marginVertical: 8,
   },
   inputContainer: {
     flexDirection: 'row',

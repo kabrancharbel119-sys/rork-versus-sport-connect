@@ -52,9 +52,9 @@ export class ErrorBoundary extends Component<Props, State> {
             <Text style={styles.message}>
               L&apos;application a rencontré un problème inattendu. Veuillez réessayer.
             </Text>
-            {__DEV__ && this.state.error && (
-              <ScrollView style={styles.errorDetails} horizontal>
-                <Text style={styles.errorText}>{this.state.error.toString()}</Text>
+            {this.state.error && (
+              <ScrollView style={styles.errorDetails}>
+                <Text style={styles.errorText} selectable>{this.state.error.toString()}{'\n\n'}{this.state.error.stack}</Text>
               </ScrollView>
             )}
             <TouchableOpacity style={styles.retryButton} onPress={this.handleRetry} activeOpacity={0.8}>
@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   errorDetails: {
-    maxHeight: 100,
+    maxHeight: 200,
     backgroundColor: Colors.background.card,
     borderRadius: 8,
     padding: 12,
