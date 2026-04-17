@@ -14,6 +14,14 @@ export default function ChooseTypeScreen() {
   const slideLeft = useRef(new Animated.Value(-40)).current;
   const slideRight = useRef(new Animated.Value(40)).current;
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/auth/login');
+    }
+  };
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
@@ -27,7 +35,7 @@ export default function ChooseTypeScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={styles.container}>
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
             <ArrowLeft size={22} color={Colors.text.primary} />
           </TouchableOpacity>
         </View>
@@ -151,10 +159,25 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  headerRow: { paddingHorizontal: 16, paddingTop: 56, paddingBottom: 8 },
+  headerRow: {
+    paddingHorizontal: 16, paddingTop: 56, paddingBottom: 8,
+    zIndex: 10,
+    ...Platform.select({
+      web: {
+        position: 'relative' as any,
+        zIndex: 10,
+      },
+    }),
+  },
   backBtn: {
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center',
+    zIndex: 20,
+    ...Platform.select({
+      web: {
+        cursor: 'pointer' as any,
+      },
+    }),
   },
   scrollView: {
     flex: 1,
