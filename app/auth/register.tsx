@@ -112,7 +112,8 @@ export default function RegisterScreen() {
         >
           <ScrollView
             ref={scrollViewRef}
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: 320 }]}
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
@@ -257,8 +258,10 @@ const styles = StyleSheet.create({
   keyboardView: {
     flex: 1,
   },
+  scrollView: {
+    flex: 1,
+  },
   scrollContent: {
-    flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 60,
     paddingBottom: 40,
