@@ -105,11 +105,149 @@ export default function RegisterScreen() {
         colors={[Colors.background.dark, '#0D1420']}
         style={styles.container}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.keyboardView}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 30}
-        >
+        {Platform.OS === 'ios' ? (
+          <KeyboardAvoidingView
+            behavior="padding"
+            style={styles.keyboardView}
+            keyboardVerticalOffset={80}
+          >
+            <ScrollView
+              ref={scrollViewRef}
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            >
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={() => router.back()}
+              >
+                <ArrowLeft size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+
+              <View style={styles.header}>
+                <Image
+                  source={{ uri: 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/bb74j32pntaehgnts84r7' }}
+                  style={styles.logo}
+                  contentFit="contain"
+                />
+                <Text style={styles.title}>Rejoignez VS</Text>
+                <Text style={styles.subtitle}>Créez votre compte</Text>
+              </View>
+
+              <View style={styles.form}>
+                <Input
+                  scrollViewRef={scrollViewRef}
+                  testID="input-email"
+                  label="Email"
+                  placeholder="exemple@email.com"
+                  value={formData.email}
+                  onChangeText={(v) => updateField('email', v)}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  error={errors.email}
+                  icon={<Mail size={20} color={Colors.text.muted} />}
+                />
+
+                <Input
+                  scrollViewRef={scrollViewRef}
+                  testID="input-username"
+                  label="Nom d'utilisateur"
+                  placeholder="kouame_yao"
+                  value={formData.username}
+                  onChangeText={(v) => updateField('username', v)}
+                  autoCapitalize="none"
+                  error={errors.username}
+                  icon={<User size={20} color={Colors.text.muted} />}
+                />
+
+                <Input
+                  scrollViewRef={scrollViewRef}
+                  testID="input-firstname"
+                  label="Prénom"
+                  placeholder="Kouamé"
+                  value={formData.firstName}
+                  onChangeText={(v) => updateField('firstName', v)}
+                  autoCapitalize="words"
+                  error={errors.firstName}
+                  icon={<User size={20} color={Colors.text.muted} />}
+                />
+
+                <Input
+                  scrollViewRef={scrollViewRef}
+                  testID="input-lastname"
+                  label="Nom"
+                  placeholder="Yao"
+                  value={formData.lastName}
+                  onChangeText={(v) => updateField('lastName', v)}
+                  autoCapitalize="words"
+                  error={errors.lastName}
+                  icon={<User size={20} color={Colors.text.muted} />}
+                />
+
+                <Input
+                  scrollViewRef={scrollViewRef}
+                  testID="input-password"
+                  label="Mot de passe"
+                  placeholder="••••••••"
+                  value={formData.password}
+                  onChangeText={(v) => updateField('password', v)}
+                  secureTextEntry
+                  error={errors.password}
+                  icon={<Lock size={20} color={Colors.text.muted} />}
+                />
+
+                <Input
+                  scrollViewRef={scrollViewRef}
+                  testID="input-confirm-password"
+                  label="Confirmer le mot de passe"
+                  placeholder="••••••••"
+                  value={formData.confirmPassword}
+                  onChangeText={(v) => updateField('confirmPassword', v)}
+                  secureTextEntry
+                  error={errors.confirmPassword}
+                  icon={<Lock size={20} color={Colors.text.muted} />}
+                />
+
+                <Input
+                  scrollViewRef={scrollViewRef}
+                  testID="input-referral"
+                  label="Code de parrainage (optionnel)"
+                  placeholder="VS123ABC"
+                  value={formData.referralCode}
+                  onChangeText={(v) => updateField('referralCode', v)}
+                  autoCapitalize="characters"
+                />
+
+                {(errors.general || registerError) && (
+                  <View style={styles.errorContainer}>
+                    <Text style={styles.errorText}>{errors.general || registerError}</Text>
+                  </View>
+                )}
+
+                <Button
+                  testID="btn-register"
+                  title="Créer mon compte"
+                  onPress={handleRegister}
+                  loading={isRegisterLoading}
+                  disabled={isRegisterLoading}
+                  variant="orange"
+                  size="large"
+                  style={styles.submitButton}
+                  icon={<ArrowRight size={20} color="#fff" />}
+                />
+              </View>
+
+              <View style={styles.footer}>
+                <Text style={styles.footerText}>Déjà un compte ?</Text>
+                <TouchableOpacity onPress={() => router.replace('/auth/login')}>
+                  <Text style={styles.footerLink}>Se connecter</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        ) : (
           <ScrollView
             ref={scrollViewRef}
             style={styles.scrollView}
@@ -245,7 +383,7 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             </View>
           </ScrollView>
-        </KeyboardAvoidingView>
+        )}
       </LinearGradient>
     </>
   );
@@ -262,6 +400,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 60,
     paddingBottom: 40,
