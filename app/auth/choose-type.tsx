@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Animated, Dimensions } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Animated, Dimensions, ScrollView, Platform } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Users, Swords, Trophy, MapPin, Calendar, DollarSign, BarChart3, Shield } from 'lucide-react-native';
@@ -32,7 +32,12 @@ export default function ChooseTypeScreen() {
           </TouchableOpacity>
         </View>
 
-        <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={true}
+        >
+          <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
           <Text style={styles.title}>Quel type de compte souhaitez-vous créer ?</Text>
           <Text style={styles.subtitle}>Ce choix détermine votre expérience sur la plateforme</Text>
 
@@ -130,19 +135,48 @@ export default function ChooseTypeScreen() {
             </TouchableOpacity>
           </Animated.View>
         </Animated.View>
+        </ScrollView>
       </LinearGradient>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: {
+    flex: 1,
+    ...Platform.select({
+      web: {
+        height: '100vh' as any,
+        overflow: 'hidden' as any,
+      },
+    }),
+  },
   headerRow: { paddingHorizontal: 16, paddingTop: 56, paddingBottom: 8 },
   backBtn: {
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center',
   },
-  content: { flex: 1, paddingHorizontal: 24, paddingBottom: 30 },
+  scrollView: {
+    flex: 1,
+    ...Platform.select({
+      web: {
+        height: 'calc(100vh - 70px)' as any,
+        overflowY: 'scroll' as any,
+        scrollbarWidth: 'thin' as any,
+      },
+    }),
+  },
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 30,
+    minHeight: '100%',
+    ...Platform.select({
+      web: {
+        minHeight: 'calc(100vh - 100px)' as any,
+      },
+    }),
+  },
+  content: { flex: 1 },
   title: {
     color: Colors.text.primary, fontSize: 24, fontWeight: '800',
     textAlign: 'center', marginBottom: 6, letterSpacing: -0.5,
