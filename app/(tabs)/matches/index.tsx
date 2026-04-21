@@ -88,8 +88,8 @@ export default function MatchesScreen() {
       return '-';
     }
   };
-  const getStatusColor = (status: string) => ({ open: Colors.status.success, confirmed: Colors.primary.blue, in_progress: Colors.primary.orange }[status] || Colors.text.muted);
-  const getStatusLabel = (status: string) => ({ open: 'Ouvert', confirmed: 'Confirmé', in_progress: 'En cours', completed: 'Terminé' }[status] || status);
+  const getStatusColor = (status: string) => ({ venue_pending: Colors.status.warning, open: Colors.status.success, confirmed: Colors.primary.blue, in_progress: Colors.primary.orange }[status] || Colors.text.muted);
+  const getStatusLabel = (status: string) => ({ venue_pending: 'Terrain en attente', open: 'Ouvert', confirmed: 'Confirmé', in_progress: 'En cours', completed: 'Terminé', cancelled: 'Annulé' }[status] || status);
 
   const hasActiveFilters = filters.sport !== 'all' || filters.level !== 'all' || filters.ambiance !== 'all' || filters.matchType !== 'all';
 
@@ -134,6 +134,12 @@ export default function MatchesScreen() {
         </View>
         {match.venue && (
           <View style={styles.matchDetail}><MapPin size={16} color={Colors.text.muted} /><Text style={styles.matchDetailText}>{match.venue.name}</Text></View>
+        )}
+        {match.status === 'venue_pending' && (
+          <View style={styles.venuePendingBanner}>
+            <Clock size={13} color={Colors.status.warning} />
+            <Text style={styles.venuePendingText}>En attente de confirmation du gestionnaire du terrain</Text>
+          </View>
         )}
         {creator && <Text style={styles.organizerText}>Organisé par {creator.fullName || creator.username}</Text>}
         <View style={styles.matchFooter}>
@@ -400,4 +406,6 @@ const styles = StyleSheet.create({
   historyRowVenue: { color: Colors.text.muted, fontSize: 13, marginTop: 4 },
   historyScoreBadge: { backgroundColor: Colors.primary.blue, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
   historyScoreText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' as const },
+  venuePendingBanner: { flexDirection: 'row' as const, alignItems: 'center' as const, backgroundColor: `${Colors.status.warning}18`, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 5, marginTop: 6, gap: 5 },
+  venuePendingText: { color: Colors.status.warning, fontSize: 11, fontWeight: '500' as const, flex: 1 },
 });

@@ -121,35 +121,32 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
         throw new Error('Utilisateur non connecté');
       }
       
-      try {
-        const result = await matchesApi.create({
-          sport: data.sport,
-          format: data.format,
-          type: data.type,
-          venueId: data.venue.id,
-          dateTime: data.dateTime.toISOString(),
-          duration: data.duration,
-          level: data.level,
-          ambiance: data.ambiance,
-          maxPlayers: data.maxPlayers,
-          homeTeamId: data.homeTeamId,
-          awayTeamId: data.awayTeamId,
-          tournamentId: data.tournamentId,
-          roundLabel: data.roundLabel,
-          entryFee: data.entryFee,
-          prize: data.prize,
-          needsPlayers: data.needsPlayers ?? true,
-          lat: data.location?.latitude,
-          lng: data.location?.longitude,
-        }, userId);
-        queryClient.invalidateQueries({ queryKey: ['matches'] });
-        return result;
-      } catch (err: any) {
-        console.error('[Matches] Création échouée (Supabase) – le match ne sera pas visible pour les autres:', err?.message ?? err);
-        // Ne pas sauver en local : sinon le match n'existe que pour cet utilisateur.
-        // On propage l'erreur pour que l'UI affiche un message et que l'utilisateur puisse réessayer.
-        throw err;
-      }
+      const result = await matchesApi.create({
+        sport: data.sport,
+        format: data.format,
+        type: data.type,
+        venueId: data.venue.id,
+        dateTime: (() => {
+          const d = data.dateTime;
+          const pad = (n: number) => String(n).padStart(2, '0');
+          return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+        })(),
+        duration: data.duration,
+        level: data.level,
+        ambiance: data.ambiance,
+        maxPlayers: data.maxPlayers,
+        homeTeamId: data.homeTeamId,
+        awayTeamId: data.awayTeamId,
+        tournamentId: data.tournamentId,
+        roundLabel: data.roundLabel,
+        entryFee: data.entryFee,
+        prize: data.prize,
+        needsPlayers: data.needsPlayers ?? true,
+        lat: data.location?.latitude,
+        lng: data.location?.longitude,
+      }, userId);
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      return result;
     },
   });
 
@@ -229,7 +226,7 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
   
   const getUpcomingMatches = useCallback(() => {
     return matches
-      .filter(m => m.status === 'open' || m.status === 'confirmed')
+      .filter(m => m.status === 'open' || m.status === 'confirmed' || m.status === 'venue_pending')
       .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
   }, [matches]);
   
@@ -245,7 +242,7 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
 
   const getMatchesNeedingPlayers = useCallback((userLocation?: UserLocation, radiusKm: number = 50) => {
     return matches.filter(m => {
-      if (m.status !== 'open' || !m.needsPlayers || m.registeredPlayers.length >= m.maxPlayers) return false;
+      if ((m.status !== 'open' && m.status !== 'venue_pending') || !m.needsPlayers || m.registeredPlayers.length >= m.maxPlayers) return false;
       if (!userLocation || !m.location) return true;
       
       const R = 6371;

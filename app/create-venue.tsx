@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, KeyboardAvoidingView, Platform, Switch, Image } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, KeyboardAvoidingView, Platform, Switch } from 'react-native';
+import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,6 +11,7 @@ import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { venuesApi } from '@/lib/api/venues';
 import { Button } from '@/components/Button';
+import { uploadVenueImage } from '@/lib/uploadImage';
 import type { Sport } from '@/types';
 
 const ALL_SPORTS: Sport[] = ['football', 'basketball', 'volleyball', 'tennis', 'handball', 'rugby', 'badminton', 'tabletennis', 'padel', 'squash', 'futsal', 'beachvolleyball'];
@@ -58,12 +60,14 @@ export default function CreateVenueScreen() {
     amenities: [] as string[],
     images: [] as string[],
     autoApprove: true,
+    cancellationHours: '24',
     capacity: '',
     surfaceType: '',
     rules: '',
     openingHours: DEFAULT_HOURS,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const createMutation = useMutation({
     mutationFn: () => venuesApi.create(user!.id, {
@@ -78,6 +82,7 @@ export default function CreateVenueScreen() {
       amenities: formData.amenities,
       images: formData.images,
       autoApprove: formData.autoApprove,
+      cancellationHours: parseInt(formData.cancellationHours) || 24,
       capacity: formData.capacity ? parseInt(formData.capacity) : undefined,
       surfaceType: formData.surfaceType || undefined,
       rules: formData.rules.trim() || undefined,
@@ -119,10 +124,16 @@ export default function CreateVenueScreen() {
   };
 
   const pickVenuePhoto = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission requise', 'Autorisez l’accès à la galerie pour ajouter des photos.');
-      return;
+    if (Platform.OS !== 'web') {
+      const { status, canAskAgain } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        if (!canAskAgain) {
+          Alert.alert('Permission refusée', 'Autorisez l\'accès aux photos dans les réglages de votre téléphone.');
+        } else {
+          Alert.alert('Permission requise', 'Autorisez l\'accès à la galerie pour ajouter des photos.');
+        }
+        return;
+      }
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -132,11 +143,19 @@ export default function CreateVenueScreen() {
     });
 
     if (result.canceled || !result.assets?.[0]?.uri) return;
-    const uri = result.assets[0].uri;
-    setFormData(prev => ({
-      ...prev,
-      images: prev.images.includes(uri) ? prev.images : [...prev.images, uri],
-    }));
+    const localUri = result.assets[0].uri;
+    setUploadingPhoto(true);
+    try {
+      const publicUrl = await uploadVenueImage(localUri, user!.id);
+      setFormData(prev => ({
+        ...prev,
+        images: prev.images.includes(publicUrl) ? prev.images : [...prev.images, publicUrl],
+      }));
+    } catch (err: any) {
+      Alert.alert('Erreur upload', err.message || 'Impossible de télécharger la photo.');
+    } finally {
+      setUploadingPhoto(false);
+    }
   };
 
   const removeVenuePhoto = (index: number) => {
@@ -246,7 +265,7 @@ export default function CreateVenueScreen() {
               />
 
               <Text style={styles.sectionTitle}>Photos du lieu</Text>
-              <TouchableOpacity style={styles.photoAddButton} onPress={pickVenuePhoto}>
+              <TouchableOpacity style={[styles.photoAddButton, uploadingPhoto && { opacity: 0.5 }]} onPress={pickVenuePhoto} disabled={uploadingPhoto}>
                 <Plus size={16} color={Colors.text.primary} />
                 <Text style={styles.photoAddText}>Ajouter une photo</Text>
               </TouchableOpacity>
@@ -257,7 +276,7 @@ export default function CreateVenueScreen() {
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroller}>
                   {formData.images.map((uri, idx) => (
                     <View key={`${uri}-${idx}`} style={styles.photoCard}>
-                      <Image source={{ uri }} style={styles.photoPreview} />
+                      <Image source={uri} style={styles.photoPreview} contentFit="cover" />
                       <TouchableOpacity style={styles.photoRemoveBtn} onPress={() => removeVenuePhoto(idx)}>
                         <X size={14} color="#FFFFFF" />
                       </TouchableOpacity>
@@ -444,6 +463,17 @@ export default function CreateVenueScreen() {
                   thumbColor="#FFFFFF"
                 />
               </View>
+
+              <Text style={styles.label}>Délai d'annulation (heures avant le créneau)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ex: 24"
+                placeholderTextColor={Colors.text.muted}
+                value={formData.cancellationHours}
+                onChangeText={v => updateField('cancellationHours', v.replace(/[^0-9]/g, ''))}
+                keyboardType="numeric"
+              />
+              <Text style={styles.switchHint}>Le joueur ne pourra plus annuler après ce délai avant le début du créneau.</Text>
 
               <Button
                 title="Créer le terrain"

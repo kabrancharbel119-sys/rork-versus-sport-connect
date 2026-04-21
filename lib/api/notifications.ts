@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 import type { Notification } from '@/types';
 
 export interface NotificationRow {
@@ -154,7 +154,8 @@ export const notificationsApi = {
   }) {
     console.log('[NotificationsAPI] Sending notification to:', targetUserId);
     
-    const { data, error } = await (supabase
+    const client = (supabaseAdmin ?? supabase) as typeof supabase;
+    const { data, error } = await (client
       .from('notifications')
       .insert({
         user_id: targetUserId,
@@ -197,7 +198,8 @@ export const notificationsApi = {
       data: notification.data ?? null,
     }));
 
-    const { error } = await (supabase.from('notifications').insert(notifications as any) as any);
+    const client = (supabaseAdmin ?? supabase) as typeof supabase;
+    const { error } = await (client.from('notifications').insert(notifications as any) as any);
     if (error) throw error;
 
     const { data: pushTokens } = await (supabase

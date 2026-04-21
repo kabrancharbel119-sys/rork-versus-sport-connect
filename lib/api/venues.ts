@@ -24,6 +24,7 @@ export interface VenueRow {
   capacity: number | null;
   surface_type: string | null;
   rules: string | null;
+  cancellation_hours: number | null;
   created_at: string;
 }
 
@@ -65,6 +66,7 @@ export const mapVenueRowToVenue = (row: VenueRow): Venue => ({
   capacity: row.capacity ?? undefined,
   surfaceType: row.surface_type ?? undefined,
   rules: row.rules ?? undefined,
+  cancellationHours: row.cancellation_hours ?? 24,
 });
 
 export const mapBookingRowToBooking = (row: BookingRow): Booking => ({
@@ -264,7 +266,9 @@ export const venuesApi = {
     const venue = await this.getById(booking.venueId);
     const selectedDayOfWeek = new Date(`${booking.date}T00:00:00`).getDay();
     const openingHours = Array.isArray(venue.openingHours) ? venue.openingHours : [];
-    const dayHours = openingHours.find((d: any) => Number(d?.dayOfWeek) === selectedDayOfWeek);
+    const dayHours = openingHours.length > 0
+      ? openingHours.find((d: any) => Number(d?.dayOfWeek) === selectedDayOfWeek)
+      : undefined;
 
     // Validate input
     const startHour = parseInt(booking.startTime.split(':')[0], 10);
@@ -273,23 +277,20 @@ export const venuesApi = {
       throw new Error('Heures de début et fin invalides. Vérifiez votre sélection.');
     }
 
-    if (dayHours?.isClosed) {
+    // Only block if opening hours are configured AND day is explicitly closed
+    if (dayHours !== undefined && dayHours?.isClosed === true) {
       throw new Error('Ce terrain est fermé le jour sélectionné.');
     }
 
-    let minHour = 8;
-    let maxHour = 22;
-    if (dayHours && !dayHours.isClosed) {
+    // Only enforce hour limits if opening hours are configured for this day
+    if (dayHours !== undefined && !dayHours.isClosed) {
       const parsedOpen = parseInt(String(dayHours.openTime || '').split(':')[0], 10);
       const parsedClose = parseInt(String(dayHours.closeTime || '').split(':')[0], 10);
       if (!isNaN(parsedOpen) && !isNaN(parsedClose) && parsedOpen < parsedClose) {
-        minHour = parsedOpen;
-        maxHour = parsedClose;
+        if (startHour < parsedOpen || endHour > parsedClose) {
+          throw new Error(`Les réservations sont possibles entre ${parsedOpen}h et ${parsedClose}h.`);
+        }
       }
-    }
-
-    if (startHour < minHour || endHour > maxHour) {
-      throw new Error(`Les réservations sont possibles entre ${minHour}h et ${maxHour}h.`);
     }
 
     // Check for conflicts using numeric comparison
@@ -406,37 +407,6 @@ export const venuesApi = {
     return data;
   },
 
-  async cancelBooking(bookingId: string, userId: string) {
-    console.log('[VenuesAPI] Cancelling booking:', bookingId);
-    
-    const { error } = await ((supabase.from('bookings') as any)
-      .update({ status: 'cancelled' })
-      .eq('id', bookingId)
-      .eq('user_id', userId));
-
-    if (error) {
-      console.error('[VenuesAPI] Cancel booking error:', error);
-      throw new Error('Impossible d\'annuler cette réservation. Veuillez réessayer.');
-    }
-    return { success: true };
-  },
-
-  async getUserBookings(userId: string) {
-    console.log('[VenuesAPI] Getting bookings for user:', userId);
-    
-    const { data, error } = await (supabase
-      .from('bookings')
-      .select('*')
-      .eq('user_id', userId)
-      .order('date', { ascending: false }) as any);
-
-    if (error) {
-      console.error('[VenuesAPI] Get user bookings error:', error);
-      throw new Error('Impossible de charger vos réservations. Vérifiez votre connexion.');
-    }
-    return ((data || []) as BookingRow[]).map(mapBookingRowToBooking);
-  },
-
   async getNearby(lat: number, lng: number, radiusKm: number = 20) {
     console.log('[VenuesAPI] Getting nearby venues');
     
@@ -486,6 +456,7 @@ export const venuesApi = {
     capacity?: number;
     surfaceType?: string;
     rules?: string;
+    cancellationHours?: number;
   }) {
     console.log('[VenuesAPI] Creating venue for owner:', ownerId);
     const { data, error } = await (supabase
@@ -511,6 +482,7 @@ export const venuesApi = {
         capacity: venue.capacity || null,
         surface_type: venue.surfaceType || null,
         rules: venue.rules || null,
+        cancellation_hours: venue.cancellationHours ?? 24,
       } as any)
       .select()
       .single() as any);
@@ -537,6 +509,7 @@ export const venuesApi = {
     capacity: number;
     surfaceType: string;
     rules: string;
+    cancellationHours: number;
   }>) {
     console.log('[VenuesAPI] Updating venue:', venueId);
     const payload: Record<string, unknown> = {};
@@ -558,6 +531,7 @@ export const venuesApi = {
     if (updates.capacity !== undefined) payload.capacity = updates.capacity;
     if (updates.surfaceType !== undefined) payload.surface_type = updates.surfaceType;
     if (updates.rules !== undefined) payload.rules = updates.rules;
+    if (updates.cancellationHours !== undefined) payload.cancellation_hours = updates.cancellationHours;
 
     const { data, error } = await (supabase
       .from('venues')
@@ -626,6 +600,99 @@ export const venuesApi = {
     return mapped;
   },
 
+  async getUserBookings(userId: string) {
+    console.log('[VenuesAPI] Getting bookings for user:', userId);
+    const { data, error } = await (supabase
+      .from('bookings')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false }) as any);
+    if (error) throw error;
+    return ((data || []) as BookingRow[]).map(mapBookingRowToBooking);
+  },
+
+  async cancelBooking(bookingId: string, userId: string) {
+    console.log('[VenuesAPI] User cancelling booking:', bookingId);
+
+    // Fetch the booking
+    const { data: bookingData, error: bookingErr } = await (supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', bookingId)
+      .eq('user_id', userId)
+      .single() as any);
+    if (bookingErr || !bookingData) throw new Error('Réservation introuvable.');
+
+    const booking = mapBookingRowToBooking(bookingData as BookingRow);
+
+    if (booking.status === 'cancelled' || booking.status === 'rejected' || booking.status === 'completed') {
+      throw new Error('Cette réservation ne peut plus être annulée.');
+    }
+
+    // Fetch venue to get cancellationHours
+    const venue = await this.getById(booking.venueId);
+    const cancellationHours = venue.cancellationHours ?? 24;
+
+    // Parse booking start datetime
+    const [y, m, d] = booking.date.split('-').map(Number);
+    const startHour = parseInt((booking.startTime || '00').split('T').pop()!.split(':')[0], 10);
+    const bookingStart = new Date(y, m - 1, d, startHour, 0, 0);
+    const now = new Date();
+    const hoursUntilStart = (bookingStart.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+    if (hoursUntilStart < cancellationHours) {
+      throw new Error(
+        `Annulation impossible : le délai de ${cancellationHours}h avant le créneau est dépassé.\n` +
+        `Il reste ${Math.max(0, Math.floor(hoursUntilStart))}h avant le début.`
+      );
+    }
+
+    // Cancel the booking
+    const { error: updateErr } = await (supabase
+      .from('bookings')
+      .update({ status: 'cancelled' } as any)
+      .eq('id', bookingId)
+      .eq('user_id', userId) as any);
+    if (updateErr) throw new Error('Impossible d\'annuler la réservation : ' + updateErr.message);
+
+    // Cascade to linked match if any
+    if (booking.matchId) {
+      try {
+        await (supabase
+          .from('matches')
+          .update({ status: 'cancelled' } as any)
+          .eq('id', booking.matchId)
+          .in('status', ['venue_pending', 'open', 'confirmed']) as any);
+      } catch (e: any) {
+        console.warn('[VenuesAPI] Match cascade on user cancel failed (non-blocking):', e?.message);
+      }
+    }
+
+    // Notify venue owner
+    if (venue.ownerId) {
+      try {
+        const startH = parseInt((booking.startTime || '00').split('T').pop()!.split(':')[0], 10);
+        const endH = parseInt((booking.endTime || '00').split('T').pop()!.split(':')[0], 10);
+        await notificationsApi.send(venue.ownerId, {
+          type: 'booking',
+          title: '🚫 Réservation annulée par le joueur',
+          message: `${venue.name} — ${booking.date} ${startH}h-${endH}h a été annulée par le joueur.`,
+          data: {
+            bookingId: booking.id,
+            venueId: venue.id,
+            venueName: venue.name,
+            date: booking.date,
+            status: 'cancelled',
+          },
+        });
+      } catch (e: any) {
+        console.warn('[VenuesAPI] Owner cancel notification failed (non-blocking):', e?.message);
+      }
+    }
+
+    return { success: true, cancellationHours };
+  },
+
   async updateBookingStatus(bookingId: string, status: BookingStatus) {
     console.log('[VenuesAPI] Updating booking status:', bookingId, status);
     let { data, error } = await (supabase
@@ -657,38 +724,64 @@ export const venuesApi = {
 
     const booking = mapBookingRowToBooking(data as BookingRow);
 
+    // Cascade booking status to linked match (venue_pending -> open / cancelled)
+    if (booking.matchId) {
+      try {
+        const newMatchStatus = resolvedStatus === 'confirmed' ? 'open'
+          : (resolvedStatus === 'rejected' || resolvedStatus === 'cancelled') ? 'cancelled'
+          : null;
+        if (newMatchStatus) {
+          await (supabase
+            .from('matches')
+            .update({ status: newMatchStatus } as any)
+            .eq('id', booking.matchId)
+            .eq('status', 'venue_pending') as any);
+        }
+      } catch (matchErr: any) {
+        console.warn('[VenuesAPI] Match status cascade failed (non-blocking):', matchErr?.message);
+      }
+    }
+
     // Send notification to user about status change
     try {
       const venue = await this.getById(booking.venueId);
       const startH = parseHourFromTimestamp(booking.startTime);
       const endH = parseHourFromTimestamp(booking.endTime);
       const timeRange = `${startH}h-${endH}h`;
+      const isMatchBooking = !!booking.matchId;
+      const context = isMatchBooking ? ' (Match)' : '';
 
       if (resolvedStatus === 'confirmed') {
         await notificationsApi.send(booking.userId, {
           type: 'booking',
-          title: '✅ Réservation confirmée',
-          message: `Votre réservation pour ${venue.name} le ${booking.date} à ${timeRange} a été approuvée !`,
+          title: `✅ Terrain confirmé${context}`,
+          message: isMatchBooking
+            ? `Le gestionnaire de ${venue.name} a approuvé votre créneau du ${booking.date} à ${timeRange}. Votre match est maintenant ouvert aux inscriptions !`
+            : `Votre réservation pour ${venue.name} le ${booking.date} à ${timeRange} a été approuvée !`,
           data: {
             bookingId: booking.id,
             venueId: venue.id,
             venueName: venue.name,
             date: booking.date,
+            ...(booking.matchId ? { matchId: booking.matchId } : {}),
             status: 'confirmed',
           },
         });
         console.log('[VenuesAPI] Confirmation notification sent to user');
-      } else if (status === 'rejected') {
+      } else if (resolvedStatus === 'rejected' || resolvedStatus === 'cancelled') {
         await notificationsApi.send(booking.userId, {
           type: 'booking',
-          title: '❌ Réservation refusée',
-          message: `Votre demande de réservation pour ${venue.name} le ${booking.date} à ${timeRange} a été refusée.`,
+          title: `❌ Terrain refusé${context}`,
+          message: isMatchBooking
+            ? `Le gestionnaire de ${venue.name} a refusé votre créneau du ${booking.date} à ${timeRange}. Votre match a été annulé.`
+            : `Votre demande de réservation pour ${venue.name} le ${booking.date} à ${timeRange} a été refusée.`,
           data: {
             bookingId: booking.id,
             venueId: venue.id,
             venueName: venue.name,
             date: booking.date,
-            status: 'rejected',
+            ...(booking.matchId ? { matchId: booking.matchId } : {}),
+            status: resolvedStatus,
           },
         });
         console.log('[VenuesAPI] Rejection notification sent to user');

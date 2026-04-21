@@ -11,6 +11,7 @@ import { signUp, signIn, signOut, getCurrentUser } from '@/lib/api/auth';
 import { supabase } from '@/lib/supabase';
 import { usersApi } from '@/lib/api/users';
 import { logger } from '@/lib/logger';
+import { uploadAvatarImage } from '@/lib/uploadImage';
 
 const AUTH_STORAGE_KEY = 'vs_auth';
 const USER_STORAGE_KEY = 'vs_user';
@@ -331,10 +332,15 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const deleteAccount = useCallback((confirmText: string) => deleteAccountMutation.mutateAsync(confirmText), [deleteAccountMutation]);
 
   const pickAvatar = useCallback(async () => {
-    const uri = await pickAvatarMutation.mutateAsync();
-    await updateProfileMutation.mutateAsync({ avatar: uri });
-    return uri;
-  }, [pickAvatarMutation, updateProfileMutation]);
+    const localUri = await pickAvatarMutation.mutateAsync();
+    const userId = authState.user?.id;
+    let avatarUrl = localUri;
+    if (userId && (localUri.startsWith('file://') || localUri.startsWith('blob:') || localUri.startsWith('data:') || localUri.startsWith('ph://'))) {
+      avatarUrl = await uploadAvatarImage(localUri, userId);
+    }
+    await updateProfileMutation.mutateAsync({ avatar: avatarUrl });
+    return avatarUrl;
+  }, [pickAvatarMutation, updateProfileMutation, authState.user?.id]);
 
   const addSport = useCallback(async (sport: UserSport) => {
     if (!authState.user) return;

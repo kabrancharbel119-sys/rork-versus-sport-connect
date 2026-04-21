@@ -196,7 +196,7 @@ export const matchesApi = {
       sport: matchData.sport,
       format: matchData.format,
       type: matchData.type,
-      status: 'open',
+      status: (venue as any).auto_approve === false ? 'venue_pending' : 'open',
       venue_id: matchData.venueId,
       venue_data: {
         id: venueRow.id,
@@ -230,7 +230,37 @@ export const matchesApi = {
       .single() as any);
     
     if (error) throw error;
-    return mapMatchRowToMatch(data as MatchRow);
+    const createdMatch = mapMatchRowToMatch(data as MatchRow);
+
+    // Create a booking — if this fails, roll back the match and surface the error
+    try {
+      const matchDate = new Date(matchData.dateTime);
+      // Use local date parts to avoid UTC offset shifting the date/hour
+      const dateStr = `${matchDate.getFullYear()}-${String(matchDate.getMonth() + 1).padStart(2, '0')}-${String(matchDate.getDate()).padStart(2, '0')}`;
+      const startHour = matchDate.getHours();
+      const durationHours = Math.ceil((matchData.duration ?? 90) / 60);
+      const endHour = startHour + durationHours;
+
+      const { venuesApi } = await import('@/lib/api/venues');
+      await venuesApi.book(cleanUserId, {
+        venueId: matchData.venueId,
+        date: dateStr,
+        startTime: `${String(startHour).padStart(2, '0')}:00`,
+        endTime: `${String(endHour).padStart(2, '0')}:00`,
+        matchId: (data as any).id,
+      });
+    } catch (bookingErr: any) {
+      logger.warn('MatchesAPI', 'Booking failed — rolling back match:', bookingErr?.message);
+      // Roll back the match so we don't leave orphaned matches
+      try {
+        await (supabase.from('matches').delete().eq('id', (data as any).id) as any);
+      } catch (rollbackErr: any) {
+        logger.warn('MatchesAPI', 'Rollback failed (non-blocking):', rollbackErr?.message);
+      }
+      throw new Error(bookingErr?.message ?? 'Impossible de réserver le créneau sur ce terrain.');
+    }
+
+    return createdMatch;
   },
 
   async search(params: {

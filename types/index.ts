@@ -148,7 +148,7 @@ export interface Match {
   sport: Sport;
   format: string;
   type: 'friendly' | 'ranked' | 'tournament';
-  status: 'open' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'venue_pending' | 'open' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
   homeTeam?: Team;
   homeTeamId?: string;
   awayTeam?: Team;
@@ -216,6 +216,7 @@ export interface Venue {
   capacity?: number;
   surfaceType?: string;
   rules?: string;
+  cancellationHours?: number;
 }
 
 export interface VenueReview {

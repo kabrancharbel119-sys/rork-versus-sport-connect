@@ -92,9 +92,9 @@ export default function MyBookingsScreen() {
   });
 
   const venueMap = React.useMemo(() => {
-    const map: Record<string, { name: string; city: string }> = {};
+    const map: Record<string, { name: string; city: string; cancellationHours: number }> = {};
     for (const v of (venuesQuery.data || [])) {
-      map[v.id] = { name: v.name, city: v.city };
+      map[v.id] = { name: v.name, city: v.city, cancellationHours: v.cancellationHours ?? 24 };
     }
     return map;
   }, [venuesQuery.data]);
@@ -224,10 +224,19 @@ export default function MyBookingsScreen() {
                   const statusCfg = STATUS_CONFIG[booking.status] || STATUS_CONFIG.pending;
                   const StatusIcon = statusCfg.icon;
                   const upcoming = isUpcoming(booking.date);
-                  const canCancel = upcoming && (booking.status === 'confirmed' || booking.status === 'pending');
-                  const startH = parseInt((booking.startTime || '0').split(':')[0], 10);
-                  const endH = parseInt((booking.endTime || '0').split(':')[0], 10);
+                  const isCancellable = upcoming && (booking.status === 'confirmed' || booking.status === 'pending');
+
+                  // Compute hours until start and deadline
+                  const startH = parseInt((booking.startTime || '0').split('T').pop()!.split(':')[0], 10);
+                  const endH = parseInt((booking.endTime || '0').split('T').pop()!.split(':')[0], 10);
                   const duration = endH - startH;
+                  const cancellationHours = venue?.cancellationHours ?? 24;
+                  const [by, bm, bd] = booking.date.split('-').map(Number);
+                  const bookingStart = new Date(by, bm - 1, bd, startH, 0, 0);
+                  const hoursUntil = (bookingStart.getTime() - Date.now()) / (1000 * 60 * 60);
+                  const deadlinePassed = hoursUntil < cancellationHours;
+                  const canCancel = isCancellable && !deadlinePassed;
+                  const deadlineDate = new Date(bookingStart.getTime() - cancellationHours * 60 * 60 * 1000);
 
                   return (
                     <Card key={booking.id} style={[styles.bookingCard, !upcoming && booking.status !== 'cancelled' && styles.bookingCardPast]}>
@@ -265,19 +274,38 @@ export default function MyBookingsScreen() {
                         </View>
                       </View>
 
-                      {/* Cancel button */}
-                      {canCancel && (
-                        <TouchableOpacity
-                          style={styles.cancelBtn}
-                          onPress={() => handleCancel(booking)}
-                          activeOpacity={0.7}
-                          disabled={cancelMutation.isPending}
-                        >
-                          <XCircle size={14} color={Colors.status.error} />
-                          <Text style={styles.cancelBtnText}>
-                            {cancelMutation.isPending ? 'Annulation...' : 'Annuler la réservation'}
+                      {/* Cancellation deadline info */}
+                      {isCancellable && (
+                        <View style={[styles.deadlineRow, deadlinePassed && styles.deadlineRowExpired]}>
+                          <AlertCircle size={12} color={deadlinePassed ? Colors.status.error : Colors.status.warning} />
+                          <Text style={[styles.deadlineText, deadlinePassed && styles.deadlineTextExpired]}>
+                            {deadlinePassed
+                              ? `Délai d'annulation dépassé (${cancellationHours}h avant)`
+                              : `Annulation possible jusqu'au ${deadlineDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} à ${deadlineDate.getHours()}h`}
                           </Text>
-                        </TouchableOpacity>
+                        </View>
+                      )}
+
+                      {/* Cancel button */}
+                      {isCancellable && (
+                        canCancel ? (
+                          <TouchableOpacity
+                            style={styles.cancelBtn}
+                            onPress={() => handleCancel(booking)}
+                            activeOpacity={0.7}
+                            disabled={cancelMutation.isPending}
+                          >
+                            <XCircle size={14} color={Colors.status.error} />
+                            <Text style={styles.cancelBtnText}>
+                              {cancelMutation.isPending ? 'Annulation...' : 'Annuler la réservation'}
+                            </Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <View style={styles.cancelBtnDisabled}>
+                            <XCircle size={14} color={Colors.text.muted} />
+                            <Text style={styles.cancelBtnDisabledText}>Annulation impossible</Text>
+                          </View>
+                        )
                       )}
                     </Card>
                   );
@@ -349,9 +377,26 @@ const styles = StyleSheet.create({
   metaText: { color: Colors.text.muted, fontSize: 13 },
   cancelBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    marginTop: 12, paddingVertical: 10, borderRadius: 8,
+    marginTop: 10, paddingVertical: 10, borderRadius: 8,
     backgroundColor: Colors.status.error + '10',
     borderWidth: 1, borderColor: Colors.status.error + '30',
   },
   cancelBtnText: { color: Colors.status.error, fontSize: 13, fontWeight: '600' },
+  cancelBtnDisabled: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: 10, paddingVertical: 10, borderRadius: 8,
+    backgroundColor: Colors.background.card,
+    borderWidth: 1, borderColor: Colors.border.light,
+  },
+  cancelBtnDisabledText: { color: Colors.text.muted, fontSize: 13, fontWeight: '600' },
+  deadlineRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    marginTop: 10, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 6,
+    backgroundColor: Colors.status.warning + '12',
+  },
+  deadlineRowExpired: {
+    backgroundColor: Colors.status.error + '12',
+  },
+  deadlineText: { color: Colors.status.warning, fontSize: 11, fontWeight: '500', flex: 1 },
+  deadlineTextExpired: { color: Colors.status.error },
 });

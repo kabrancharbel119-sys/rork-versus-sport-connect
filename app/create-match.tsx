@@ -1,17 +1,18 @@
-import React, { useState, useRef } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import React, { useState, useRef, useMemo } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X, Swords, MapPin, Calendar, Clock, Trophy } from 'lucide-react-native';
+import { X, Swords, MapPin, Trophy } from 'lucide-react-native';
+import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMatches } from '@/contexts/MatchesContext';
-import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Sport, SkillLevel, PlayStyle } from '@/types';
 import { sportLabels, levelLabels, ambianceLabels, mockVenues } from '@/mocks/data';
+import { venuesApi } from '@/lib/api/venues';
 
 const sports: Sport[] = ['football', 'basketball', 'volleyball', 'tennis', 'handball', 'rugby'];
 const levels: SkillLevel[] = ['beginner', 'intermediate', 'advanced', 'expert'];
@@ -54,13 +55,37 @@ export default function CreateMatchScreen() {
   const router = useRouter();
   const { user, isAdmin } = useAuth();
   const { createMatch, venues, isCreating } = useMatches();
-  
+
   // Utiliser les terrains de l'API ou les données mockées en fallback
   const availableVenues = venues.length > 0 ? venues : mockVenues;
 
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(15, 0, 0, 0);
+
+  function toLocalDateStr(d: Date) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  const dates = useMemo(() => {
+    const result = [];
+    const dayNames = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+    const months = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc'];
+    for (let i = 1; i <= 14; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      result.push({
+        dateStr: toLocalDateStr(d),
+        dayName: dayNames[d.getDay()],
+        dayNum: d.getDate(),
+        monthShort: months[d.getMonth()],
+      });
+    }
+    return result;
+  }, []);
+
+  const [selectedDate, setSelectedDate] = useState(dates[0].dateStr);
+  const [selectedSlots, setSelectedSlots] = useState<number[]>([]);
 
   const [formData, setFormData] = useState({
     sport: 'football' as Sport,
@@ -69,13 +94,45 @@ export default function CreateMatchScreen() {
     level: 'intermediate' as SkillLevel,
     ambiance: 'mixed' as PlayStyle,
     venueId: '',
-    date: tomorrow.toISOString().split('T')[0],
+    date: dates[0].dateStr,
     time: '15:00',
     duration: '90',
     maxPlayers: '10',
   });
 
   const selectedVenue = availableVenues.find(v => v.id === formData.venueId);
+
+  const availabilityQuery = useQuery({
+    queryKey: ['availability', formData.venueId, selectedDate],
+    queryFn: () => venuesApi.getAvailability(formData.venueId, selectedDate),
+    enabled: !!formData.venueId && !!selectedDate,
+  });
+
+  const slots = availabilityQuery.data || [];
+
+  const toggleSlot = (hour: number) => {
+    setSelectedSlots(prev => {
+      const next = prev.includes(hour) ? prev.filter(h => h !== hour) : [...prev, hour].sort((a,b) => a-b);
+      if (next.length > 0) {
+        const sorted = [...next].sort((a,b) => a-b);
+        const durationHours = sorted[sorted.length-1] - sorted[0] + 1;
+        setFormData(f => ({
+          ...f,
+          date: selectedDate,
+          time: `${String(sorted[0]).padStart(2,'0')}:00`,
+          duration: String(durationHours * 60),
+        }));
+      }
+      return next;
+    });
+  };
+
+  const slotsAreConsecutive = useMemo(() => {
+    if (selectedSlots.length <= 1) return true;
+    const s = [...selectedSlots].sort((a,b) => a-b);
+    for (let i = 1; i < s.length; i++) if (s[i] !== s[i-1]+1) return false;
+    return true;
+  }, [selectedSlots]);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const scrollViewRef = useRef<ScrollView>(null);
@@ -97,11 +154,19 @@ export default function CreateMatchScreen() {
       Alert.alert('Lieu requis', 'Veuillez sélectionner un terrain.');
       return;
     }
+    if (selectedSlots.length === 0) {
+      Alert.alert('Créneau requis', 'Veuillez sélectionner au moins un créneau horaire.');
+      return;
+    }
+    if (!slotsAreConsecutive) {
+      Alert.alert('Créneaux non consécutifs', 'Veuillez sélectionner des heures consécutives.');
+      return;
+    }
     if (!validate()) return;
     const effectiveType = (isAdmin && formData.type === 'ranked') ? 'ranked' : (formData.type === 'ranked' ? 'friendly' : formData.type);
     try {
       const dateTime = new Date(`${formData.date}T${formData.time}`);
-      
+      console.log('[CreateMatch] calling createMatch...');
       await createMatch({
         sport: formData.sport,
         format: formData.format,
@@ -116,8 +181,10 @@ export default function CreateMatchScreen() {
         entryFee: undefined,
         prize: undefined,
       });
+      console.log('[CreateMatch] createMatch SUCCESS');
       router.back();
     } catch (error: any) {
+      console.error('[CreateMatch] ERROR:', error?.message, error);
       Alert.alert('Erreur', error?.message ?? 'Impossible de créer le match');
     }
   };
@@ -283,48 +350,104 @@ export default function CreateMatchScreen() {
                 ))}
               </View>
 
-              <View style={styles.row}>
-                <View style={styles.halfField}>
-                  <Input
-                    scrollViewRef={scrollViewRef}
-                    label="Date"
-                    placeholder="2026-01-25"
-                    value={formData.date}
-                    onChangeText={(v) => updateField('date', v)}
-                    icon={<Calendar size={20} color={Colors.text.muted} />}
-                  />
-                </View>
-                <View style={styles.halfField}>
-                  <Input
-                    label="Heure"
-                    placeholder="15:00"
-                    value={formData.time}
-                    onChangeText={(v) => updateField('time', v)}
-                    icon={<Clock size={20} color={Colors.text.muted} />}
-                  />
-                </View>
+              {/* Date picker */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Date</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {dates.map(d => (
+                      <TouchableOpacity
+                        key={d.dateStr}
+                        style={[styles.dateChip, selectedDate === d.dateStr && styles.dateChipActive]}
+                        onPress={() => {
+                          setSelectedDate(d.dateStr);
+                          setSelectedSlots([]);
+                          setFormData(f => ({ ...f, date: d.dateStr, time: '15:00' }));
+                        }}
+                      >
+                        <Text style={[styles.dateDayName, selectedDate === d.dateStr && styles.dateTextActive]}>{d.dayName}</Text>
+                        <Text style={[styles.dateDayNum, selectedDate === d.dateStr && styles.dateTextActive]}>{d.dayNum}</Text>
+                        <Text style={[styles.dateMonth, selectedDate === d.dateStr && styles.dateTextActive]}>{d.monthShort}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
               </View>
 
-              <View style={styles.row}>
-                <View style={styles.halfField}>
-                  <Input
-                    scrollViewRef={scrollViewRef}
-                    label="Durée (min)"
-                    placeholder="90"
-                    value={formData.duration}
-                    onChangeText={(v) => updateField('duration', v)}
-                    keyboardType="numeric"
-                  />
+              {/* Slot grid */}
+              {formData.venueId ? (
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Créneau horaire</Text>
+                  {availabilityQuery.isLoading ? (
+                    <ActivityIndicator size="small" color={Colors.primary.blue} style={{ marginVertical: 12 }} />
+                  ) : slots.length === 0 ? (
+                    <Text style={styles.noSlotsText}>Terrain fermé ou aucun créneau disponible ce jour.</Text>
+                  ) : (
+                    <>
+                      <View style={styles.slotLegendRow}>
+                        <View style={styles.slotLegendItem}><View style={[styles.slotDot, { backgroundColor: Colors.status.success }]} /><Text style={styles.slotLegendText}>Disponible</Text></View>
+                        <View style={styles.slotLegendItem}><View style={[styles.slotDot, { backgroundColor: Colors.primary.blue }]} /><Text style={styles.slotLegendText}>Sélectionné</Text></View>
+                        <View style={styles.slotLegendItem}><View style={[styles.slotDot, { backgroundColor: Colors.text.muted }]} /><Text style={styles.slotLegendText}>Indispo</Text></View>
+                      </View>
+                      <View style={styles.slotsGrid}>
+                        {slots.map(slot => {
+                          const isSelected = selectedSlots.includes(slot.hour);
+                          const isDisabled = !slot.available;
+                          return (
+                            <TouchableOpacity
+                              key={slot.hour}
+                              style={[
+                                styles.slot,
+                                isDisabled && styles.slotDisabled,
+                                isSelected && !isDisabled && styles.slotSelected,
+                              ]}
+                              onPress={() => !isDisabled && toggleSlot(slot.hour)}
+                              disabled={isDisabled}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={[styles.slotTime, isDisabled && styles.slotTimeDisabled, isSelected && !isDisabled && styles.slotTimeSelected]}>
+                                {slot.hour}h
+                              </Text>
+                              <Text style={[styles.slotStatus, isDisabled && styles.slotStatusDisabled, isSelected && !isDisabled && styles.slotStatusSelected]}>
+                                {isDisabled ? 'Réservé' : isSelected ? '✓' : 'Libre'}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      {selectedSlots.length > 0 && (
+                        <View style={styles.slotSummary}>
+                          <Text style={styles.slotSummaryText}>
+                            {selectedDate} • {formData.time} – {String(selectedSlots[selectedSlots.length-1]+1).padStart(2,'0')}h00 • {formData.duration} min
+                          </Text>
+                          {!slotsAreConsecutive && (
+                            <Text style={styles.slotWarning}>⚠ Sélectionnez des créneaux consécutifs</Text>
+                          )}
+                        </View>
+                      )}
+                    </>
+                  )}
                 </View>
-                <View style={styles.halfField}>
-                  <Input
-                    scrollViewRef={scrollViewRef}
-                    label="Max joueurs"
-                    placeholder="10"
-                    value={formData.maxPlayers}
-                    onChangeText={(v) => updateField('maxPlayers', v)}
-                    keyboardType="numeric"
-                  />
+              ) : (
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Créneau horaire</Text>
+                  <Text style={styles.noSlotsText}>Sélectionnez d'abord un terrain pour voir les disponibilités.</Text>
+                </View>
+              )}
+
+              {/* Max players */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Nombre max de joueurs</Text>
+                <View style={styles.optionRow}>
+                  {['4','6','8','10','12','14','16','22'].map(n => (
+                    <TouchableOpacity
+                      key={n}
+                      style={[styles.optionChip, formData.maxPlayers === n && styles.optionChipActive]}
+                      onPress={() => updateField('maxPlayers', n)}
+                    >
+                      <Text style={[styles.optionText, formData.maxPlayers === n && styles.optionTextActive]}>{n}</Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               </View>
 
@@ -567,5 +690,127 @@ const styles = StyleSheet.create({
   },
   createButton: {
     marginTop: 16,
+  },
+  // Date picker
+  dateChip: {
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.background.card,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    minWidth: 52,
+  },
+  dateChipActive: {
+    backgroundColor: Colors.primary.blue,
+    borderColor: Colors.primary.blue,
+  },
+  dateDayName: {
+    color: Colors.text.muted,
+    fontSize: 11,
+    fontWeight: '500' as const,
+    textTransform: 'uppercase' as const,
+  },
+  dateDayNum: {
+    color: Colors.text.primary,
+    fontSize: 18,
+    fontWeight: '700' as const,
+    marginVertical: 2,
+  },
+  dateMonth: {
+    color: Colors.text.muted,
+    fontSize: 11,
+  },
+  dateTextActive: {
+    color: '#FFFFFF',
+  },
+  // Slot grid
+  noSlotsText: {
+    color: Colors.text.muted,
+    fontSize: 13,
+    fontStyle: 'italic' as const,
+    paddingVertical: 8,
+  },
+  slotLegendRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 12,
+  },
+  slotLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  slotDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  slotLegendText: {
+    color: Colors.text.muted,
+    fontSize: 12,
+  },
+  slotsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  slot: {
+    width: '22%',
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: Colors.status.success + '22',
+    borderWidth: 1,
+    borderColor: Colors.status.success,
+    alignItems: 'center',
+  },
+  slotDisabled: {
+    backgroundColor: Colors.background.card,
+    borderColor: Colors.border.light,
+  },
+  slotSelected: {
+    backgroundColor: Colors.primary.blue,
+    borderColor: Colors.primary.blue,
+  },
+  slotTime: {
+    color: Colors.status.success,
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  slotTimeDisabled: {
+    color: Colors.text.muted,
+  },
+  slotTimeSelected: {
+    color: '#FFFFFF',
+  },
+  slotStatus: {
+    color: Colors.status.success,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  slotStatusDisabled: {
+    color: Colors.text.muted,
+  },
+  slotStatusSelected: {
+    color: '#FFFFFF',
+  },
+  slotSummary: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: Colors.primary.blue + '22',
+    borderWidth: 1,
+    borderColor: Colors.primary.blue + '66',
+  },
+  slotSummaryText: {
+    color: Colors.text.primary,
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  slotWarning: {
+    color: Colors.status.warning ?? Colors.primary.orange,
+    fontSize: 12,
+    marginTop: 4,
   },
 });

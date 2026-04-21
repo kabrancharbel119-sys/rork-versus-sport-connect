@@ -13,8 +13,25 @@ interface AvatarProps {
   testID?: string;
 }
 
+function isValidRemoteUri(uri?: string): boolean {
+  if (!uri || typeof uri !== 'string') return false;
+  const trimmed = uri.trim();
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false;
+  if (trimmed.startsWith('blob:')) return false;
+  if (trimmed.startsWith('file://')) return false;
+  if (trimmed.startsWith('ph://')) return false;
+  if (trimmed.startsWith('data:')) return false;
+  return trimmed.startsWith('http://') || trimmed.startsWith('https://');
+}
+
 export function Avatar({ uri, name, size = 'medium', style, showBadge, badgeColor, testID }: AvatarProps) {
   const [imageError, setImageError] = React.useState(false);
+
+  const validUri = isValidRemoteUri(uri) ? uri : undefined;
+
+  React.useEffect(() => {
+    setImageError(false);
+  }, [validUri]);
 
   const getSize = () => {
     switch (size) {
@@ -54,13 +71,13 @@ export function Avatar({ uri, name, size = 'medium', style, showBadge, badgeColo
 
   return (
     <View style={[styles.container, { width: dimension, height: dimension }, style]} testID={testID}>
-      {uri && !imageError ? (
+      {validUri && !imageError ? (
         <Image
-          source={{ uri }}
+          source={{ uri: validUri }}
           style={[styles.image, { width: dimension, height: dimension, borderRadius: dimension / 2 }]}
           contentFit="cover"
           onError={(error) => {
-            console.log('[Avatar] Failed to load image:', uri, error);
+            console.log('[Avatar] Failed to load image:', validUri, error);
             setImageError(true);
           }}
         />

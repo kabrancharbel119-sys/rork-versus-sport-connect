@@ -187,7 +187,64 @@ export const tournamentsApi = {
       .single() as any);
 
     if (error) throw error;
-    return mapTournamentRowToTournament(row as TournamentRow);
+    const createdTournament = mapTournamentRowToTournament(row as TournamentRow);
+
+    // Create a booking to block the venue for the tournament period
+    if (data.venue?.id) {
+      try {
+        const { data: venueRow, error: venueErr } = await (supabase
+          .from('venues')
+          .select('*')
+          .eq('id', data.venue.id)
+          .single() as any);
+
+        if (!venueErr && venueRow) {
+          const v = venueRow as any;
+          const autoApprove = v.auto_approve !== false;
+          const bookingStatus = autoApprove ? 'confirmed' : 'pending';
+
+          const startDate = new Date(data.startDate);
+          const endDate = new Date(data.endDate);
+          const dateStr = startDate.toISOString().split('T')[0];
+          const endDateStr = endDate.toISOString().split('T')[0];
+          const startTimestamp = `${dateStr}T09:00:00`;
+          const endTimestamp = `${endDateStr}T22:00:00`;
+
+          await (supabase
+            .from('bookings')
+            .insert({
+              venue_id: data.venue.id,
+              user_id: userId,
+              date: dateStr,
+              start_time: startTimestamp,
+              end_time: endTimestamp,
+              total_amount: 0,
+              match_id: null,
+              status: bookingStatus,
+            } as any) as any);
+
+          // Notify venue owner
+          if (v.owner_id) {
+            const { notificationsApi } = await import('@/lib/api/notifications');
+            await notificationsApi.send(v.owner_id, {
+              type: 'booking',
+              title: bookingStatus === 'pending' ? '🏟️ Demande de réservation (Tournoi)' : '✅ Réservation confirmée (Tournoi)',
+              message: `${v.name} — Tournoi "${data.name}" du ${dateStr} au ${endDateStr}`,
+              data: {
+                venueId: data.venue.id,
+                tournamentId: (row as any).id,
+                date: dateStr,
+                status: bookingStatus,
+              },
+            });
+          }
+        }
+      } catch (bookingErr: any) {
+        console.warn('[TournamentsAPI] Booking creation failed (non-blocking):', bookingErr?.message);
+      }
+    }
+
+    return createdTournament;
   },
 
   async update(id: string, data: {

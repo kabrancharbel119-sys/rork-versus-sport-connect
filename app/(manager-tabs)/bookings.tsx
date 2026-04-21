@@ -154,6 +154,17 @@ export default function ManagerBookingsTab() {
     ]);
   };
 
+  const handleCancelConfirmed = (bookingId: string) => {
+    Alert.alert(
+      'Annuler la réservation',
+      'Annuler cette réservation confirmée ? Le joueur sera notifié automatiquement.',
+      [
+        { text: 'Non', style: 'cancel' },
+        { text: 'Oui, annuler', style: 'destructive', onPress: () => updateBookingMutation.mutate({ bookingId, status: 'cancelled' }) },
+      ]
+    );
+  };
+
   const isLoading = bookingsQuery.isLoading;
 
   return (
@@ -238,6 +249,16 @@ export default function ManagerBookingsTab() {
                         </TouchableOpacity>
                       </View>
                     )}
+                    {booking.status === 'confirmed' && booking.date >= todayStr && (
+                      <TouchableOpacity
+                        style={[styles.bookingBtn, styles.cancelBtn, updateBookingMutation.isPending && styles.bookingBtnDisabled]}
+                        onPress={() => handleCancelConfirmed(booking.id)}
+                        disabled={updateBookingMutation.isPending}
+                      >
+                        <X size={14} color="#FFF" />
+                        <Text style={styles.bookingBtnText}>Annuler</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </Card>
               );
@@ -293,4 +314,5 @@ const styles = StyleSheet.create({
   bookingBtnText: { color: '#FFF', fontSize: 12, fontWeight: '600' },
   approveBtn: { backgroundColor: Colors.status.success },
   rejectBtn: { backgroundColor: Colors.status.error },
+  cancelBtn: { backgroundColor: Colors.text.muted },
 });

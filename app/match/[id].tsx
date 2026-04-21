@@ -453,6 +453,11 @@ export default function MatchDetailScreen() {
                   disabled
                   style={styles.actionButton}
                 />
+              ) : match.status === 'venue_pending' ? (
+                <View style={styles.venuePendingBlock}>
+                  <Clock size={18} color={Colors.status.warning} />
+                  <Text style={styles.venuePendingBlockText}>En attente de confirmation du gestionnaire du terrain. L'inscription sera ouverte une fois le créneau approuvé.</Text>
+                </View>
               ) : match.status === 'open' ? (
                 <Button
                   title={match.type === 'ranked' ? t('matchDetail.joinRanked') : match.entryFee ? t('matchDetail.joinFee', { fee: match.entryFee.toLocaleString() }) : t('matchDetail.join')}
@@ -789,6 +794,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600' as const,
     flex: 1,
+  },
+  venuePendingBlock: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: `${Colors.status.warning}18`,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: `${Colors.status.warning}40`,
+  },
+  venuePendingBlockText: {
+    color: Colors.status.warning,
+    fontSize: 14,
+    fontWeight: '500' as const,
+    flex: 1,
+    lineHeight: 20,
   },
   bottomSpacer: {
     height: 40,

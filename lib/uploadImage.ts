@@ -1,63 +1,70 @@
+import { Platform } from 'react-native';
 import { supabase } from './supabase';
 
-export async function uploadTeamImage(localUri: string, teamId: string): Promise<string> {
-  try {
-    console.log('[Upload] ========== UPLOAD START ==========');
-    console.log('[Upload] Team ID:', teamId);
-    console.log('[Upload] Local URI:', localUri);
-    
-    const fileExtension = localUri.split('.').pop()?.toLowerCase() || 'jpg';
-    const fileName = `team-${teamId}-${Date.now()}.${fileExtension}`;
-    const filePath = `teams/${fileName}`;
-    console.log('[Upload] File path in storage:', filePath);
-    console.log('[Upload] File extension:', fileExtension);
+const mimeToExt: Record<string, string> = {
+  'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
+  'image/gif': 'gif', 'image/webp': 'webp',
+};
 
-    console.log('[Upload] Fetching local file...');
-    const response = await fetch(localUri);
-    console.log('[Upload] Fetch response status:', response.status);
-    
-    const blob = await response.blob();
-    console.log('[Upload] Blob created, size:', blob.size, 'type:', blob.type);
-    
-    // Map file extensions to proper MIME types
-    const mimeTypes: Record<string, string> = {
-      'jpg': 'image/jpeg',
-      'jpeg': 'image/jpeg',
-      'png': 'image/png',
-      'gif': 'image/gif',
-      'webp': 'image/webp',
-    };
-    const contentType = mimeTypes[fileExtension] || 'image/jpeg';
-    console.log('[Upload] Content type:', contentType);
-
-    console.log('[Upload] Calling Supabase Storage upload...');
-    const { data, error } = await supabase.storage
-      .from('team-logos')
-      .upload(filePath, blob, {
-        contentType,
-        upsert: true,
-      });
-
-    console.log('[Upload] Upload response - data:', data, 'error:', error);
-
-    if (error) {
-      console.error('[Upload] ❌ Error uploading to Supabase Storage:', JSON.stringify(error, null, 2));
-      throw new Error(`Upload failed: ${error.message || JSON.stringify(error)}`);
-    }
-    
-    if (!data) {
-      console.error('[Upload] ❌ No data returned from upload');
-      throw new Error('Upload failed: No data returned');
-    }
-
-    const { data: publicUrlData } = supabase.storage
-      .from('team-logos')
-      .getPublicUrl(filePath);
-
-    console.log('[Upload] Image uploaded successfully:', publicUrlData.publicUrl);
-    return publicUrlData.publicUrl;
-  } catch (error) {
-    console.error('[Upload] Failed to upload image:', error);
-    throw error;
+async function uriToBlob(uri: string): Promise<{ blob: Blob; contentType: string }> {
+  if (Platform.OS !== 'web' && (uri.startsWith('file://') || uri.startsWith('ph://'))) {
+    const FileSystem = await import('expo-file-system/legacy');
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    const ext = uri.split('.').pop()?.toLowerCase() || 'jpg';
+    const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    const byteChars = atob(base64);
+    const byteArr = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+    return { blob: new Blob([byteArr], { type: contentType }), contentType };
   }
+  const response = await fetch(uri);
+  const blob = await response.blob();
+  let contentType = blob.type || 'image/jpeg';
+  if (!contentType.startsWith('image/')) contentType = 'image/jpeg';
+  return { blob, contentType };
+}
+
+async function uploadToStorage(bucket: string, filePath: string, blob: Blob, contentType: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .upload(filePath, blob, { contentType, upsert: true });
+
+  if (error) throw new Error(error.message);
+  if (!data?.path) throw new Error('Upload échoué: pas de path retourné');
+
+  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
+  return urlData.publicUrl;
+}
+
+export async function uploadAvatarImage(localUri: string, userId: string): Promise<string> {
+  let { blob, contentType } = await uriToBlob(localUri);
+  if (localUri.startsWith('data:')) {
+    contentType = localUri.match(/data:(image\/\w+);/)?.[1] || contentType;
+  }
+  const fileExtension = mimeToExt[contentType] || 'jpg';
+
+  const fileName = `avatar-${userId}-${Date.now()}.${fileExtension}`;
+  const filePath = `avatars/${fileName}`;
+
+  return uploadToStorage('avatars', filePath, blob, contentType);
+}
+
+export async function uploadVenueImage(localUri: string, venueOwnerId: string): Promise<string> {
+  const { blob, contentType } = await uriToBlob(localUri);
+  const fileExtension = mimeToExt[contentType] || 'jpg';
+
+  const fileName = `venue-${venueOwnerId}-${Date.now()}.${fileExtension}`;
+  const filePath = `venues/${fileName}`;
+
+  return uploadToStorage('venue-images', filePath, blob, contentType);
+}
+
+export async function uploadTeamImage(localUri: string, teamId: string): Promise<string> {
+  const { blob, contentType } = await uriToBlob(localUri);
+  const fileExtension = mimeToExt[contentType] || 'jpg';
+
+  const fileName = `team-${teamId}-${Date.now()}.${fileExtension}`;
+  const filePath = `teams/${fileName}`;
+
+  return uploadToStorage('team-logos', filePath, blob, contentType);
 }

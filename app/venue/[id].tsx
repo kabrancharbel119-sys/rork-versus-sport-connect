@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Image, Dimensions, TextInput, Modal } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Dimensions, TextInput, Modal } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, MapPin, Phone, Mail, Star, DollarSign, Check, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react-native';
@@ -363,7 +364,7 @@ export default function VenueDetailScreen() {
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             <View style={styles.heroCard}>
               {heroImageUri ? (
-                <Image source={{ uri: heroImageUri }} style={styles.heroImage} resizeMode="cover" />
+                <Image source={heroImageUri} style={styles.heroImage} contentFit="cover" />
               ) : (
                 <View style={styles.heroFallbackBackground} />
               )}
@@ -516,9 +517,9 @@ export default function VenueDetailScreen() {
                   {venueImages.map((uri, idx) => (
                     <TouchableOpacity key={`${uri}-${idx}`} activeOpacity={0.9} onPress={() => setSelectedImageUri(uri)}>
                       <Image
-                        source={{ uri }}
+                        source={uri}
                         style={styles.galleryImage}
-                        resizeMode="cover"
+                        contentFit="cover"
                       />
                     </TouchableOpacity>
                   ))}
@@ -866,7 +867,7 @@ export default function VenueDetailScreen() {
             <View style={styles.fullscreenBackdrop}>
               <TouchableOpacity style={styles.fullscreenCloseZone} activeOpacity={1} onPress={() => setSelectedImageUri(null)} />
               {selectedImageUri ? (
-                <Image source={{ uri: selectedImageUri }} style={styles.fullscreenImage} resizeMode="contain" />
+                <Image source={selectedImageUri} style={styles.fullscreenImage} contentFit="contain" />
               ) : null}
               <TouchableOpacity style={styles.fullscreenCloseButton} onPress={() => setSelectedImageUri(null)}>
                 <Text style={styles.fullscreenCloseText}>Fermer</Text>
