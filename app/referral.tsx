@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Gift, Users, Copy, Share2, Trophy, CheckCircle } from 'lucide-react-native';
@@ -51,7 +52,7 @@ export default function ReferralScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()} accessibilityLabel="Retour"><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
+            <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/profile')} accessibilityLabel="Retour"><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
             <Text style={styles.headerTitle}>Parrainage</Text>
             <View style={styles.placeholder} />
           </View>

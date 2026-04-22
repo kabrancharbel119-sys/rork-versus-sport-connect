@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert, TextInput } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, MapPin, Phone, Mail, Building2, User, Lock, Eye, EyeOff, CheckCircle } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
@@ -90,7 +91,7 @@ export default function RegisterManagerScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => step === 2 ? setStep(1) : router.back()}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => step === 2 ? setStep(1) : safeBack(router, '/auth/welcome')}>
               <ArrowLeft size={22} color={Colors.text.primary} />
             </TouchableOpacity>
             <View style={styles.headerCenter}>

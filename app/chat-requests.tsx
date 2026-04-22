@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, UserPlus, UserCheck, UserX, MessageCircle, Clock, CheckCircle, XCircle, Send } from 'lucide-react-native';
@@ -142,7 +143,7 @@ export default function ChatRequestsScreen() {
       
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/chat')}>
             <ArrowLeft size={24} color={Colors.text.primary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{t('chatRequests.title')}</Text>

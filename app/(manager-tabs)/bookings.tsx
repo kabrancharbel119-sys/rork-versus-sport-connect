@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl, ActivityIndicator, Platform, ViewStyle } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl, ActivityIndicator, Modal, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  Calendar, Check, X, Clock,
+  Calendar, Check, X, Trophy, User, Users,
 } from 'lucide-react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
@@ -37,6 +37,7 @@ export default function ManagerBookingsTab() {
   const { user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [bookingFilter, setBookingFilter] = useState<'all' | 'pending' | 'confirmed' | 'past'>('all');
+  const [selectedBooking, setSelectedBooking] = useState<any | null>(null);
 
   console.log('[ManagerBookings] User ID:', user?.id, 'Enabled:', !!user?.id);
 
@@ -219,21 +220,62 @@ export default function ManagerBookingsTab() {
             </View>
           ) : (
             filteredBookings.map(booking => {
+              const b = booking as any;
               const sc = statusConfig[booking.status] || statusConfig.pending;
               const isPending = booking.status === 'pending';
+              const isTournament = !!b.tournamentId;
+              const startH = parseHour(booking.startTime);
+              const endH = parseHour(booking.endTime);
+              // Compute total price: totalPrice from booking or derive from hours × venue price
+              const displayPrice = Number(booking.totalPrice) || 0;
               return (
-                <Card key={booking.id} style={[styles.bookingCard, isPending && styles.bookingCardPending]}>
+                <TouchableOpacity key={booking.id} onPress={() => setSelectedBooking(b)} activeOpacity={0.85}>
+                <Card style={[styles.bookingCard, isPending && styles.bookingCardPending, isTournament && styles.bookingCardTournament]}>
+                  {/* Type badge */}
+                  {isTournament && (
+                    <View style={styles.tournamentBadge}>
+                      <Trophy size={12} color={Colors.primary.orange} />
+                      <Text style={styles.tournamentBadgeText}>Tournoi</Text>
+                    </View>
+                  )}
+
                   <View style={styles.bookingTop}>
                     <View style={styles.bookingInfo}>
                       <Text style={styles.bookingVenue}>{getVenueName(booking.venueId)}</Text>
-                      <Text style={styles.bookingDate}>{booking.date} • {parseHour(booking.startTime)}h - {parseHour(booking.endTime)}h</Text>
+                      {isTournament && b.tournamentName ? (
+                        <Text style={styles.tournamentName}>🏆 {b.tournamentName}</Text>
+                      ) : null}
+                      <Text style={styles.bookingDate}>
+                        {booking.date}{isTournament ? ` → fin de tournoi` : ` • ${startH}h - ${endH}h`}
+                      </Text>
                     </View>
                     <View style={[styles.bookingStatusBadge, { backgroundColor: sc.color + '20' }]}>
                       <Text style={[styles.bookingStatusText, { color: sc.color }]}>{sc.label}</Text>
                     </View>
                   </View>
+
+                  {/* Organizer info for tournament bookings */}
+                  {isTournament && (b.organizerName || b.organizerTeamName) && (
+                    <View style={styles.organizerSection}>
+                      {b.organizerName && (
+                        <View style={styles.organizerRow}>
+                          <User size={12} color={Colors.text.muted} />
+                          <Text style={styles.organizerText}>{b.organizerName}</Text>
+                        </View>
+                      )}
+                      {b.organizerTeamName && (
+                        <View style={styles.organizerRow}>
+                          <Users size={12} color={Colors.text.muted} />
+                          <Text style={styles.organizerText}>{b.organizerTeamName}</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
                   <View style={styles.bookingBottom}>
-                    <Text style={styles.bookingPrice}>{(Number(booking.totalPrice) || 0).toLocaleString()} FCFA</Text>
+                    <Text style={styles.bookingPrice}>
+                      {displayPrice > 0 ? `${displayPrice.toLocaleString()} FCFA` : isTournament ? 'Prix à définir' : 'Gratuit'}
+                    </Text>
                     {isPending && (
                       <View style={styles.bookingActions}>
                         <TouchableOpacity style={[styles.bookingBtn, styles.approveBtn]} onPress={() => handleApproveBooking(booking.id)}>
@@ -261,12 +303,137 @@ export default function ManagerBookingsTab() {
                     )}
                   </View>
                 </Card>
+                </TouchableOpacity>
               );
             })
           )}
           <View style={{ height: 30 }} />
         </ScrollView>
       </SafeAreaView>
+
+      {/* Booking detail modal */}
+      {selectedBooking && (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setSelectedBooking(null)}>
+          <Pressable style={styles.modalOverlay} onPress={() => setSelectedBooking(null)}>
+            <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
+              {/* Header */}
+              <View style={styles.modalHeader}>
+                <View style={{ flex: 1 }}>
+                  {selectedBooking.tournamentId ? (
+                    <View style={styles.tournamentBadge}>
+                      <Trophy size={12} color={Colors.primary.orange} />
+                      <Text style={styles.tournamentBadgeText}>Tournoi</Text>
+                    </View>
+                  ) : null}
+                  <Text style={styles.modalTitle}>
+                    {selectedBooking.tournamentName || getVenueName(selectedBooking.venueId)}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setSelectedBooking(null)} style={styles.modalClose}>
+                  <X size={20} color={Colors.text.muted} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+                {/* Status */}
+                <View style={[styles.modalStatusRow, { backgroundColor: (statusConfig[selectedBooking.status]?.color ?? Colors.text.muted) + '15' }]}>
+                  <Text style={[styles.modalStatusText, { color: statusConfig[selectedBooking.status]?.color ?? Colors.text.muted }]}>
+                    {statusConfig[selectedBooking.status]?.label ?? selectedBooking.status}
+                  </Text>
+                </View>
+
+                {/* Terrain */}
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionLabel}>Terrain</Text>
+                  <Text style={styles.modalSectionValue}>{getVenueName(selectedBooking.venueId)}</Text>
+                </View>
+
+                {/* Dates */}
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionLabel}>Période</Text>
+                  <Text style={styles.modalSectionValue}>
+                    {selectedBooking.tournamentId
+                      ? `Du ${selectedBooking.date} au ${selectedBooking.endTime?.split('T')[0] ?? selectedBooking.date}`
+                      : `${selectedBooking.date}  ${parseHour(selectedBooking.startTime)}h - ${parseHour(selectedBooking.endTime)}h`}
+                  </Text>
+                </View>
+
+                {/* Organizer (tournament only) */}
+                {selectedBooking.tournamentId && (
+                  <>
+                    {selectedBooking.organizerName && (
+                      <View style={styles.modalSection}>
+                        <Text style={styles.modalSectionLabel}>Organisateur</Text>
+                        <View style={styles.modalRow}>
+                          <User size={14} color={Colors.text.muted} />
+                          <Text style={styles.modalSectionValue}>{selectedBooking.organizerName}</Text>
+                        </View>
+                      </View>
+                    )}
+                    {selectedBooking.organizerTeamName && (
+                      <View style={styles.modalSection}>
+                        <Text style={styles.modalSectionLabel}>Equipe</Text>
+                        <View style={styles.modalRow}>
+                          <Users size={14} color={Colors.text.muted} />
+                          <Text style={styles.modalSectionValue}>{selectedBooking.organizerTeamName}</Text>
+                        </View>
+                      </View>
+                    )}
+                  </>
+                )}
+
+                {/* Price */}
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionLabel}>Prix total</Text>
+                  <Text style={[styles.modalSectionValue, { color: Colors.primary.orange, fontWeight: '700', fontSize: 18 }]}>
+                    {Number(selectedBooking.totalPrice) > 0
+                      ? `${Number(selectedBooking.totalPrice).toLocaleString()} FCFA`
+                      : 'Gratuit'}
+                  </Text>
+                </View>
+
+                {/* Notes */}
+                {selectedBooking.notes ? (
+                  <View style={styles.modalSection}>
+                    <Text style={styles.modalSectionLabel}>Notes</Text>
+                    <Text style={styles.modalSectionValue}>{selectedBooking.notes}</Text>
+                  </View>
+                ) : null}
+
+                {/* Actions */}
+                {selectedBooking.status === 'pending' && (
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity
+                      style={[styles.bookingBtn, styles.approveBtn, { flex: 1, justifyContent: 'center' }]}
+                      onPress={() => { handleApproveBooking(selectedBooking.id); setSelectedBooking(null); }}
+                    >
+                      <Check size={16} color="#FFF" />
+                      <Text style={styles.bookingBtnText}>Approuver</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.bookingBtn, styles.rejectBtn, { flex: 1, justifyContent: 'center' }]}
+                      onPress={() => { handleRejectBooking(selectedBooking.id); setSelectedBooking(null); }}
+                    >
+                      <X size={16} color="#FFF" />
+                      <Text style={styles.bookingBtnText}>Refuser</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {selectedBooking.status === 'confirmed' && selectedBooking.date >= todayStr && (
+                  <TouchableOpacity
+                    style={[styles.bookingBtn, styles.cancelBtn, { alignSelf: 'stretch', justifyContent: 'center', marginTop: 12 }]}
+                    onPress={() => { handleCancelConfirmed(selectedBooking.id); setSelectedBooking(null); }}
+                  >
+                    <X size={14} color="#FFF" />
+                    <Text style={styles.bookingBtnText}>Annuler la reservation</Text>
+                  </TouchableOpacity>
+                )}
+                <View style={{ height: 20 }} />
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -315,4 +482,24 @@ const styles = StyleSheet.create({
   approveBtn: { backgroundColor: Colors.status.success },
   rejectBtn: { backgroundColor: Colors.status.error },
   cancelBtn: { backgroundColor: Colors.text.muted },
+  bookingCardTournament: { borderWidth: 1, borderColor: Colors.primary.orange + '30' },
+  tournamentBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', backgroundColor: Colors.primary.orange + '15', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginBottom: 8 },
+  tournamentBadgeText: { color: Colors.primary.orange, fontSize: 11, fontWeight: '700' },
+  tournamentName: { color: Colors.primary.orange, fontSize: 13, fontWeight: '700', marginTop: 2 },
+  organizerSection: { flexDirection: 'row', gap: 14, marginTop: 6, marginBottom: 4, paddingTop: 8, borderTopWidth: 1, borderTopColor: Colors.border.light },
+  organizerRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  organizerText: { color: Colors.text.muted, fontSize: 12 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%' },
+  modalHeader: { flexDirection: 'row' as const, alignItems: 'center' as const, padding: 20, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
+  modalTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '700' as const, marginTop: 6 },
+  modalClose: { padding: 4 },
+  modalBody: { padding: 20 },
+  modalStatusRow: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start' as const, marginBottom: 16 },
+  modalStatusText: { fontSize: 13, fontWeight: '700' as const },
+  modalSection: { marginBottom: 16 },
+  modalSectionLabel: { color: Colors.text.muted, fontSize: 12, fontWeight: '600' as const, marginBottom: 4, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  modalSectionValue: { color: Colors.text.primary, fontSize: 15 },
+  modalRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 8 },
+  modalActions: { flexDirection: 'row' as const, gap: 12, marginTop: 12 },
 });

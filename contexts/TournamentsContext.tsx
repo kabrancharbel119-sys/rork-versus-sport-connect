@@ -27,6 +27,7 @@ interface CreateTournamentData {
   createdBy: string;
   sponsorName?: string;
   sponsorLogo?: string;
+  selectedSlots?: Record<string, number[]>;
 }
 
 export const [TournamentsProvider, useTournaments] = createContextHook(() => {
@@ -109,6 +110,7 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
           endDate: data.endDate.toISOString(),
           sponsorName: data.sponsorName,
           sponsorLogo: data.sponsorLogo,
+          selectedSlots: data.selectedSlots,
         });
         await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
         return result;
@@ -278,7 +280,7 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
       const tournament = current.find(t => t.id === tournamentId);
       if (!tournament) throw new Error('Tournoi non trouvé');
       if (!isAdmin && tournament.createdBy !== userId) throw new Error('Seul le créateur peut supprimer ce tournoi');
-      if (!isAdmin && tournament.status !== 'registration') throw new Error('Impossible de supprimer un tournoi en cours');
+      if (!isAdmin && tournament.status === 'in_progress') throw new Error('Impossible de supprimer un tournoi en cours');
       try {
         await tournamentsApi.delete(tournamentId);
         await queryClient.invalidateQueries({ queryKey: ['tournaments'] });

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Send, Bug, CreditCard, Users, Swords, HelpCircle, MessageCircle, Clock } from 'lucide-react-native';
@@ -148,7 +149,7 @@ export default function ContactScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
+            <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/(home)')}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
             <Text style={styles.headerTitle}>{t('contact.title')}</Text>
             <View style={styles.placeholder} />
           </View>

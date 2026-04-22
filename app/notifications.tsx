@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -201,12 +202,11 @@ export default function NotificationsScreen() {
     try {
       setProcessingRequestId(notification._requestId);
       await handleRequest({ teamId: notification._teamId, requestId: notification._requestId, action, handlerId: user.id });
-      const team = teams.find((t) => t.id === notification._teamId);
-      if (team && notification._requestUserId) {
-        await notifyTeamRequest(team.name, action === 'accept' ? 'accepted' : 'rejected', team.id, notification._requestUserId);
-      }
       await refetchTeams();
       await refetchNotifications();
+    } catch (e: any) {
+      const { Alert } = await import('react-native');
+      Alert.alert('Erreur', e?.message ?? 'Impossible de traiter cette demande.');
     } finally {
       setProcessingRequestId(null);
     }
@@ -219,7 +219,7 @@ export default function NotificationsScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/(home)')}>
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <View style={styles.headerTitleWrap}>

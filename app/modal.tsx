@@ -1,5 +1,6 @@
 // template
 import { router } from "expo-router";
+import { safeBack } from '@/lib/navigation';
 import { StatusBar } from "expo-status-bar";
 import {
   Modal,
@@ -17,9 +18,9 @@ export default function ModalScreen() {
       animationType="fade"
       transparent={true}
       visible={true}
-      onRequestClose={() => router.back()}
+      onRequestClose={() => safeBack(router as any, '/(tabs)/(home)')}
     >
-      <Pressable style={styles.overlay} onPress={() => router.back()}>
+      <Pressable style={styles.overlay} onPress={() => safeBack(router as any, '/(tabs)/(home)')}>
         <View style={styles.modalContent}>
           <Text style={styles.title}>Modal</Text>
           <Text style={styles.description}>
@@ -29,7 +30,7 @@ export default function ModalScreen() {
 
           <TouchableOpacity
             style={styles.closeButton}
-            onPress={() => router.back()}
+            onPress={() => safeBack(router as any, '/(tabs)/(home)')}
           >
             <Text style={styles.closeButtonText}>Close</Text>
           </TouchableOpacity>

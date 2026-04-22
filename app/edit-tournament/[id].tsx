@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, TextInput } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
@@ -98,7 +99,7 @@ export default function EditTournamentScreen() {
         },
       });
       await refetchTournaments();
-      Alert.alert('Succès', 'Tournoi mis à jour.', [{ text: 'OK', onPress: () => router.back() }]);
+      Alert.alert('Succès', 'Tournoi mis à jour.', [{ text: 'OK', onPress: () => safeBack(router, '/tournaments') }]);
     } catch (e: unknown) {
       Alert.alert('Erreur', (e as Error).message);
     } finally {
@@ -114,7 +115,7 @@ export default function EditTournamentScreen() {
           <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
-              <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+              <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router, '/tournaments')}>
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>Modifier le tournoi</Text>
@@ -138,7 +139,7 @@ export default function EditTournamentScreen() {
           <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
-              <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+              <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router, '/tournaments')}>
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>Modifier le tournoi</Text>
@@ -146,7 +147,7 @@ export default function EditTournamentScreen() {
             </View>
             <View style={styles.loadingBox}>
               <Text style={styles.loadingText}>Tournoi introuvable ou accès refusé.</Text>
-              <Button title="Retour" onPress={() => router.back()} variant="primary" />
+              <Button title="Retour" onPress={() => safeBack(router, '/tournaments')} variant="primary" />
             </View>
           </SafeAreaView>
         </View>
@@ -161,7 +162,7 @@ export default function EditTournamentScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router, '/tournaments')}>
               <X size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Modifier le tournoi</Text>

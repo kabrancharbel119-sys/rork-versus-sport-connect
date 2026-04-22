@@ -19,7 +19,7 @@ export default function ChatScreen() {
   const router = useRouter();
   const { t, locale } = useI18n();
   const { user } = useAuth();
-  const { chatRooms, createRoom, createTeamChats, isCreatingRoom, createChatRequest, getPendingChatRequests, getSentChatRequests, respondToChatRequest, isCreatingRequest } = useChat();
+  const { chatRooms, createRoom, createTeamChats, isCreatingRoom, createChatRequest, getPendingChatRequests, getSentChatRequests, respondToChatRequest, isCreatingRequest, getTeamRooms } = useChat();
   const { getUserTeams } = useTeams();
   const { users, getUserById } = useUsers();
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -226,11 +226,36 @@ export default function ChatScreen() {
       });
   }, [chatRooms, user?.id]);
 
+  // Direct chats only (non-team)
+  const directRooms = useMemo(() => userRooms.filter(r => r.type === 'direct'), [userRooms]);
+
+  // One entry per team that has rooms
+  const teamEntries = useMemo(() => {
+    return myTeams
+      .map(team => {
+        const rooms = getTeamRooms(team.id);
+        if (rooms.length === 0) return null;
+        const totalUnread = rooms.reduce((sum, r) => sum + (r.unreadCount ?? 0), 0);
+        const lastActivity = rooms.reduce((latest, r) => {
+          const t = r.lastMessage ? new Date(r.lastMessage.createdAt).getTime() : new Date(r.createdAt).getTime();
+          return t > latest ? t : latest;
+        }, 0);
+        const lastRoom = rooms.find(r => r.lastMessage) ?? rooms[0];
+        return { team, rooms, totalUnread, lastActivity, lastRoom };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b!.lastActivity - a!.lastActivity) as { team: (typeof myTeams)[number]; rooms: typeof userRooms; totalUnread: number; lastActivity: number; lastRoom: (typeof userRooms)[number] }[];
+  }, [myTeams, getTeamRooms]);
+
   const filteredConversations = useMemo(() => {
-    if (!conversationSearch.trim()) return userRooms;
+    if (!conversationSearch.trim()) return directRooms;
     const q = conversationSearch.toLowerCase().trim();
-    return userRooms.filter(r => r.name.toLowerCase().includes(q));
-  }, [userRooms, conversationSearch]);
+    return directRooms.filter(r => {
+      const otherPId = r.participants.find(id => id !== user?.id);
+      const otherU = otherPId ? usersById.get(otherPId) : undefined;
+      return r.name.toLowerCase().includes(q) || otherU?.fullName?.toLowerCase().includes(q) || otherU?.username?.toLowerCase().includes(q);
+    });
+  }, [directRooms, conversationSearch, usersById, user?.id]);
 
   return (
     <View style={styles.container}>
@@ -240,8 +265,8 @@ export default function ChatScreen() {
           <View style={styles.headerInfo}>
             <Text style={styles.headerTitle}>{t('chatList.title')}</Text>
             <Text style={styles.headerSubtitle}>
-              {filteredConversations.length > 0
-                ? `${filteredConversations.length} discussion${filteredConversations.length > 1 ? 's' : ''}`
+              {(teamEntries.length + directRooms.length) > 0
+                ? `${teamEntries.length + directRooms.length} conversation${(teamEntries.length + directRooms.length) > 1 ? 's' : ''}`
                 : 'Vos conversations privées et d\'équipe'}
             </Text>
           </View>
@@ -270,7 +295,7 @@ export default function ChatScreen() {
           </View>
         </View>
 
-        {userRooms.length > 0 && (
+        {(directRooms.length > 0 || teamEntries.length > 0) && (
           <View style={styles.searchBarWrap}>
             <View style={styles.searchIcon}>
               <Search size={20} color={Colors.text.muted} />
@@ -349,18 +374,54 @@ export default function ChatScreen() {
                   </View>
                 )}
                 
+                {/* Team entries (Discord-style) */}
+                {teamEntries.length > 0 && (
+                  <View style={styles.conversationsSection}>
+                    <Text style={styles.sectionTitle}>Équipes</Text>
+                    {teamEntries.map(({ team, totalUnread, lastRoom }) => (
+                      <TouchableOpacity
+                        key={team.id}
+                        style={styles.chatItem}
+                        onPress={() => router.push(`/team-chat/${team.id}` as any)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.chatIconContainer}>
+                          <Avatar uri={team.logo} name={team.name} size="medium" />
+                        </View>
+                        <View style={styles.chatContent}>
+                          <View style={styles.chatTop}>
+                            <Text style={styles.chatName} numberOfLines={1}>{team.name}</Text>
+                            {lastRoom?.lastMessage && (
+                              <Text style={styles.chatTime}>{formatTime(lastRoom.lastMessage.createdAt)}</Text>
+                            )}
+                          </View>
+                          {lastRoom?.lastMessage ? (
+                            <Text style={styles.chatPreview} numberOfLines={1}>
+                              {getLastMessageSender(lastRoom.lastMessage.senderId)}{lastRoom.lastMessage.content}
+                            </Text>
+                          ) : (
+                            <Text style={styles.chatPreviewEmpty}>{t('chatList.noMessage')}</Text>
+                          )}
+                        </View>
+                        {totalUnread > 0 && (
+                          <View style={styles.unreadBadge}>
+                            <Text style={styles.unreadText}>{totalUnread > 99 ? '99+' : totalUnread}</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {/* Direct conversations */}
                 {filteredConversations.length > 0 && (
                   <View style={styles.conversationsSection}>
                     <Text style={styles.sectionTitle}>
-                      {conversationSearch.trim() ? `${filteredConversations.length} résultat(s)` : 'Conversations récentes'}
+                      {conversationSearch.trim() ? `${filteredConversations.length} résultat(s)` : 'Messages privés'}
                     </Text>
                     {filteredConversations.map((room) => {
-                      const RoomIcon = getRoomIcon(room.type);
-                      const team = myTeams.find(t => t.id === room.teamId);
-                      const isDirectChat = room.type === 'direct';
-                      const otherParticipantId = isDirectChat && room.participants.find(id => id !== user?.id);
+                      const otherParticipantId = room.participants.find(id => id !== user?.id);
                       const otherUser = otherParticipantId ? usersById.get(otherParticipantId) : undefined;
-                      
                       return (
                         <TouchableOpacity
                           key={room.id}
@@ -369,15 +430,7 @@ export default function ChatScreen() {
                           activeOpacity={0.7}
                         >
                           <View style={styles.chatIconContainer}>
-                            {isDirectChat && otherUser ? (
-                              <Avatar uri={otherUser.avatar} name={otherUser.fullName || otherUser.username || ''} size="medium" />
-                            ) : team?.logo ? (
-                              <Avatar uri={team.logo} name={team.name} size="medium" />
-                            ) : (
-                              <View style={styles.iconWrapper}>
-                                <RoomIcon size={22} color={Colors.primary.blue} />
-                              </View>
-                            )}
+                            <Avatar uri={otherUser?.avatar} name={otherUser?.fullName || otherUser?.username || ''} size="medium" />
                           </View>
                           <View style={styles.chatContent}>
                             <View style={styles.chatTop}>
@@ -407,14 +460,14 @@ export default function ChatScreen() {
                   </View>
                 )}
                 
-                {filteredConversations.length === 0 && pendingRequests.length === 0 && userRooms.length > 0 && conversationSearch.trim() && (
+                {filteredConversations.length === 0 && teamEntries.length === 0 && pendingRequests.length === 0 && (directRooms.length > 0 || userRooms.length > 0) && conversationSearch.trim() && (
             <View style={styles.emptySearch}>
               <Search size={40} color={Colors.text.muted} />
               <Text style={styles.emptySearchText}>{t('chatList.noConversationMatch', { query: conversationSearch })}</Text>
             </View>
                 )}
                 
-                {filteredConversations.length === 0 && pendingRequests.length === 0 && myTeams.length > 0 && !conversationSearch.trim() && (
+                {filteredConversations.length === 0 && teamEntries.length === 0 && pendingRequests.length === 0 && myTeams.length > 0 && !conversationSearch.trim() && (
             <View style={styles.noChatsSection}>
               <Card style={styles.noChatsCard}>
                 <MessageCircle size={48} color={Colors.text.muted} />
@@ -435,7 +488,7 @@ export default function ChatScreen() {
             </View>
                 )}
                 
-                {filteredConversations.length === 0 && pendingRequests.length === 0 && myTeams.length === 0 && !conversationSearch.trim() && (
+                {filteredConversations.length === 0 && teamEntries.length === 0 && pendingRequests.length === 0 && myTeams.length === 0 && !conversationSearch.trim() && (
                   <View style={styles.emptyState}>
               <View style={styles.emptyIconWrapper}>
                 <MessageCircle size={64} color={Colors.text.muted} />

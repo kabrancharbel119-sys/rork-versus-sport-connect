@@ -4,6 +4,7 @@ import {
   TextInput, KeyboardAvoidingView, Platform, Pressable, Alert, Share,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -240,7 +241,7 @@ export default function ChatRoomScreen() {
                   try {
                     await removeParticipant({ roomId: room.id, userId: user.id });
                   } catch (_) {}
-                  router.back();
+                  safeBack(router, '/(tabs)/chat');
                 },
               },
             ]
@@ -271,7 +272,7 @@ export default function ChatRoomScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>Discussion non trouvée</Text>
-            <TouchableOpacity onPress={() => router.back()}>
+            <TouchableOpacity onPress={() => safeBack(router, '/(tabs)/chat')}>
               <Text style={styles.errorLink}>Retour</Text>
             </TouchableOpacity>
           </View>
@@ -286,7 +287,7 @@ export default function ChatRoomScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/chat')}>
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Accès restreint</Text>
@@ -298,7 +299,7 @@ export default function ChatRoomScreen() {
             <Text style={styles.errorText}>
               Seuls les membres de l'équipe peuvent accéder aux discussions. Les fans peuvent suivre l'équipe mais ne peuvent pas participer aux conversations.
             </Text>
-            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => safeBack(router, '/(tabs)/chat')}>
               <Text style={styles.backBtnText}>Retour</Text>
             </TouchableOpacity>
           </View>
@@ -345,7 +346,7 @@ export default function ChatRoomScreen() {
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/chat')}>
                   <ArrowLeft size={24} color={Colors.text.primary} />
                 </TouchableOpacity>
                 <View style={styles.headerInfo}>

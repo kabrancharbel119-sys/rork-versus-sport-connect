@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, Modal } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Search, Users, Shield, Swords, MapPin, Star, CheckCircle, X, Sliders } from 'lucide-react-native';
@@ -99,7 +100,7 @@ export default function SearchScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()} accessibilityLabel={t('common.back')} accessibilityRole="button"><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
+            <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/(home)')} accessibilityLabel={t('common.back')} accessibilityRole="button"><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
             <Text style={styles.headerTitle} accessibilityRole="header">{t('search.title')}</Text>
             <TouchableOpacity style={[styles.filterButton, activeFiltersCount > 0 && styles.filterButtonActive]} onPress={() => setShowFilters(true)} accessibilityLabel={activeFiltersCount > 0 ? t('search.filtersActive', { count: activeFiltersCount }) : t('search.filters')}>
               <Sliders size={20} color={activeFiltersCount > 0 ? '#FFF' : Colors.text.secondary} />

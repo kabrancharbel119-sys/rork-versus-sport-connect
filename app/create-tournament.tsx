@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Modal, TextInput, Keyboard } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { X, Trophy, MapPin, Check, ChevronDown, Search, Calendar, Users, DollarSign } from 'lucide-react-native';
@@ -78,21 +79,6 @@ const emptyVenue: Venue = {
   amenities: [],
 };
 
-/** Propositions de lieux affichées dans le modal (sélection rapide) */
-const VENUE_SUGGESTIONS: { name: string; city: string }[] = [
-  { name: 'Stade municipal', city: 'Ville' },
-  { name: 'Stade Félix Houphouët-Boigny', city: 'Abidjan' },
-  { name: 'Stade de Cocody', city: 'Abidjan' },
-  { name: 'Palais des sports', city: 'Ville' },
-  { name: 'Complexe sportif', city: 'Ville' },
-  { name: 'Salle omnisports', city: 'Ville' },
-  { name: 'Terrain de quartier', city: 'Ville' },
-  { name: 'Gymnase municipal', city: 'Ville' },
-  { name: 'Centre sportif', city: 'Ville' },
-  { name: 'Stade de Yopougon', city: 'Abidjan' },
-  { name: 'Arena', city: 'Ville' },
-  { name: 'Stade Robert Champroux', city: 'Abidjan' },
-];
 
 export default function CreateTournamentScreen() {
   const router = useRouter();
@@ -129,6 +115,8 @@ export default function CreateTournamentScreen() {
   const [manualVenueCity, setManualVenueCity] = useState('');
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  const [selectedSlots, setSelectedSlots] = useState<Record<string, number[]>>({});
   const scrollViewRef = useRef<ScrollView>(null);
 
   const defaultStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -168,6 +156,54 @@ export default function CreateTournamentScreen() {
     );
   }, [sportSearch]);
 
+  // Load existing bookings for the selected venue to show availability
+  const venueAvailabilityQuery = useQuery({
+    queryKey: ['venueBookingsForTournament', formData.venue?.id, formData.startDateStr, formData.endDateStr],
+    queryFn: async () => {
+      if (!formData.venue?.id || formData.venue.id === '') return [];
+      const { supabase } = await import('@/lib/supabase');
+      const { data, error } = await (supabase
+        .from('bookings')
+        .select('date, start_time, end_time, status')
+        .eq('venue_id', formData.venue.id)
+        .gte('date', formData.startDateStr)
+        .lte('date', formData.endDateStr)
+        .neq('status', 'cancelled') as any);
+      if (error) return [];
+      return (data || []) as { date: string; start_time: string; end_time: string; status: string }[];
+    },
+    enabled: !!formData.venue?.id && formData.venue.id !== '' && !!formData.startDateStr && !!formData.endDateStr,
+  });
+
+  // Compute day-by-day status for the selected period
+  const venueDayStatuses = useMemo(() => {
+    if (!formData.venue?.id || formData.venue.id === '' || !formData.startDateStr || !formData.endDateStr) return [];
+    const start = parseLocalDateString(formData.startDateStr);
+    const end = parseLocalDateString(formData.endDateStr);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return [];
+
+    const openingHours: any[] = Array.isArray((formData.venue as any).openingHours) ? (formData.venue as any).openingHours : [];
+    const bookedDates = new Set<string>((venueAvailabilityQuery.data || []).map((b: any) => b.date));
+
+    const days: { dateStr: string; label: string; status: 'available' | 'busy' | 'closed' }[] = [];
+    const cur = new Date(start);
+    const DAY_NAMES = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+    while (cur <= end) {
+      const dateStr = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+      const dow = cur.getDay();
+      const dh = openingHours.find((d: any) => Number(d?.dayOfWeek) === dow);
+      const isClosed = dh?.isClosed === true;
+      const isBusy = bookedDates.has(dateStr);
+      days.push({
+        dateStr,
+        label: `${DAY_NAMES[dow]} ${cur.getDate()}/${cur.getMonth() + 1}`,
+        status: isClosed ? 'closed' : isBusy ? 'busy' : 'available',
+      });
+      cur.setDate(cur.getDate() + 1);
+    }
+    return days;
+  }, [formData.venue, formData.startDateStr, formData.endDateStr, venueAvailabilityQuery.data]);
+
   const filteredVenues = useMemo(() => {
     if (!venueSearch.trim()) return venues;
     return venues.filter(v =>
@@ -175,14 +211,6 @@ export default function CreateTournamentScreen() {
       v.city.toLowerCase().includes(venueSearch.toLowerCase())
     );
   }, [venueSearch, venues]);
-
-  const filteredSuggestions = useMemo(() => {
-    if (!venueSearch.trim()) return VENUE_SUGGESTIONS;
-    const q = venueSearch.toLowerCase();
-    return VENUE_SUGGESTIONS.filter(
-      s => s.name.toLowerCase().includes(q) || s.city.toLowerCase().includes(q)
-    );
-  }, [venueSearch]);
 
   const updateField = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -262,7 +290,7 @@ export default function CreateTournamentScreen() {
     const startDate = localDateStringToDateForAPI(formData.startDateStr);
     const endDate = localDateStringToDateForAPI(formData.endDateStr);
     try {
-      await createTournament({
+      const result = await createTournament({
         name: formData.name,
         description: formData.description,
         sport: formData.sport,
@@ -278,9 +306,22 @@ export default function CreateTournamentScreen() {
         endDate,
         createdBy: user.id,
         sponsorName: formData.sponsorName || undefined,
+        selectedSlots,
       });
-      await refetchTournaments();
-      Alert.alert('Succès', 'Tournoi créé avec succès !', [{ text: 'OK', onPress: () => router.back() }]);
+      const isVenuePending = (result as any)?.status === 'venue_pending';
+      Alert.alert(
+        isVenuePending ? '⏳ Tournoi en attente' : '🏆 Tournoi créé !',
+        isVenuePending
+          ? `Votre tournoi "${formData.name}" a été créé mais les inscriptions s'ouvriront seulement après validation du terrain par le gestionnaire.`
+          : `Votre tournoi "${formData.name}" a été créé avec succès. Les inscriptions sont maintenant ouvertes.`,
+        [{
+          text: 'OK',
+          onPress: () => {
+            refetchTournaments();
+            safeBack(router, '/tournaments');
+          },
+        }]
+      );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Impossible de créer le tournoi';
       Alert.alert('Erreur', message);
@@ -601,6 +642,113 @@ export default function CreateTournamentScreen() {
         </View>
       </View>
 
+      {/* Interactive venue schedule picker */}
+      {formData.venue?.id && formData.venue.id !== '' && venueDayStatuses.length > 0 && (
+        <View style={styles.availabilitySection}>
+          <Text style={styles.availabilitySectionTitle}>Planning du tournoi</Text>
+          <Text style={styles.availabilityHint}>Appuyez sur un jour pour sélectionner les créneaux horaires souhaités.</Text>
+          <View style={styles.availabilityLegend}>
+            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: Colors.status.success }]} /><Text style={styles.legendText}>Libre</Text></View>
+            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: Colors.status.warning }]} /><Text style={styles.legendText}>Occupé</Text></View>
+            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: Colors.text.muted }]} /><Text style={styles.legendText}>Fermé</Text></View>
+            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: Colors.primary.blue }]} /><Text style={styles.legendText}>Sélectionné</Text></View>
+          </View>
+          {venueDayStatuses.map((day) => {
+            const isExpanded = expandedDay === day.dateStr;
+            const daySlots = selectedSlots[day.dateStr] ?? [];
+            const openHour = (() => {
+              const oh: any[] = Array.isArray((formData.venue as any).openingHours) ? (formData.venue as any).openingHours : [];
+              const dow = new Date(day.dateStr + 'T00:00:00').getDay();
+              const dh = oh.find((d: any) => Number(d?.dayOfWeek) === dow);
+              if (dh?.isClosed) return null;
+              const o = dh ? parseInt(String(dh.openTime || '9').split(':')[0], 10) : 9;
+              const c = dh ? parseInt(String(dh.closeTime || '22').split(':')[0], 10) : 22;
+              return { open: isNaN(o) ? 9 : o, close: isNaN(c) ? 22 : c };
+            })();
+            const bookedHoursForDay = new Set<number>();
+            (venueAvailabilityQuery.data ?? [])
+              .filter((b: any) => b.date === day.dateStr)
+              .forEach((b: any) => {
+                const sh = parseInt((b.start_time || '').split('T')[1]?.split(':')[0] ?? '0', 10);
+                const eh = parseInt((b.end_time || '').split('T')[1]?.split(':')[0] ?? '0', 10);
+                for (let h = sh; h < eh; h++) bookedHoursForDay.add(h);
+              });
+            const hours = openHour
+              ? Array.from({ length: openHour.close - openHour.open }, (_, i) => openHour.open + i)
+              : [];
+            return (
+              <View key={day.dateStr} style={styles.scheduleDayContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.scheduleDayHeader,
+                    day.status === 'closed' && { opacity: 0.5 },
+                    daySlots.length > 0 && { borderColor: Colors.primary.blue + '80' },
+                  ]}
+                  onPress={() => {
+                    if (day.status === 'closed') return;
+                    setExpandedDay(isExpanded ? null : day.dateStr);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <View style={[styles.scheduleDayDot, {
+                    backgroundColor: daySlots.length > 0 ? Colors.primary.blue : day.status === 'available' ? Colors.status.success : day.status === 'busy' ? Colors.status.warning : Colors.text.muted,
+                  }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.scheduleDayLabel}>{day.label}</Text>
+                    {daySlots.length > 0 && (
+                      <Text style={styles.scheduleDaySelected}>{daySlots.sort((a,b)=>a-b).map(h=>`${h}h-${h+1}h`).join(', ')}</Text>
+                    )}
+                  </View>
+                  <Text style={styles.scheduleDayStatus}>
+                    {day.status === 'closed' ? 'Fermé' : daySlots.length > 0 ? `${daySlots.length} créneau${daySlots.length > 1 ? 'x' : ''}` : 'Non planifié'}
+                  </Text>
+                  {day.status !== 'closed' && (
+                    <Text style={{ color: Colors.text.muted, fontSize: 16, marginLeft: 8 }}>{isExpanded ? '▲' : '▼'}</Text>
+                  )}
+                </TouchableOpacity>
+                {isExpanded && hours.length > 0 && (
+                  <View style={styles.scheduleSlotGrid}>
+                    {hours.map((h) => {
+                      const isBooked = bookedHoursForDay.has(h);
+                      const isSelected = daySlots.includes(h);
+                      return (
+                        <TouchableOpacity
+                          key={h}
+                          style={[
+                            styles.scheduleSlot,
+                            isBooked && styles.scheduleSlotBooked,
+                            isSelected && styles.scheduleSlotSelected,
+                          ]}
+                          onPress={() => {
+                            if (isBooked) return;
+                            setSelectedSlots(prev => {
+                              const cur = prev[day.dateStr] ?? [];
+                              const next = cur.includes(h) ? cur.filter(x => x !== h) : [...cur, h];
+                              return { ...prev, [day.dateStr]: next };
+                            });
+                          }}
+                          disabled={isBooked}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[
+                            styles.scheduleSlotText,
+                            isBooked && { color: Colors.text.muted },
+                            isSelected && { color: '#fff', fontWeight: '700' },
+                          ]}>{h}h</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            );
+          })}
+          {venueDayStatuses.some(d => d.status === 'busy') && (
+            <Text style={styles.availabilityWarning}>⚠️ Certains créneaux sont déjà réservés — ils apparaissent grisés.</Text>
+          )}
+        </View>
+      )}
+
       <Input
         label="Sponsor (optionnel)"
         placeholder="Nom du sponsor"
@@ -696,7 +844,7 @@ export default function CreateTournamentScreen() {
           <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
-              <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+              <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router, '/tournaments')}>
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>Créer un tournoi</Text>
@@ -712,7 +860,7 @@ export default function CreateTournamentScreen() {
               <Text style={[styles.fieldLabel, { fontSize: 14, color: Colors.text.secondary, textAlign: 'center', lineHeight: 22 }]}>
                 Vous devez être capitaine d&apos;une équipe d&apos;au moins {MIN_MEMBERS_TO_CREATE_TOURNAMENT} membres pour créer un tournoi. Créez ou rejoignez une équipe, devenez capitaine, puis revenez ici.
               </Text>
-              <Button title="Retour" onPress={() => router.back()} variant="primary" size="large" style={{ marginTop: 28 }} />
+              <Button title="Retour" onPress={() => safeBack(router, '/tournaments')} variant="primary" size="large" style={{ marginTop: 28 }} />
             </View>
           </SafeAreaView>
         </View>
@@ -728,7 +876,7 @@ export default function CreateTournamentScreen() {
         
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router, '/tournaments')}>
               <X size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <View style={styles.headerCenter}>
@@ -864,57 +1012,15 @@ export default function CreateTournamentScreen() {
                     keyboardDismissMode="on-drag"
                     contentContainerStyle={{ paddingBottom: 320 }}
                   >
-                    {filteredSuggestions.length > 0 && (
-                      <>
-                        <Text style={styles.venueSectionLabel}>Propositions</Text>
-                        {filteredSuggestions.map((s, index) => {
-                          const suggestionId = `suggestion-${s.name}-${s.city}-${index}`;
-                          const isSelected = formData.venue?.name === s.name && formData.venue?.city === s.city;
-                          return (
-                            <TouchableOpacity
-                              key={suggestionId}
-                              style={[styles.venueItem, isSelected && styles.venueItemActive]}
-                              onPress={() => {
-                                const manualVenue: Venue = {
-                                  id: `suggestion-${index}-${Date.now()}`,
-                                  name: s.name,
-                                  address: s.city,
-                                  city: s.city,
-                                  sport: [formData.sport],
-                                  pricePerHour: 0,
-                                  rating: 0,
-                                  amenities: [],
-                                };
-                                updateField('venue', manualVenue);
-                                setShowVenueModal(false);
-                                setVenueSearch('');
-                              }}
-                              activeOpacity={0.7}
-                            >
-                              <View style={styles.venueItemInfo}>
-                                <Text style={[styles.venueItemName, isSelected && styles.venueItemNameActive]}>
-                                  {s.name}
-                                </Text>
-                                <Text style={styles.venueItemCity}>{s.city}</Text>
-                              </View>
-                              {isSelected && <Check size={20} color={Colors.primary.blue} />}
-                            </TouchableOpacity>
-                          );
-                        })}
-                        {filteredVenues.length > 0 && (
-                          <Text style={[styles.venueSectionLabel, { marginTop: 16 }]}>Lieux en base</Text>
-                        )}
-                      </>
+                    {filteredVenues.length > 0 && (
+                      <Text style={styles.venueSectionLabel}>Terrains disponibles</Text>
                     )}
-                    {filteredVenues.length > 0 && filteredSuggestions.length === 0 && (
-                      <Text style={styles.venueSectionLabel}>Lieux en base</Text>
-                    )}
-                    {filteredVenues.length === 0 && filteredSuggestions.length === 0 ? (
+                    {filteredVenues.length === 0 ? (
                       <View style={styles.emptyVenueState}>
                         <MapPin size={40} color={Colors.text.muted} />
-                        <Text style={styles.emptyVenueTitle}>Aucun résultat</Text>
+                        <Text style={styles.emptyVenueTitle}>Aucun terrain trouvé</Text>
                         <Text style={styles.emptyVenueText}>
-                          Modifiez la recherche, choisissez une proposition ci-dessus ou saisissez un lieu personnalisé.
+                          Aucun terrain inscrit ne correspond à votre recherche. Saisissez un lieu personnalisé ci-dessous.
                         </Text>
                       </View>
                     ) : (
@@ -929,7 +1035,7 @@ export default function CreateTournamentScreen() {
                             <Text style={[styles.venueItemName, formData.venue?.id === venue.id && styles.venueItemNameActive]}>
                               {venue.name}
                             </Text>
-                            <Text style={styles.venueItemCity}>{venue.city} • {venue.pricePerHour.toLocaleString()} FCFA/h</Text>
+                            <Text style={styles.venueItemCity}>{venue.city}{venue.pricePerHour > 0 ? ` • ${venue.pricePerHour.toLocaleString()} FCFA/h` : ''}</Text>
                           </View>
                           {formData.venue?.id === venue.id && <Check size={20} color={Colors.primary.blue} />}
                         </TouchableOpacity>
@@ -1129,4 +1235,28 @@ const styles = StyleSheet.create({
   manualVenueActions: { flexDirection: 'row', gap: 12, marginTop: 24 },
   manualVenueBack: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   manualVenueBackText: { color: Colors.text.secondary, fontSize: 15 },
+  availabilitySection: { marginTop: 20, marginBottom: 4 },
+  availabilitySectionTitle: { color: Colors.text.primary, fontSize: 14, fontWeight: '700' as const, marginBottom: 4 },
+  availabilityHint: { color: Colors.text.muted, fontSize: 12, marginBottom: 12 },
+  availabilityLegend: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 10, marginBottom: 14 },
+  legendItem: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { color: Colors.text.muted, fontSize: 11 },
+  availabilityGrid: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 8 },
+  availabilityDay: { width: '30%' as any, borderRadius: 10, borderWidth: 1, padding: 8, alignItems: 'center' as const, gap: 4 },
+  availabilityDot: { width: 8, height: 8, borderRadius: 4 },
+  availabilityDayLabel: { color: Colors.text.primary, fontSize: 11, fontWeight: '600' as const, textAlign: 'center' as const },
+  availabilityDayStatus: { fontSize: 11, fontWeight: '500' as const },
+  availabilityWarning: { color: Colors.status.warning, fontSize: 12, marginTop: 10, lineHeight: 17 },
+  scheduleDayContainer: { marginBottom: 8, borderRadius: 14, overflow: 'hidden' as const, borderWidth: 1, borderColor: Colors.border.light },
+  scheduleDayHeader: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10, padding: 14, backgroundColor: Colors.background.card },
+  scheduleDayDot: { width: 10, height: 10, borderRadius: 5 },
+  scheduleDayLabel: { color: Colors.text.primary, fontSize: 14, fontWeight: '600' as const },
+  scheduleDaySelected: { color: Colors.primary.blue, fontSize: 11, marginTop: 2 },
+  scheduleDayStatus: { color: Colors.text.muted, fontSize: 12 },
+  scheduleSlotGrid: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 8, padding: 12, backgroundColor: Colors.background.dark },
+  scheduleSlot: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: Colors.border.light, backgroundColor: Colors.background.cardLight },
+  scheduleSlotBooked: { backgroundColor: Colors.background.card, borderColor: Colors.text.muted + '30', opacity: 0.5 },
+  scheduleSlotSelected: { backgroundColor: Colors.primary.blue, borderColor: Colors.primary.blue },
+  scheduleSlotText: { color: Colors.text.primary, fontSize: 13, fontWeight: '500' as const },
 });

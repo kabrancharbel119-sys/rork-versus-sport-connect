@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
 import { ArrowLeft, ArrowRight, Lock, Mail } from 'lucide-react-native';
@@ -90,7 +91,7 @@ export default function LoginScreen() {
           >
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => router.back()}
+              onPress={() => safeBack(router, '/auth/welcome')}
             >
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>

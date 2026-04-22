@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput,
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, MapPin, Phone, Mail, DollarSign, Check, X, Plus } from 'lucide-react-native';
@@ -92,7 +93,7 @@ export default function CreateVenueScreen() {
       queryClient.invalidateQueries({ queryKey: ['myVenues'] });
       queryClient.invalidateQueries({ queryKey: ['venues'] });
       Alert.alert('Terrain créé !', 'Votre terrain est maintenant visible par les utilisateurs.', [
-        { text: 'OK', onPress: () => router.back() },
+        { text: 'OK', onPress: () => safeBack(router, '/venue-manager') },
       ]);
     },
     onError: (error: Error) => {
@@ -187,7 +188,7 @@ export default function CreateVenueScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <Text style={styles.errorText}>Accès réservé aux gestionnaires.</Text>
-          <Button title="Retour" onPress={() => router.back()} variant="outline" />
+          <Button title="Retour" onPress={() => safeBack(router, '/(tabs)/(home)')} variant="outline" />
         </SafeAreaView>
       </View>
     );
@@ -200,7 +201,7 @@ export default function CreateVenueScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/venue-manager')}>
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Nouveau terrain</Text>

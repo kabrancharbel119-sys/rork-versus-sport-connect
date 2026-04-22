@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl, Modal, TextInput } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
@@ -212,7 +213,7 @@ export default function LiveMatchScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>Match non trouvé</Text>
-            <Button title="Retour" onPress={() => router.back()} variant="outline" />
+            <Button title="Retour" onPress={() => safeBack(router, '/(tabs)/matches')} variant="outline" />
           </View>
         </SafeAreaView>
       </View>
@@ -227,7 +228,7 @@ export default function LiveMatchScreen() {
 
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => safeBack(router, '/(tabs)/matches')}>
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <View style={styles.headerTitleWrap}>

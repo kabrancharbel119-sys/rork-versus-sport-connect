@@ -177,6 +177,7 @@ export const teamsApi = {
     fans: string[];
     joinRequests: JoinRequest[];
     coCaptainIds: string[];
+    captainId: string;
     stats: TeamStats;
   }>) {
     console.log('[TeamsAPI] Updating team:', id);
@@ -191,6 +192,7 @@ export const teamsApi = {
     if (updates.fans !== undefined) dbUpdates.fans = updates.fans;
     if (updates.joinRequests !== undefined) dbUpdates.join_requests = updates.joinRequests;
     if (updates.coCaptainIds !== undefined) dbUpdates.co_captain_ids = updates.coCaptainIds;
+    if (updates.captainId !== undefined) dbUpdates.captain_id = updates.captainId;
     if (updates.stats !== undefined) dbUpdates.stats = updates.stats;
     
     const { data, error } = await ((supabase.from('teams') as any)
@@ -333,9 +335,24 @@ export const teamsApi = {
         .single() as any);
       if (userError) throw userError;
       const userTeams = (((user as { teams?: string[] | null } | null)?.teams as string[] | null) ?? []).filter(Boolean);
-      const otherTeams = userTeams.filter(id => id !== team.id);
-      if (otherTeams.length > 0) {
-        throw new Error('Ce joueur est déjà membre d\'une autre équipe');
+      // Only check teams OTHER than this one where the player is actually a member in DB
+      const otherTeamIds = userTeams.filter(id => id !== team.id);
+      if (otherTeamIds.length > 0) {
+        // Verify actual membership in DB (users.teams can be stale)
+        const { data: otherTeamsData } = await (supabase
+          .from('teams')
+          .select('id, members')
+          .in('id', otherTeamIds) as any);
+        const actualOtherTeams = ((otherTeamsData as any[] | null) ?? []).filter((t: any) => {
+          const members = t.members ?? [];
+          return members.some((m: any) => m.userId === request.userId || m.user_id === request.userId);
+        });
+        if (actualOtherTeams.length > 0) {
+          throw new Error('Ce joueur est déjà membre d\'une autre équipe');
+        }
+        // Stale — clean up users.teams
+        const cleanedTeams = userTeams.filter(id => id === team.id);
+        await ((supabase.from('users') as any).update({ teams: cleanedTeams }).eq('id', request.userId));
       }
 
       const newMember: TeamMember = {
@@ -353,8 +370,9 @@ export const teamsApi = {
       await (supabase.from('notifications').insert({
         user_id: request.userId,
         type: 'team',
-        title: 'Demande acceptée',
-        message: `Vous êtes maintenant membre de ${team.name}!`
+        title: '✅ Demande acceptée',
+        message: `Vous êtes maintenant membre de ${team.name} ! Bienvenue dans l'équipe.`,
+        data: { route: `/team/${teamId}`, teamId },
       } as any) as any);
     } else if (action === 'reject') {
       await this.update(teamId, { joinRequests: updatedJoinRequests });
@@ -362,13 +380,38 @@ export const teamsApi = {
         user_id: request.userId,
         type: 'team',
         title: 'Demande refusée',
-        message: `Votre demande pour rejoindre ${team.name} a été refusée.`
+        message: `Votre demande pour rejoindre ${team.name} a été refusée.`,
+        data: { route: '/teams' },
       } as any) as any);
     } else {
       await this.update(teamId, { joinRequests: updatedJoinRequests });
     }
 
     return updatedRequest;
+  },
+
+  async removeMember(teamId: string, userId: string) {
+    console.log('[TeamsAPI] Removing member:', userId, 'from', teamId);
+
+    const team = await this.getById(teamId);
+
+    const members = team.members.filter(m => m.userId !== userId);
+    const coCaptainIds = team.coCaptainIds.filter(id => id !== userId);
+
+    await this.update(teamId, { members, coCaptainIds });
+
+    const { data: user } = await (supabase
+      .from('users')
+      .select('teams')
+      .eq('id', userId)
+      .single() as any);
+
+    if (user) {
+      const userTeams = ((user as { teams: string[] | null }).teams || []).filter(id => id !== teamId);
+      await ((supabase.from('users') as any).update({ teams: userTeams }).eq('id', userId));
+    }
+
+    return { success: true };
   },
 
   async leave(teamId: string, userId: string) {

@@ -244,6 +244,7 @@ export interface Booking {
   totalPrice: number;
   status: BookingStatus;
   matchId?: string;
+  tournamentId?: string;
   notes?: string;
   createdAt: Date;
 }

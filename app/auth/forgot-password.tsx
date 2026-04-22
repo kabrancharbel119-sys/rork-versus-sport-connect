@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
 import { ArrowLeft, Mail, Send } from 'lucide-react-native';
@@ -41,7 +42,7 @@ export default function ForgotPasswordScreen() {
         [
           {
             text: 'OK',
-            onPress: () => router.back(),
+            onPress: () => safeBack(router, '/auth/login'),
           },
         ]
       );
@@ -71,7 +72,7 @@ export default function ForgotPasswordScreen() {
           >
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => router.back()}
+              onPress={() => safeBack(router, '/auth/login')}
             >
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>
@@ -121,7 +122,7 @@ export default function ForgotPasswordScreen() {
 
             <View style={styles.footer}>
               <Text style={styles.footerText}>Vous vous souvenez ?</Text>
-              <TouchableOpacity onPress={() => router.back()}>
+              <TouchableOpacity onPress={() => safeBack(router, '/auth/login')}>
                 <Text style={styles.footerLink}>Se connecter</Text>
               </TouchableOpacity>
             </View>

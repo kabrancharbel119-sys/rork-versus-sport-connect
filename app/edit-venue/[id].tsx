@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput,
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Check, Plus, X } from 'lucide-react-native';
@@ -126,7 +127,7 @@ export default function EditVenueScreen() {
       queryClient.invalidateQueries({ queryKey: ['myVenues'] });
       queryClient.invalidateQueries({ queryKey: ['venues'] });
       queryClient.invalidateQueries({ queryKey: ['venue', id] });
-      Alert.alert('Terrain mis à jour !', '', [{ text: 'OK', onPress: () => router.back() }]);
+      Alert.alert('Terrain mis à jour !', '', [{ text: 'OK', onPress: () => safeBack(router, '/venue-manager') }]);
     },
     onError: (error: Error) => {
       Alert.alert('Erreur', error.message || 'Impossible de modifier le terrain.');
@@ -223,7 +224,7 @@ export default function EditVenueScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <Text style={styles.errorText}>Accès réservé aux gestionnaires.</Text>
-          <Button title="Retour" onPress={() => router.back()} variant="outline" />
+          <Button title="Retour" onPress={() => safeBack(router, '/(tabs)/(home)')} variant="outline" />
         </SafeAreaView>
       </View>
     );
@@ -247,7 +248,7 @@ export default function EditVenueScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/venue-manager')}>
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Modifier le terrain</Text>

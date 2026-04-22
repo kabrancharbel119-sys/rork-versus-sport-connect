@@ -131,7 +131,7 @@ export const notificationsApi = {
       .from('push_tokens')
       .select('id')
       .eq('user_id', userId)
-      .single() as any);
+      .maybeSingle() as any);
 
     if (existing) {
       await ((supabase.from('push_tokens') as any)
@@ -173,7 +173,7 @@ export const notificationsApi = {
       .from('push_tokens')
       .select('token')
       .eq('user_id', targetUserId)
-      .single() as any);
+      .maybeSingle() as any);
 
     if (pushToken?.token) {
       await sendExpoPushNotification(pushToken.token, notification.title, notification.message, notification.data);

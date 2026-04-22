@@ -13,6 +13,8 @@ import { useTeams } from '@/contexts/TeamsContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { useNotifications } from '@/contexts/NotificationsContext';
 import { teamsApi } from '@/lib/api/teams';
+import { supabase } from '@/lib/supabase';
+import { safeBack } from '@/lib/navigation';
 import { usersApi } from '@/lib/api/users';
 import { uploadTeamImage } from '@/lib/uploadImage';
 import { Avatar } from '@/components/Avatar';
@@ -60,7 +62,7 @@ export default function TeamDetailScreen() {
   const router = useRouter();
   const { t } = useI18n();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { getTeamById, sendJoinRequest, leaveTeam, handleRequest, updateMemberRole, addCustomRole, promoteMember, removeMember, getPendingRequests, updateTeam, deleteTeam, transferCaptaincy, followTeam, unfollowTeam, isUpdating, refetchTeams, getUserTeams } = useTeams();
   const { users, addUser } = useUsers();
   const { addNotification, notifyTeamRequest } = useNotifications();
@@ -87,27 +89,38 @@ export default function TeamDetailScreen() {
   const [editLevel, setEditLevel] = useState<SkillLevel>('intermediate');
   const [editAmbiance, setEditAmbiance] = useState<PlayStyle>('mixed');
 
+  const loadFreshTeam = useCallback(() => {
+    if (!id) return;
+    teamsApi.getById(id)
+      .then(t => setFetchedTeam(t))
+      .catch(() => {});
+  }, [id]);
+
   useFocusEffect(
     useCallback(() => {
+      // Always load fresh from DB on focus — bypasses stale cache
+      if (id) {
+        setLoadingTeam(true);
+        teamsApi.getById(id)
+          .then(t => setFetchedTeam(t))
+          .catch(() => {})
+          .finally(() => setLoadingTeam(false));
+      }
+      // Refresh user so user.teams is up-to-date (updated when captain accepts)
+      refreshUser();
       refetchTeams();
-    }, [refetchTeams])
+    }, [id, refetchTeams, refreshUser])
   );
 
-  useEffect(() => {
-    if (id && !fromContext) {
-      setLoadingTeam(true);
-      teamsApi.getById(id)
-        .then(t => setFetchedTeam(t))
-        .catch(() => setFetchedTeam(null))
-        .finally(() => setLoadingTeam(false));
-    } else {
-      setFetchedTeam(null);
-    }
-  }, [id, fromContext]);
+  const team = fetchedTeam ?? fromContext;
 
-  const team = fromContext ?? fetchedTeam;
-
-  const isMember = team?.members.some(m => m.userId === user?.id) ?? false;
+  // Use fresh DB data as source of truth when available.
+  // Fall back to userTeamIds only when no fresh fetch yet (handles join acceptance polling).
+  const userTeamIds: string[] = (user as any)?.teams ?? [];
+  const memberInTeam = team?.members.some(m => m.userId === user?.id) ?? false;
+  const isMember = fetchedTeam
+    ? memberInTeam
+    : memberInTeam || (!!id && userTeamIds.includes(id));
   const isFan = (team?.fans ?? []).includes(user?.id || '');
   const isCaptain = team?.captainId === user?.id;
   const isCoCaptain = team?.coCaptainIds.includes(user?.id || '') ?? false;
@@ -119,6 +132,30 @@ export default function TeamDetailScreen() {
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
     : undefined;
   const hasRequested = myJoinRequest?.status === 'pending' || myJoinRequest?.status === 'waiting';
+
+  // Poll DB every 5s while a request is pending so the screen updates immediately on acceptance
+  useEffect(() => {
+    if (!hasRequested || isMember) return;
+    const interval = setInterval(() => {
+      loadFreshTeam();
+      refreshUser();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [hasRequested, isMember, loadFreshTeam, refreshUser]);
+
+  // Realtime subscription: reload team instantly when members column changes (removal/join)
+  useEffect(() => {
+    if (!id) return;
+    const channel = supabase
+      .channel(`team-members-${id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'teams', filter: `id=eq.${id}` }, () => {
+        loadFreshTeam();
+        refreshUser();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [id, loadFreshTeam, refreshUser]);
+
   const memberRole = team?.members.find(m => m.userId === user?.id)?.role;
   const pendingRequests = team ? getPendingRequests(team.id) : [];
   const allRoles = team ? [...TEAM_ROLES, ...team.customRoles.map(r => r.name)] : [...TEAM_ROLES];
@@ -225,7 +262,7 @@ export default function TeamDetailScreen() {
       <View style={styles.container}>
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
-          <View style={styles.errorContainer}><Text style={styles.errorText}>{t('teamDetail.notFound')}</Text><Button title={t('common.back')} onPress={() => router.back()} variant="outline" /></View>
+          <View style={styles.errorContainer}><Text style={styles.errorText}>{t('teamDetail.notFound')}</Text><Button title={t('common.back')} onPress={() => safeBack(router, '/(tabs)/teams')} variant="outline" /></View>
         </SafeAreaView>
       </View>
     );
@@ -259,17 +296,13 @@ export default function TeamDetailScreen() {
   const handleLeave = () => {
     Alert.alert(t('teamDetail.leaveTeamTitle'), t('teamDetail.leaveTeamQuestion', { team: team.name }), [
       { text: t('common.cancel'), style: 'cancel' },
-      { text: t('teamDetail.leaveTeamTitle'), style: 'destructive', onPress: async () => { try { await leaveTeam({ teamId: team.id, userId: user!.id }); router.back(); } catch (e: any) { Alert.alert(t('common.error'), e.message); } } },
+      { text: t('teamDetail.leaveTeamTitle'), style: 'destructive', onPress: async () => { try { await leaveTeam({ teamId: team.id, userId: user!.id }); safeBack(router, '/(tabs)/teams'); } catch (e: any) { Alert.alert(t('common.error'), e.message); } } },
     ]);
   };
 
   const handleRequestAction = async (requestId: string, action: 'accept' | 'reject') => {
-    const req = pendingRequests.find((r) => r.id === requestId);
     try {
       await handleRequest({ teamId: team.id, requestId, action, handlerId: user!.id });
-      if (req?.userId) {
-        await notifyTeamRequest(team.name, action === 'accept' ? 'accepted' : 'rejected', team.id, req.userId);
-      }
       setShowRequestsModal(false);
       await refetchTeams();
       Alert.alert(t('common.success'), action === 'accept' ? t('teamDetail.memberAdded') : t('teamDetail.requestRejected'));
@@ -325,6 +358,7 @@ export default function TeamDetailScreen() {
               message: `Vous avez été retiré de l'équipe ${team.name}.`,
               data: { route: '/(tabs)/teams' },
             });
+            loadFreshTeam();
           } catch (e: any) {
             Alert.alert(t('common.error'), e.message);
           }
@@ -406,7 +440,7 @@ export default function TeamDetailScreen() {
                 });
               }
               setShowSettingsModal(false);
-              router.back();
+              safeBack(router, '/(tabs)/teams');
               Alert.alert(t('common.success'), t('teamDetail.dissolvedSuccess'));
             } catch (e: any) {
               Alert.alert(t('common.error'), e.message);
@@ -457,7 +491,7 @@ export default function TeamDetailScreen() {
         <SafeAreaView style={styles.safeArea} edges={['top']}>
           <ScrollView testID="team-detail-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             <View style={styles.header}>
-              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
+              <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/teams')}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
               <View style={styles.headerActions}>
                 {!previewForNonMember && canHandleRequests && pendingRequests.length > 0 && (
                   <TouchableOpacity style={styles.requestsBadge} onPress={() => setShowRequestsModal(true)}>
@@ -593,7 +627,7 @@ export default function TeamDetailScreen() {
 
             <View style={styles.actions}>
               {isMember && (
-                <Button title={t('teamDetail.teamChat')} onPress={() => router.push('/(tabs)/chat')} variant="primary" icon={<MessageCircle size={18} color="#FFFFFF" />} style={styles.actionButton} />
+                <Button title={t('teamDetail.teamChat')} onPress={() => router.push(`/team-chat/${team.id}` as any)} variant="primary" icon={<MessageCircle size={18} color="#FFFFFF" />} style={styles.actionButton} />
               )}
               {!isMember && !hasRequested && !isFan && myJoinRequest?.status !== 'waiting' && (
                 <>

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { X, Swords, MapPin, Trophy } from 'lucide-react-native';
@@ -182,7 +183,7 @@ export default function CreateMatchScreen() {
         prize: undefined,
       });
       console.log('[CreateMatch] createMatch SUCCESS');
-      router.back();
+      safeBack(router, '/(tabs)/matches');
     } catch (error: any) {
       console.error('[CreateMatch] ERROR:', error?.message, error);
       Alert.alert('Erreur', error?.message ?? 'Impossible de créer le match');
@@ -200,7 +201,7 @@ export default function CreateMatchScreen() {
         
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router, '/(tabs)/matches')}>
               <X size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Créer un match</Text>

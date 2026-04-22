@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Modal, TextInput, ActionSheetIOS } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { X, Users, MapPin, Check, ChevronDown, Search, Shield, Image as ImageIcon, Plus, Trash2 } from 'lucide-react-native';
@@ -245,11 +246,11 @@ export default function CreateTeamScreen() {
           { 
             text: 'Voir mon équipe', 
             onPress: () => {
-              router.back();
+              safeBack(router, '/(tabs)/teams');
               setTimeout(() => router.push('/(tabs)/teams'), 100);
             }
           },
-          { text: 'OK', onPress: () => router.back() }
+          { text: 'OK', onPress: () => safeBack(router, '/(tabs)/teams') }
         ]
       );
     } catch (error: any) {
@@ -562,7 +563,7 @@ export default function CreateTeamScreen() {
           <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
-              <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+              <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router, '/(tabs)/teams')}>
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>Créer une équipe</Text>
@@ -572,7 +573,7 @@ export default function CreateTeamScreen() {
               <Shield size={56} color={Colors.primary.orange} />
               <Text style={styles.blockedTitle}>Une seule équipe à la fois</Text>
               <Text style={styles.blockedText}>Vous ne pouvez être membre que d&#39;une seule équipe. Quittez votre équipe actuelle pour en créer une nouvelle.</Text>
-              <Button title="Retour" onPress={() => router.back()} variant="outline" style={{ marginTop: 24 }} />
+              <Button title="Retour" onPress={() => safeBack(router, '/(tabs)/teams')} variant="outline" style={{ marginTop: 24 }} />
             </View>
           </SafeAreaView>
         </View>
@@ -588,7 +589,7 @@ export default function CreateTeamScreen() {
         
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router, '/(tabs)/teams')}>
               <X size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <View style={styles.headerCenter}>

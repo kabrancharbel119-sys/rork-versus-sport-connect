@@ -273,9 +273,11 @@ export default function TournamentDetailScreen() {
   const getStatusLabel = (status: string | undefined) => {
     switch (status) {
       case 'registration': return t('tournamentDetail.statusRegistration');
+      case 'venue_pending': return '⏳ En attente du terrain';
       case 'in_progress':
       case 'ongoing': return t('tournamentDetail.statusInProgress');
       case 'completed': return t('tournamentDetail.statusCompleted');
+      case 'cancelled': return '❌ Annulé';
       default: return status ?? '–';
     }
   };
@@ -283,14 +285,20 @@ export default function TournamentDetailScreen() {
   const getStatusColor = (status: string | undefined) => {
     switch (status) {
       case 'registration': return Colors.status.success;
+      case 'venue_pending': return Colors.status.warning;
       case 'in_progress':
       case 'ongoing': return Colors.primary.orange;
       case 'completed': return Colors.text.muted;
+      case 'cancelled': return Colors.status.error;
       default: return Colors.text.muted;
     }
   };
 
   const handleRegister = () => {
+    if (tournament.status === 'venue_pending') {
+      Alert.alert('⏳ En attente', 'Les inscriptions ouvriront après validation du terrain par le gestionnaire.');
+      return;
+    }
     if (tournament.status !== 'registration') {
       Alert.alert(t('tournamentDetail.registerClosedTitle'), t('tournamentDetail.registerClosedMessage'));
       return;
@@ -1326,6 +1334,14 @@ export default function TournamentDetailScreen() {
           </ScrollView>
 
           {/* Footer CTA */}
+          {tournament.status === 'venue_pending' && (
+            <View style={styles.footer}>
+              <View style={[styles.registerButton, { backgroundColor: Colors.background.card, borderRadius: 14, padding: 16, alignItems: 'center' }]}>
+                <Text style={{ color: Colors.status.warning, fontWeight: '700', fontSize: 15 }}>⏳ En attente de validation du terrain</Text>
+                <Text style={{ color: Colors.text.muted, fontSize: 13, marginTop: 4 }}>Les inscriptions ouvriront après approbation</Text>
+              </View>
+            </View>
+          )}
           {tournament.status === 'registration' && !userIsRegistered && (
             <View style={styles.footer}>
               {canRegisterTeam && !isFull ? (

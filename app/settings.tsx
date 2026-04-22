@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Switch, Alert, Modal, Platform, TextInput, ToastAndroid } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Bell, Lock, MapPin, Shield, HelpCircle, FileText, Mail, Trash2, ChevronRight, LogOut, CheckCircle, Trophy, Search, Users, Star, Volume2, Vibrate, Eye, Database, RefreshCw, Wifi, WifiOff, Languages, AlertTriangle, UserX } from 'lucide-react-native';
@@ -219,7 +220,7 @@ export default function SettingsScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()} accessibilityLabel={t('common.back')}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
+            <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/profile')} accessibilityLabel={t('common.back')}><ArrowLeft size={24} color={Colors.text.primary} /></TouchableOpacity>
             <Text style={styles.headerTitle} accessibilityRole="header">{t('settings.title')}</Text>
             <View style={styles.statusIndicator}>{isOnline ? <Wifi size={20} color={Colors.status.success} /> : <WifiOff size={20} color={Colors.status.error} />}</View>
           </View>

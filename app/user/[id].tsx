@@ -8,10 +8,10 @@ import { ArrowLeft, MapPin, Calendar, Trophy, Swords, Star, Users, MessageCircle
 import { Colors } from '@/constants/colors';
 import type { Team, User } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { safeBack } from '@/lib/navigation';
 import { useI18n } from '@/contexts/I18nContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { useTeams } from '@/contexts/TeamsContext';
-import { useNotifications } from '@/contexts/NotificationsContext';
 import { useChat } from '@/contexts/ChatContext';
 import { usersApi } from '@/lib/api/users';
 import { teamsApi } from '@/lib/api/teams';
@@ -33,7 +33,6 @@ export default function UserProfileScreen() {
   const { user: currentUser } = useAuth();
   const { users, isFollowing, follow, unfollow } = useUsers();
   const { teams, getUserTeams, getTeamById, handleRequest, refetchTeams } = useTeams();
-  const { notifyTeamRequest } = useNotifications();
   const { chatRooms, createChatRequest, getSentChatRequests } = useChat();
   const [isHandlingRequest, setIsHandlingRequest] = useState(false);
 
@@ -134,7 +133,7 @@ export default function UserProfileScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{isInvisibleProfile ? t('userProfile.invisibleProfile') : t('userProfile.userNotFound')}</Text>
-            <TouchableOpacity onPress={() => router.back()}><Text style={styles.errorLink}>{t('common.back')}</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => safeBack(router, '/(tabs)/(home)')}><Text style={styles.errorLink}>{t('common.back')}</Text></TouchableOpacity>
           </View>
         </SafeAreaView>
       </View>
@@ -216,15 +215,9 @@ export default function UserProfileScreen() {
         action,
         handlerId: currentUser.id,
       });
-      await notifyTeamRequest(
-        requestTeam.name,
-        action === 'accept' ? 'accepted' : 'rejected',
-        requestTeam.id,
-        profileUserId
-      );
       await refetchTeams();
       Alert.alert(t('common.success'), action === 'accept' ? t('userProfile.requestAccepted') : t('userProfile.requestRejected'));
-      router.back();
+      safeBack(router, '/(tabs)/(home)');
     } catch (error: any) {
       Alert.alert(t('common.error'), error?.message ?? t('userProfile.requestProcessFailed'));
     } finally {
@@ -246,7 +239,7 @@ export default function UserProfileScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.header}>
-              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+              <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/(home)')}>
                 <ArrowLeft size={24} color={Colors.text.primary} />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>{t('userProfile.title')}</Text>

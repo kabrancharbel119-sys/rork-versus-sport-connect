@@ -3,6 +3,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, RefreshControl, Switch, Share, Platform, Modal, KeyboardAvoidingView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -179,7 +180,7 @@ export default function AdminScreen() {
             <Shield size={64} color={Colors.status.error} />
             <Text style={{ color: Colors.text.primary, fontSize: 24, fontWeight: '700' as const, marginTop: 20 }}>Accès refusé</Text>
             <Text style={{ color: Colors.text.muted, fontSize: 15, textAlign: 'center' as const, marginTop: 8 }}>Vous n&apos;avez pas les permissions administrateur.</Text>
-            <TouchableOpacity style={{ marginTop: 24, backgroundColor: Colors.primary.blue, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }} onPress={() => router.back()}>
+            <TouchableOpacity style={{ marginTop: 24, backgroundColor: Colors.primary.blue, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }} onPress={() => safeBack(router, '/(tabs)/(home)')}>
               <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' as const }}>Retour</Text>
             </TouchableOpacity>
           </View>
@@ -1789,7 +1790,7 @@ export default function AdminScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea} edges={['top']}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/(home)')}>
               <ArrowLeft size={20} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Administration</Text>

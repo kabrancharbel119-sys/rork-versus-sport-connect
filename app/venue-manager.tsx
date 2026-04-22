@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl, ActivityIndicator, Platform, ViewStyle } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -147,7 +148,7 @@ export default function VenueManagerScreen() {
           <MapPin size={48} color={Colors.text.muted} />
           <Text style={styles.emptyTitle}>Accès réservé</Text>
           <Text style={styles.emptyText}>Vous devez être gestionnaire de terrain pour accéder à cette page.</Text>
-          <Button title="Retour" onPress={() => router.back()} variant="outline" style={{ marginTop: 16 }} />
+          <Button title="Retour" onPress={() => safeBack(router, '/(tabs)/(home)')} variant="outline" style={{ marginTop: 16 }} />
         </SafeAreaView>
       </View>
     );

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Modal } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { X, Camera, User, Mail, Phone, MapPin, FileText, Plus, Trash2, Check } from 'lucide-react-native';
@@ -59,7 +60,7 @@ export default function EditProfileScreen() {
     try {
       await updateProfile({ fullName: formData.fullName, username: formData.username, phone: formData.phone || undefined, city: formData.city, country: formData.country, bio: formData.bio || undefined });
       Alert.alert('Succès', 'Profil mis à jour');
-      router.back();
+      safeBack(router, '/(tabs)/profile');
     } catch (e: any) {
       Alert.alert('Erreur', e?.message || 'Impossible de mettre à jour le profil');
     }
@@ -154,7 +155,7 @@ export default function EditProfileScreen() {
           <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
-              <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+              <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router, '/(tabs)/profile')}>
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>Modifier le profil</Text>
@@ -162,7 +163,7 @@ export default function EditProfileScreen() {
             </View>
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
               <Text style={{ color: Colors.text.muted, fontSize: 16, textAlign: 'center', marginBottom: 16 }}>Non connecté. Veuillez vous connecter pour modifier votre profil.</Text>
-              <TouchableOpacity style={{ backgroundColor: Colors.primary.blue, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }} onPress={() => router.back()}>
+              <TouchableOpacity style={{ backgroundColor: Colors.primary.blue, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }} onPress={() => safeBack(router, '/(tabs)/profile')}>
                 <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '600' }}>Retour</Text>
               </TouchableOpacity>
             </View>
@@ -179,7 +180,7 @@ export default function EditProfileScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}><X size={24} color={Colors.text.primary} /></TouchableOpacity>
+            <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router, '/(tabs)/profile')}><X size={24} color={Colors.text.primary} /></TouchableOpacity>
             <Text style={styles.headerTitle}>Modifier le profil</Text>
             <View style={styles.placeholder} />
           </View>

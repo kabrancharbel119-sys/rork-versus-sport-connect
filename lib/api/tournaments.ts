@@ -150,8 +150,25 @@ export const tournamentsApi = {
     endDate: string;
     sponsorName?: string;
     sponsorLogo?: string;
+    selectedSlots?: Record<string, number[]>;
   }) {
     console.log('[TournamentsAPI] Creating tournament:', data.name);
+
+    // Determine initial status BEFORE inserting: fetch venue to check auto_approve
+    let initialStatus: 'registration' | 'venue_pending' = 'registration';
+    let venueRowForBooking: any = null;
+    if (data.venue?.id) {
+      const { data: vr } = await (supabase
+        .from('venues')
+        .select('*')
+        .eq('id', data.venue.id)
+        .single() as any);
+      if (vr) {
+        venueRowForBooking = vr;
+        if (vr.auto_approve === false) initialStatus = 'venue_pending';
+      }
+    }
+
     const { data: row, error } = await (supabase
       .from('tournaments')
       .insert({
@@ -160,7 +177,7 @@ export const tournamentsApi = {
         sport: data.sport,
         format: data.format,
         type: data.type,
-        status: 'registration',
+        status: initialStatus,
         level: data.level,
         max_teams: data.maxTeams,
         registered_teams: [],
@@ -187,57 +204,59 @@ export const tournamentsApi = {
       .single() as any);
 
     if (error) throw error;
-    const createdTournament = mapTournamentRowToTournament(row as TournamentRow);
+    let createdTournament = mapTournamentRowToTournament(row as TournamentRow);
 
-    // Create a booking to block the venue for the tournament period
-    if (data.venue?.id) {
+    // Create a single booking covering the full tournament period to notify the venue manager
+    // Non-blocking: a tournament reserves the whole period, individual match bookings handle slots
+    if (data.venue?.id && venueRowForBooking) {
       try {
-        const { data: venueRow, error: venueErr } = await (supabase
-          .from('venues')
-          .select('*')
-          .eq('id', data.venue.id)
+        const v = venueRowForBooking;
+        const autoApprove = v.auto_approve !== false;
+        const bookingStatus = autoApprove ? 'confirmed' : 'pending';
+
+        const startDate = new Date(data.startDate);
+        const endDate = new Date(data.endDate);
+        const dateStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+        const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+
+        // Calculate total price: sum of all selected slots × pricePerHour
+        const pricePerHour = v.price_per_hour ?? 0;
+        const totalHours = Object.values(data.selectedSlots ?? {}).reduce((sum, slots) => sum + slots.length, 0);
+        const totalAmount = totalHours * pricePerHour;
+
+        const { data: bookingRow } = await (supabase
+          .from('bookings')
+          .insert({
+            venue_id: data.venue.id,
+            user_id: userId,
+            date: dateStr,
+            start_time: `${dateStr}T09:00:00`,
+            end_time: `${endDateStr}T22:00:00`,
+            total_amount: totalAmount,
+            match_id: null,
+            tournament_id: (row as any).id,
+            status: bookingStatus,
+          } as any)
+          .select()
           .single() as any);
 
-        if (!venueErr && venueRow) {
-          const v = venueRow as any;
-          const autoApprove = v.auto_approve !== false;
-          const bookingStatus = autoApprove ? 'confirmed' : 'pending';
-
-          const startDate = new Date(data.startDate);
-          const endDate = new Date(data.endDate);
-          const dateStr = startDate.toISOString().split('T')[0];
-          const endDateStr = endDate.toISOString().split('T')[0];
-          const startTimestamp = `${dateStr}T09:00:00`;
-          const endTimestamp = `${endDateStr}T22:00:00`;
-
-          await (supabase
-            .from('bookings')
-            .insert({
-              venue_id: data.venue.id,
-              user_id: userId,
+        // Notify venue owner
+        if (v.owner_id) {
+          const { notificationsApi } = await import('@/lib/api/notifications');
+          await notificationsApi.send(v.owner_id, {
+            type: 'booking',
+            title: bookingStatus === 'pending'
+              ? '🏟️ Demande de réservation (Tournoi)'
+              : '✅ Réservation confirmée (Tournoi)',
+            message: `${v.name} — Tournoi "${data.name}" du ${dateStr} au ${endDateStr}`,
+            data: {
+              bookingId: bookingRow?.id ?? '',
+              venueId: data.venue.id,
+              tournamentId: (row as any).id,
               date: dateStr,
-              start_time: startTimestamp,
-              end_time: endTimestamp,
-              total_amount: 0,
-              match_id: null,
               status: bookingStatus,
-            } as any) as any);
-
-          // Notify venue owner
-          if (v.owner_id) {
-            const { notificationsApi } = await import('@/lib/api/notifications');
-            await notificationsApi.send(v.owner_id, {
-              type: 'booking',
-              title: bookingStatus === 'pending' ? '🏟️ Demande de réservation (Tournoi)' : '✅ Réservation confirmée (Tournoi)',
-              message: `${v.name} — Tournoi "${data.name}" du ${dateStr} au ${endDateStr}`,
-              data: {
-                venueId: data.venue.id,
-                tournamentId: (row as any).id,
-                date: dateStr,
-                status: bookingStatus,
-              },
-            });
-          }
+            },
+          });
         }
       } catch (bookingErr: any) {
         console.warn('[TournamentsAPI] Booking creation failed (non-blocking):', bookingErr?.message);

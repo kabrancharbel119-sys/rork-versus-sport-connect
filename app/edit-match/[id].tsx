@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { X, Swords, MapPin, Calendar, Clock } from 'lucide-react-native';
@@ -57,6 +58,7 @@ export default function EditMatchScreen() {
   const { getMatchById, updateMatch, isUpdating, venues } = useMatches();
 
   const match = getMatchById(id || '');
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const [formData, setFormData] = useState({
     sport: 'football' as Sport,
@@ -100,7 +102,7 @@ export default function EditMatchScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>Match non trouvé</Text>
-            <Button title="Retour" onPress={() => router.back()} variant="outline" />
+            <Button title="Retour" onPress={() => safeBack(router, '/(tabs)/matches')} variant="outline" />
           </View>
         </SafeAreaView>
       </View>
@@ -114,7 +116,7 @@ export default function EditMatchScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>Vous n'êtes pas autorisé à modifier ce match</Text>
-            <Button title="Retour" onPress={() => router.back()} variant="outline" />
+            <Button title="Retour" onPress={() => safeBack(router, '/(tabs)/matches')} variant="outline" />
           </View>
         </SafeAreaView>
       </View>
@@ -147,7 +149,7 @@ export default function EditMatchScreen() {
           prize: formData.prize ? parseInt(formData.prize, 10) : undefined,
         },
       });
-      Alert.alert('Succès', 'Match mis à jour !', [{ text: 'OK', onPress: () => router.back() }]);
+      Alert.alert('Succès', 'Match mis à jour !', [{ text: 'OK', onPress: () => safeBack(router, '/(tabs)/matches') }]);
     } catch (error: any) {
       Alert.alert('Erreur', error.message || 'Impossible de modifier le match');
     }
@@ -164,7 +166,7 @@ export default function EditMatchScreen() {
         
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router, '/(tabs)/matches')}>
               <X size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Modifier le match</Text>

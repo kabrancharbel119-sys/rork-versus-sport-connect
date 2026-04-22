@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import { safeBack } from '@/lib/navigation';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -46,7 +47,7 @@ export default function MatchDetailScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{t('matchDetail.notFound')}</Text>
-            <Button title={t('common.back')} onPress={() => router.back()} variant="outline" />
+            <Button title={t('common.back')} onPress={() => safeBack(router, '/(tabs)/matches')} variant="outline" />
           </View>
         </SafeAreaView>
       </View>
@@ -121,7 +122,7 @@ export default function MatchDetailScreen() {
               await deleteMatch({ matchId: match.id, userId: user!.id });
               await notifyMatchUpdate(match.id, 'cancelled', match.venue?.name, registeredIds.filter((id) => id !== user!.id));
               Alert.alert(t('common.success'), t('matchDetail.deleteSuccess'));
-              router.back();
+              safeBack(router, '/(tabs)/matches');
             } catch (error: any) {
               Alert.alert(t('common.error'), error.message);
             }
@@ -219,7 +220,7 @@ export default function MatchDetailScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.header}>
-              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+              <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/matches')}>
                 <ArrowLeft size={24} color={Colors.text.primary} />
               </TouchableOpacity>
               <View style={styles.headerActions}>

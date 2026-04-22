@@ -75,8 +75,10 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
         throw new Error('Network error');
       }
     },
-    staleTime: 30 * 1000,
+    staleTime: 5 * 1000,
     refetchInterval: isAppActive ? TEAMS_REFETCH_INTERVAL_MS : false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
     refetchIntervalInBackground: false,
   });
 
@@ -190,40 +192,11 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
   const handleRequestMutation = useMutation({
     mutationFn: async ({ teamId, requestId, action, handlerId }: { teamId: string; requestId: string; action: 'accept' | 'reject' | 'wait'; handlerId: string }) => {
       console.log('[Teams] Handling request:', requestId, action);
-      try {
-        await teamsApi.handleJoinRequest(teamId, requestId, action, handlerId);
-        await queryClient.invalidateQueries({ queryKey: ['teams'] });
-        return;
-      } catch (err: any) {
-        console.log('[Teams] Supabase error:', err.message);
-      }
-      
-      const teamIndex = teams.findIndex(t => t.id === teamId);
-      if (teamIndex === -1) throw new Error('Équipe non trouvée');
-      if (teams[teamIndex].captainId !== handlerId) throw new Error('Non autorisé');
-      
-      const requestIndex = teams[teamIndex].joinRequests.findIndex(r => r.id === requestId);
-      if (requestIndex === -1) throw new Error('Demande non trouvée');
-      
-      const updatedTeams = [...teams];
-      const request = updatedTeams[teamIndex].joinRequests[requestIndex];
-      if (request.status !== 'pending' && request.status !== 'waiting') throw new Error('Cette demande a déjà été traitée');
-      
-      if (action === 'accept') {
-        if (updatedTeams[teamIndex].members.some(m => m.userId === request.userId)) throw new Error('Ce joueur est déjà membre');
-        if (updatedTeams[teamIndex].members.length >= updatedTeams[teamIndex].maxMembers) throw new Error('Équipe complète');
-        const userAlreadyMemberOfAnotherTeam = teams.some(t => t.id !== teamId && t.members.some(m => m.userId === request.userId));
-        if (userAlreadyMemberOfAnotherTeam) throw new Error('Ce joueur est déjà membre d\'une autre équipe');
-        updatedTeams[teamIndex].members.push({ userId: request.userId, role: 'member', joinedAt: new Date() });
-        updatedTeams[teamIndex].joinRequests[requestIndex] = { ...request, status: 'accepted', respondedAt: new Date() };
-        updatedTeams[teamIndex].fans = (updatedTeams[teamIndex].fans ?? []).filter(id => id !== request.userId);
-      } else if (action === 'reject') {
-        updatedTeams[teamIndex].joinRequests[requestIndex] = { ...request, status: 'rejected', respondedAt: new Date() };
-      } else {
-        updatedTeams[teamIndex].joinRequests[requestIndex] = { ...request, status: 'waiting', respondedAt: new Date() };
-      }
-      
-      await saveTeams(updatedTeams);
+      // Call API — propagate errors so the UI shows the real failure reason
+      await teamsApi.handleJoinRequest(teamId, requestId, action, handlerId);
+      // Clear local cache so every user (including the accepted player) reloads fresh data
+      await AsyncStorage.removeItem(TEAMS_STORAGE_KEY);
+      await queryClient.invalidateQueries({ queryKey: ['teams'] });
     },
   });
 
@@ -315,6 +288,8 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
   const removeMemberMutation = useMutation({
     mutationFn: async ({ teamId, userId }: { teamId: string; userId: string }) => {
       console.log('[Teams] Removing member:', userId);
+      await teamsApi.removeMember(teamId, userId);
+      
       const teamIndex = teams.findIndex(t => t.id === teamId);
       if (teamIndex === -1) throw new Error('Équipe non trouvée');
       
@@ -324,6 +299,8 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
         members: updatedTeams[teamIndex].members.filter(m => m.userId !== userId),
         coCaptainIds: updatedTeams[teamIndex].coCaptainIds.filter(id => id !== userId),
       };
+      // Clear cache so removed member cannot read stale data on next app open
+      await AsyncStorage.removeItem(TEAMS_STORAGE_KEY);
       await saveTeams(updatedTeams);
     },
   });
@@ -367,20 +344,32 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
       const teamIndex = teams.findIndex(t => t.id === teamId);
       if (teamIndex === -1) throw new Error('Équipe non trouvée');
       if (teams[teamIndex].captainId !== currentCaptainId) throw new Error('Seul le capitaine peut transférer');
-      
-      const updatedTeams = [...teams];
-      const oldCaptainIndex = updatedTeams[teamIndex].members.findIndex(m => m.userId === currentCaptainId);
-      const newCaptainIndex = updatedTeams[teamIndex].members.findIndex(m => m.userId === newCaptainId);
-      
+
+      const oldCaptainIndex = teams[teamIndex].members.findIndex(m => m.userId === currentCaptainId);
+      const newCaptainIndex = teams[teamIndex].members.findIndex(m => m.userId === newCaptainId);
+
       if (newCaptainIndex === -1) throw new Error('Nouveau capitaine non trouvé');
-      
-      updatedTeams[teamIndex].captainId = newCaptainId;
-      updatedTeams[teamIndex].members[newCaptainIndex].role = 'captain';
-      if (oldCaptainIndex !== -1) {
-        updatedTeams[teamIndex].members[oldCaptainIndex].role = 'member';
-      }
-      updatedTeams[teamIndex].coCaptainIds = updatedTeams[teamIndex].coCaptainIds.filter(id => id !== newCaptainId);
-      
+
+      const updatedMembers = teams[teamIndex].members.map(m => {
+        if (m.userId === newCaptainId) return { ...m, role: 'captain' as const };
+        if (m.userId === currentCaptainId) return { ...m, role: 'member' as const };
+        return m;
+      });
+      const updatedCoCaptainIds = teams[teamIndex].coCaptainIds.filter(id => id !== newCaptainId);
+
+      await teamsApi.update(teamId, {
+        captainId: newCaptainId,
+        members: updatedMembers,
+        coCaptainIds: updatedCoCaptainIds,
+      });
+
+      const updatedTeams = [...teams];
+      updatedTeams[teamIndex] = {
+        ...updatedTeams[teamIndex],
+        captainId: newCaptainId,
+        members: updatedMembers,
+        coCaptainIds: updatedCoCaptainIds,
+      };
       await saveTeams(updatedTeams);
     },
   });
@@ -435,7 +424,9 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
   const getPendingRequests = useCallback((teamId: string) => teams.find(t => t.id === teamId)?.joinRequests.filter(r => r.status === 'pending') || [], [teams]);
 
   const refetchTeams = useCallback(async () => {
+    await AsyncStorage.removeItem(TEAMS_STORAGE_KEY);
     await queryClient.invalidateQueries({ queryKey: ['teams'] });
+    await queryClient.refetchQueries({ queryKey: ['teams'] });
   }, [queryClient]);
 
   return {

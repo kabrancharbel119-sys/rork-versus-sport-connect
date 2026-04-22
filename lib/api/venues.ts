@@ -38,6 +38,7 @@ export interface BookingRow {
   total_amount: number;
   status: string;
   match_id: string | null;
+  tournament_id: string | null;
   notes: string | null;
   created_at: string;
 }
@@ -79,6 +80,7 @@ export const mapBookingRowToBooking = (row: BookingRow): Booking => ({
   totalPrice: row.total_amount,
   status: row.status as BookingStatus,
   matchId: row.match_id ?? undefined,
+  tournamentId: (row as any).tournament_id ?? undefined,
   notes: row.notes ?? undefined,
   createdAt: new Date(row.created_at),
 });
@@ -260,6 +262,7 @@ export const venuesApi = {
     startTime: string;
     endTime: string;
     matchId?: string;
+    tournamentId?: string;
   }) {
     console.log('[VenuesAPI] Creating booking:', booking);
     
@@ -341,6 +344,7 @@ export const venuesApi = {
       end_time: endTimestamp,
       total_amount: totalPrice,
       match_id: booking.matchId || null,
+      tournament_id: booking.tournamentId || null,
       status: venue.autoApprove === false ? 'pending' : 'confirmed',
     };
     console.log('[VenuesAPI] Booking insert payload:', JSON.stringify(insertPayload));
@@ -595,9 +599,48 @@ export const venuesApi = {
     }
     
     console.log('[VenuesAPI] Found', (data || []).length, 'bookings for owner');
-    const mapped = ((data || []) as BookingRow[]).map(mapBookingRowToBooking);
-    console.log('[VenuesAPI] Mapped bookings:', mapped.length);
-    return mapped;
+    const rows = (data || []) as BookingRow[];
+
+    // Enrich tournament bookings with tournament name, organizer and team info
+    const enriched = await Promise.all(rows.map(async (row) => {
+      const booking = mapBookingRowToBooking(row);
+      const tId = (row as any).tournament_id;
+      if (!tId) return booking;
+      try {
+        const { data: tRow } = await (supabase
+          .from('tournaments')
+          .select('id, name, created_by')
+          .eq('id', tId)
+          .single() as any);
+        if (!tRow) return booking;
+
+        // Get organizer display name
+        const { data: uRow } = await (supabase
+          .from('users')
+          .select('id, full_name, username')
+          .eq('id', tRow.created_by)
+          .single() as any);
+
+        // Get organizer's team for this tournament
+        const { data: teamRows } = await (supabase
+          .from('teams')
+          .select('id, name')
+          .eq('captain_id', tRow.created_by)
+          .limit(1) as any);
+
+        return {
+          ...booking,
+          tournamentName: tRow.name as string,
+          organizerName: (uRow?.full_name || uRow?.username || 'Organisateur') as string,
+          organizerTeamName: (teamRows?.[0]?.name ?? null) as string | null,
+        };
+      } catch {
+        return booking;
+      }
+    }));
+
+    console.log('[VenuesAPI] Mapped bookings:', enriched.length);
+    return enriched;
   },
 
   async getUserBookings(userId: string) {
@@ -742,6 +785,33 @@ export const venuesApi = {
       }
     }
 
+    // Cascade booking status to linked tournament (venue_pending -> registration / cancelled)
+    if ((booking as any).tournamentId) {
+      try {
+        const newTournamentStatus = resolvedStatus === 'confirmed' ? 'registration'
+          : (resolvedStatus === 'rejected' || resolvedStatus === 'cancelled') ? 'cancelled'
+          : null;
+        if (newTournamentStatus) {
+          // Update the tournament status
+          await (supabase
+            .from('tournaments')
+            .update({ status: newTournamentStatus } as any)
+            .eq('id', (booking as any).tournamentId)
+            .eq('status', 'venue_pending') as any);
+          // Cascade to all other pending bookings of this tournament
+          const newBookingStatus = resolvedStatus === 'confirmed' ? 'confirmed' : 'cancelled';
+          await (supabase
+            .from('bookings')
+            .update({ status: newBookingStatus } as any)
+            .eq('tournament_id', (booking as any).tournamentId)
+            .eq('status', 'pending')
+            .neq('id', booking.id) as any).catch(() => {});
+        }
+      } catch (tournErr: any) {
+        console.warn('[VenuesAPI] Tournament status cascade failed (non-blocking):', tournErr?.message);
+      }
+    }
+
     // Send notification to user about status change
     try {
       const venue = await this.getById(booking.venueId);
@@ -749,7 +819,8 @@ export const venuesApi = {
       const endH = parseHourFromTimestamp(booking.endTime);
       const timeRange = `${startH}h-${endH}h`;
       const isMatchBooking = !!booking.matchId;
-      const context = isMatchBooking ? ' (Match)' : '';
+      const isTournamentBooking = !!(booking as any).tournamentId;
+      const context = isTournamentBooking ? ' (Tournoi)' : isMatchBooking ? ' (Match)' : '';
 
       if (resolvedStatus === 'confirmed') {
         await notificationsApi.send(booking.userId, {
