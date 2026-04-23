@@ -48,10 +48,13 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
 
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
+        name: 'VERSUS Notifications',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#FF6B35',
+        sound: 'default',
+        enableVibrate: true,
+        showBadge: true,
       });
     }
 

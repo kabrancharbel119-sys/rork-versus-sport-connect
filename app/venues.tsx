@@ -1,4 +1,4 @@
-import React, { useState, useMemo, Component } from 'react';
+import React, { useState, useMemo, Component, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,6 +6,7 @@ import { ArrowLeft, MapPin, Star, Search, DollarSign } from 'lucide-react-native
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { venuesApi } from '@/lib/api/venues';
+import { supabase } from '@/lib/supabase';
 import { Card } from '@/components/Card';
 import type { Venue } from '@/types';
 
@@ -88,6 +89,20 @@ function VenuesContent() {
     },
     retry: 1,
   });
+
+  // Realtime subscription for venues list updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('venues-list')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'venues' }, () => {
+        console.log('[VenuesList] Realtime update received, refreshing venues');
+        queryClient.invalidateQueries({ queryKey: ['venues'] });
+      })
+      .subscribe();
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [queryClient]);
 
   const venues: Venue[] = venuesQuery.data || [];
 

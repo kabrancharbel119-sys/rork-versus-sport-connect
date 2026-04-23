@@ -244,66 +244,6 @@ export default function ManagerDashboardTab() {
                 </Card>
               </View>
 
-              {/* Today schedule */}
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Planning du jour</Text>
-                <View style={styles.liveBadge}>
-                  <Activity size={12} color={Colors.status.success} />
-                  <Text style={styles.liveText}>LIVE</Text>
-                </View>
-              </View>
-              {todayBookings.length > 0 ? (
-                todayBookings.sort((a, b) => a.startTime.localeCompare(b.startTime)).map(booking => {
-                  const sc = statusConfig[booking.status] || statusConfig.pending;
-                  const now = new Date();
-                  const [startH] = booking.startTime.split(':').map(Number);
-                  const [endH] = booking.endTime.split(':').map(Number);
-                  const currentH = now.getHours();
-                  const isNow = booking.date === todayStr && currentH >= startH && currentH < endH;
-                  return (
-                    <Card key={booking.id} style={[styles.scheduleCard, isNow && styles.scheduleCardLive]}>
-                      {isNow && <View style={styles.scheduleCardLiveBar} />}
-                      <View style={styles.scheduleTime}>
-                        <Text style={[styles.scheduleTimeText, isNow && { color: Colors.primary.orange }]}>{booking.startTime}</Text>
-                        <Text style={styles.scheduleTimeSep}>-</Text>
-                        <Text style={styles.scheduleTimeText}>{booking.endTime}</Text>
-                      </View>
-                      <View style={styles.scheduleInfo}>
-                        <Text style={styles.scheduleVenue}>{getVenueName(booking.venueId)}</Text>
-                        <Text style={styles.schedulePrice}>{booking.totalPrice.toLocaleString()} FCFA</Text>
-                      </View>
-                      <View style={[styles.scheduleBadge, { backgroundColor: sc.color + '20' }]}>
-                        <Text style={[styles.scheduleBadgeText, { color: sc.color }]}>{sc.label}</Text>
-                      </View>
-                    </Card>
-                  );
-                })
-              ) : (
-                <Card style={styles.emptySchedule}>
-                  <Calendar size={24} color={Colors.text.muted} />
-                  <Text style={styles.emptyScheduleText}>Aucune réservation aujourd'hui</Text>
-                </Card>
-              )}
-
-              {/* Upcoming */}
-              {upcomingBookings.length > 0 && (
-                <>
-                  <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Prochaines réservations</Text>
-                  {upcomingBookings.slice(0, 5).map(booking => (
-                    <Card key={booking.id} style={styles.upcomingCard}>
-                      <View style={styles.upcomingLeft}>
-                        <Text style={styles.upcomingDate}>{booking.date}</Text>
-                        <Text style={styles.upcomingTime}>{booking.startTime} - {booking.endTime}</Text>
-                      </View>
-                      <View style={styles.upcomingRight}>
-                        <Text style={styles.upcomingVenue}>{getVenueName(booking.venueId)}</Text>
-                        <Text style={styles.upcomingPrice}>{booking.totalPrice.toLocaleString()} FCFA</Text>
-                      </View>
-                    </Card>
-                  ))}
-                </>
-              )}
-
               {/* My Tournaments */}
               {tournaments.length > 0 && (
                 <>
@@ -449,21 +389,6 @@ const styles = StyleSheet.create({
   sectionTitle: { color: Colors.text.primary, fontSize: 17, fontWeight: '700' },
   liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.status.success + '20', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   liveText: { color: Colors.status.success, fontSize: 11, fontWeight: '700' },
-
-  // Schedule
-  scheduleCard: { marginBottom: 8, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  scheduleCardLive: { borderWidth: 1, borderColor: Colors.primary.orange + '50' },
-  scheduleCardLiveBar: { position: 'absolute', left: 0, top: 4, bottom: 4, width: 3, backgroundColor: Colors.primary.orange, borderRadius: 2 },
-  scheduleTime: { alignItems: 'center', width: 55 },
-  scheduleTimeText: { color: Colors.text.primary, fontSize: 14, fontWeight: '700' },
-  scheduleTimeSep: { color: Colors.text.muted, fontSize: 10 },
-  scheduleInfo: { flex: 1 },
-  scheduleVenue: { color: Colors.text.primary, fontSize: 14, fontWeight: '600' },
-  schedulePrice: { color: Colors.primary.orange, fontSize: 12, fontWeight: '600', marginTop: 2 },
-  scheduleBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  scheduleBadgeText: { fontSize: 11, fontWeight: '600' },
-  emptySchedule: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 },
-  emptyScheduleText: { color: Colors.text.muted, fontSize: 14 },
 
   // Upcoming
   upcomingCard: { marginBottom: 6, padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

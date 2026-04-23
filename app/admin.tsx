@@ -24,10 +24,11 @@ import { sportLabels } from '@/mocks/data';
 import { notificationsApi } from '@/lib/api/notifications';
 import { tournamentPayoutRequestsApi, tournamentPaymentsApi } from '@/lib/api/tournament-payments';
 import { offlineManager } from '@/lib/offline';
+import { testEngine, testLogStore, reportRunner, type QaDomain, type QaRunResult, type QaRuntimeEvent, type ProductionReadinessResult } from '@/qa';
 
 const CACHE_KEYS_TO_PURGE = ['vs_tournaments', 'vs_teams', 'vs_matches', 'vs_all_users', 'vs_follows', 'vs_notifications', 'vs_offline_queue', 'vs_last_sync'];
 
-type AdminTab = 'overview' | 'users' | 'banned' | 'teams' | 'matches' | 'tournaments' | 'tickets' | 'verifications' | 'payments' | 'payouts' | 'analytics' | 'activity' | 'settings';
+type AdminTab = 'overview' | 'users' | 'banned' | 'teams' | 'matches' | 'tournaments' | 'tickets' | 'verifications' | 'payments' | 'payouts' | 'analytics' | 'activity' | 'qa' | 'prod_report' | 'settings';
 
 interface ActivityLog {
   id: string;
@@ -58,6 +59,43 @@ export default function AdminScreen() {
   const [sendingNotif, setSendingNotif] = useState(false);
   const [selectedTicketForResponse, setSelectedTicketForResponse] = useState<SupportTicket | null>(null);
   const [ticketResponseText, setTicketResponseText] = useState('');
+  const [selectedTicketDetail, setSelectedTicketDetail] = useState<SupportTicket | null>(null);
+  const [selectedVerificationDetail, setSelectedVerificationDetail] = useState<VerificationRequest | null>(null);
+  const [qaRunning, setQaRunning] = useState(false);
+  const [qaResult, setQaResult] = useState<QaRunResult | null>(null);
+  const [prodReportRunning, setProdReportRunning] = useState(false);
+  const [prodReportResult, setProdReportResult] = useState<ProductionReadinessResult | null>(null);
+  const [qaLogs, setQaLogs] = useState<any[]>([]);
+  const [qaSelectedDomain, setQaSelectedDomain] = useState<QaDomain>('cross_domain');
+  const [qaLiveEvents, setQaLiveEvents] = useState<QaRuntimeEvent[]>([]);
+
+  const qaDomains: QaDomain[] = [
+    'auth',
+    'teams',
+    'matches',
+    'tournaments',
+    'payments',
+    'chat',
+    'venues',
+    'notifications',
+    'permissions',
+    'cross_domain',
+    'stress',
+    'integrity',
+    'recovery',
+  ];
+
+  // Helper to get user name from users array
+  const getUserName = useCallback((userId: string) => {
+    const foundUser = users.find(u => u.id === userId);
+    return foundUser?.fullName || `Utilisateur ${userId?.slice(0, 8)}...`;
+  }, [users]);
+
+  // Helper to get user username from users array
+  const getUserUsername = useCallback((userId: string) => {
+    const foundUser = users.find(u => u.id === userId);
+    return foundUser?.username || 'N/A';
+  }, [users]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'city'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -229,6 +267,76 @@ export default function AdminScreen() {
       weeklyActiveUsers: activeUsers,
     };
   }, [users, teams, matches, tournaments, pendingTickets, pendingVerifications]);
+
+  const loadQaLogs = useCallback(async () => {
+    try {
+      const logs = await testLogStore.getRecent(50);
+      setQaLogs(logs);
+    } catch (e) {
+      if (__DEV__) {
+        console.warn('[Admin][QA] Failed to load logs:', (e as Error).message);
+      }
+    }
+  }, []);
+
+  const runProdReportSilent = useCallback(async () => {
+    try {
+      const result = await reportRunner.run();
+      setProdReportResult(result);
+      return result;
+    } catch (e) {
+      console.warn('[QA] Prod report after run failed:', (e as Error).message);
+      return null;
+    }
+  }, []);
+
+  const runQaAll = useCallback(async () => {
+    setQaRunning(true);
+    setQaLiveEvents([]);
+    try {
+      const result = await testEngine.runAll({
+        onEvent: (event) => {
+          setQaLiveEvents((prev) => [event, ...prev].slice(0, 300));
+        },
+      });
+      setQaResult(result);
+      await loadQaLogs();
+      const prodReport = await runProdReportSilent();
+      const prodLine = prodReport ? `\nRapport prod: ${prodReport.readyForProduction ? '✅ PRÊT' : '🚫 NON PRÊT'} (${prodReport.overallScore}/100, ${prodReport.blockers.length} bloqueur(s))` : '';
+      Alert.alert('QA + Rapport Prod', `QA: ${result.summary.passed} passés, ${result.summary.failed} échecs, ${result.summary.warnings} warnings.${prodLine}`);
+    } catch (e) {
+      Alert.alert('QA', (e as Error).message);
+    } finally {
+      setQaRunning(false);
+    }
+  }, [loadQaLogs, runProdReportSilent]);
+
+  const runQaByDomain = useCallback(async () => {
+    setQaRunning(true);
+    setQaLiveEvents([]);
+    try {
+      const result = await testEngine.runByDomain(qaSelectedDomain, {
+        onEvent: (event) => {
+          setQaLiveEvents((prev) => [event, ...prev].slice(0, 300));
+        },
+      });
+      setQaResult(result);
+      await loadQaLogs();
+      const prodReport = await runProdReportSilent();
+      const prodLine = prodReport ? `\nRapport prod: ${prodReport.readyForProduction ? '✅ PRÊT' : '🚫 NON PRÊT'} (${prodReport.overallScore}/100, ${prodReport.blockers.length} bloqueur(s))` : '';
+      Alert.alert('QA + Rapport Prod', `Domaine ${qaSelectedDomain}: ${result.summary.passed} passés, ${result.summary.failed} échecs.${prodLine}`);
+    } catch (e) {
+      Alert.alert('QA', (e as Error).message);
+    } finally {
+      setQaRunning(false);
+    }
+  }, [qaSelectedDomain, loadQaLogs, runProdReportSilent]);
+
+  useEffect(() => {
+    if (activeTab === 'qa') {
+      loadQaLogs();
+    }
+  }, [activeTab, loadQaLogs]);
 
   const sportStats = useMemo(() => {
     const sportCounts: Record<string, number> = {};
@@ -481,16 +589,17 @@ export default function AdminScreen() {
     ]);
   };
 
-  const handleTicketAction = async (ticketId: string, action: 'resolve' | 'close') => {
+  const handleTicketAction = async (ticketId: string, action: 'in_progress' | 'resolve' | 'close') => {
     if (!ticketId?.trim()) {
       Alert.alert('Erreur', 'Ticket invalide.');
       return;
     }
-    const status = action === 'resolve' ? 'resolved' : 'closed';
+    const status = action === 'in_progress' ? 'in_progress' : action === 'resolve' ? 'closed' : 'closed';
+    const actionText = action === 'in_progress' ? 'en cours' : 'fermé';
     try {
       await updateTicketStatus({ ticketId, status });
       await queryClient.invalidateQueries({ queryKey: ['support'] });
-      Alert.alert('Succès', `Ticket ${action === 'resolve' ? 'résolu' : 'fermé'}`);
+      Alert.alert('Succès', `Ticket marqué ${actionText}`);
     } catch (e) {
       Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de mettre à jour le ticket.');
     }
@@ -842,9 +951,195 @@ export default function AdminScreen() {
     { key: 'payments', label: 'Paiements', icon: <DollarSign size={16} color={activeTab === 'payments' ? '#FFF' : Colors.text.secondary} />, badge: pendingPayments.length },
     { key: 'payouts', label: 'Avances', icon: <FileText size={16} color={activeTab === 'payouts' ? '#FFF' : Colors.text.secondary} />, badge: pendingPayoutRequests.length },
     { key: 'activity', label: 'Activité', icon: <Activity size={16} color={activeTab === 'activity' ? '#FFF' : Colors.text.secondary} /> },
+    { key: 'qa', label: 'QA', icon: <Server size={16} color={activeTab === 'qa' ? '#FFF' : Colors.text.secondary} /> },
+    { key: 'prod_report', label: 'Rapport Prod', icon: <CheckCircle size={16} color={activeTab === 'prod_report' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'analytics', label: 'Analytiques', icon: <TrendingUp size={16} color={activeTab === 'analytics' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'settings', label: 'Paramètres', icon: <Settings size={16} color={activeTab === 'settings' ? '#FFF' : Colors.text.secondary} /> },
   ], [activeTab, pendingTickets, pendingVerifications, pendingPayments.length, pendingPayoutRequests.length]);
+
+  const renderQa = () => (
+    <>
+      <Card style={styles.settingsCard}>
+        <Text style={styles.cardTitle}>Système QA interne</Text>
+        <Text style={styles.cardDesc}>Exécute des scénarios multi-domaines, stress, sécurité, intégrité, et journalise les résultats dans `qa_test_logs`.</Text>
+        <View style={styles.qaButtonRow}>
+          <Button title={qaRunning ? 'Exécution…' : '▶ Run All'} onPress={runQaAll} variant="primary" style={styles.qaBtn} disabled={qaRunning} />
+          <Button title="⟳ Reload Logs" onPress={loadQaLogs} variant="outline" style={styles.qaBtn} disabled={qaRunning} />
+        </View>
+        <Text style={[styles.cardDesc, { marginTop: 8 }]}>Mode requis: `EXPO_PUBLIC_QA_TEST_MODE=true`</Text>
+      </Card>
+
+      <Card style={styles.settingsCard}>
+        <View style={styles.cardTitleRow}>
+          <Text style={styles.cardTitle}>Exécution en temps réel</Text>
+          {qaRunning && (
+            <View style={styles.liveBadge}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>LIVE</Text>
+            </View>
+          )}
+        </View>
+        {qaLiveEvents.length === 0 ? (
+          <Text style={styles.emptyText}>Aucun événement live pour le moment.</Text>
+        ) : (
+          qaLiveEvents.slice(0, 60).map((event, index) => {
+            const label =
+              event.type === 'run_started'
+                ? `Run started (${event.mode})`
+                : event.type === 'scenario_started'
+                  ? `[${event.domain}] ${event.scenarioName} started`
+                  : event.type === 'step_started'
+                    ? `Step started: ${event.stepName}`
+                    : event.type === 'step_finished'
+                      ? `${event.status.toUpperCase()} ${event.stepName} (${event.durationMs}ms)`
+                      : event.type === 'scenario_finished'
+                        ? `[${event.domain}] ${event.scenarioName} ${event.status.toUpperCase()} (${event.durationMs}ms)`
+                        : `Run finished - pass:${event.summary.passed} fail:${event.summary.failed} warn:${event.summary.warnings}`;
+
+            return (
+              <View key={`${event.type}-${event.at}-${index}`} style={styles.qaEventItem}>
+                <Text style={styles.qaEventText}>{label}</Text>
+                {'error' in event && event.error ? <Text style={styles.qaEventError}>Erreur: {event.error}</Text> : null}
+                {'details' in event && event.details ? <Text style={styles.qaMetaText}>{event.details}</Text> : null}
+                <Text style={styles.qaMetaText}>{formatDate(event.at)}</Text>
+              </View>
+            );
+          })
+        )}
+      </Card>
+
+      <Card style={styles.settingsCard}>
+        <Text style={styles.cardTitle}>Run par domaine</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.qaDomainRow}>
+          {qaDomains.map((domain) => (
+            <TouchableOpacity
+              key={domain}
+              style={[styles.qaDomainChip, qaSelectedDomain === domain && styles.qaDomainChipActive]}
+              onPress={() => setQaSelectedDomain(domain)}
+              disabled={qaRunning}
+            >
+              <Text style={[styles.qaDomainChipText, qaSelectedDomain === domain && styles.qaDomainChipTextActive]}>{domain}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <Button title={qaRunning ? 'Exécution…' : `▶ Run ${qaSelectedDomain}`} onPress={runQaByDomain} variant="outline" disabled={qaRunning} />
+      </Card>
+
+      {qaResult && (
+        <Card style={styles.settingsCard}>
+          <Text style={styles.cardTitle}>Dernier résultat ({qaResult.mode})</Text>
+          <View style={styles.qaSummaryRow}>
+            <View style={styles.qaSummaryItem}><Text style={styles.qaSummaryLabel}>Scénarios</Text><Text style={styles.qaSummaryValue}>{qaResult.summary.totalScenarios}</Text></View>
+            <View style={styles.qaSummaryItem}><Text style={styles.qaSummaryLabel}>Passés</Text><Text style={[styles.qaSummaryValue, { color: Colors.status.success }]}>{qaResult.summary.passed}</Text></View>
+            <View style={styles.qaSummaryItem}><Text style={styles.qaSummaryLabel}>Échecs</Text><Text style={[styles.qaSummaryValue, { color: Colors.status.error }]}>{qaResult.summary.failed}</Text></View>
+            <View style={styles.qaSummaryItem}><Text style={styles.qaSummaryLabel}>Warnings</Text><Text style={[styles.qaSummaryValue, { color: '#F59E0B' }]}>{qaResult.summary.warnings}</Text></View>
+          </View>
+          <Text style={styles.qaMetaText}>Run ID: {qaResult.runId}</Text>
+          <Text style={styles.qaMetaText}>Durée: {qaResult.summary.durationMs} ms</Text>
+
+          {qaResult.scenarios.map((scenario) => (
+            <View key={scenario.id} style={styles.qaScenarioItem}>
+              <View style={styles.qaScenarioHeader}>
+                <Text style={styles.qaScenarioTitle}>{scenario.name}</Text>
+                <Text style={[
+                  styles.qaScenarioStatus,
+                  scenario.status === 'passed'
+                    ? { color: Colors.status.success }
+                    : scenario.status === 'failed'
+                      ? { color: Colors.status.error }
+                      : scenario.status === 'warning'
+                        ? { color: '#F59E0B' }
+                        : { color: Colors.text.muted },
+                ]}>
+                  {scenario.status.toUpperCase()}
+                </Text>
+              </View>
+              <Text style={styles.qaMetaText}>{scenario.domain} • {scenario.durationMs} ms</Text>
+              {scenario.steps.map((step) => (
+                <Text key={step.id} style={styles.qaStepText}>• {step.status.toUpperCase()} {step.name}</Text>
+              ))}
+            </View>
+          ))}
+        </Card>
+      )}
+
+      {prodReportResult && qaResult && (
+        <Card style={[styles.settingsCard, { borderWidth: 1, borderColor: prodReportResult.readyForProduction ? Colors.status.success : Colors.status.error }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <Text style={styles.cardTitle}>Rapport Pré-Production</Text>
+            <View style={{ backgroundColor: prodReportResult.readyForProduction ? Colors.status.success : Colors.status.error, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 16 }}>
+              <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 11 }}>{prodReportResult.readyForProduction ? '✅ PRÊT' : '🚫 NON PRÊT'}</Text>
+            </View>
+          </View>
+          <Text style={{ color: Colors.text.muted, fontSize: 13, marginBottom: 8 }}>
+            Score : <Text style={{ color: prodReportResult.overallScore >= 95 ? Colors.status.success : prodReportResult.overallScore >= 80 ? '#F59E0B' : Colors.status.error, fontWeight: '700' }}>{prodReportResult.overallScore}/100</Text>
+            {'  ·  '}{prodReportResult.durationMs}ms
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+            <View style={{ flex: 1, backgroundColor: '#FF4D4D22', borderRadius: 8, padding: 8, alignItems: 'center' }}>
+              <Text style={{ color: Colors.status.error, fontWeight: '700', fontSize: 20 }}>{prodReportResult.blockers.length}</Text>
+              <Text style={{ color: Colors.status.error, fontSize: 11 }}>Bloqueurs</Text>
+            </View>
+            <View style={{ flex: 1, backgroundColor: '#F59E0B22', borderRadius: 8, padding: 8, alignItems: 'center' }}>
+              <Text style={{ color: '#F59E0B', fontWeight: '700', fontSize: 20 }}>{prodReportResult.warnings.length}</Text>
+              <Text style={{ color: '#F59E0B', fontSize: 11 }}>Warnings</Text>
+            </View>
+            <View style={{ flex: 1, backgroundColor: '#22C55E22', borderRadius: 8, padding: 8, alignItems: 'center' }}>
+              <Text style={{ color: Colors.status.success, fontWeight: '700', fontSize: 20 }}>{prodReportResult.passed.length}</Text>
+              <Text style={{ color: Colors.status.success, fontSize: 11 }}>Passés</Text>
+            </View>
+          </View>
+          {prodReportResult.blockers.length > 0 && (
+            <>
+              <Text style={{ color: Colors.status.error, fontWeight: '700', fontSize: 12, marginBottom: 6 }}>🚫 BLOQUEURS</Text>
+              {prodReportResult.blockers.map((c) => (
+                <View key={c.id} style={{ marginBottom: 6, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: Colors.status.error }}>
+                  <Text style={{ color: Colors.status.error, fontWeight: '600', fontSize: 12 }}>{c.name}</Text>
+                  <Text style={{ color: Colors.text.muted, fontSize: 11, marginTop: 1 }}>{c.details}</Text>
+                  {c.suggestion && <Text style={{ color: '#F59E0B', fontSize: 10, marginTop: 1 }}>💡 {c.suggestion}</Text>}
+                </View>
+              ))}
+            </>
+          )}
+          {prodReportResult.warnings.length > 0 && (
+            <>
+              <Text style={{ color: '#F59E0B', fontWeight: '700', fontSize: 12, marginBottom: 6, marginTop: prodReportResult.blockers.length > 0 ? 8 : 0 }}>⚠️ WARNINGS</Text>
+              {prodReportResult.warnings.map((c) => (
+                <View key={c.id} style={{ marginBottom: 6, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#F59E0B' }}>
+                  <Text style={{ color: '#F59E0B', fontWeight: '600', fontSize: 12 }}>{c.name}</Text>
+                  <Text style={{ color: Colors.text.muted, fontSize: 11, marginTop: 1 }}>{c.details}</Text>
+                </View>
+              ))}
+            </>
+          )}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+            {prodReportResult.categories.map((cat) => (
+              <View key={cat.category} style={{ backgroundColor: cat.score >= 80 ? '#22C55E22' : cat.score >= 50 ? '#F59E0B22' : '#FF4D4D22', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                <Text style={{ color: cat.score >= 80 ? Colors.status.success : cat.score >= 50 ? '#F59E0B' : Colors.status.error, fontSize: 11, fontWeight: '600' }}>
+                  {cat.category.replace('_', ' ')} {cat.score}%
+                </Text>
+              </View>
+            ))}
+          </View>
+        </Card>
+      )}
+
+      <Card style={styles.settingsCard}>
+        <Text style={styles.cardTitle}>Logs persistés (`qa_test_logs`)</Text>
+        {qaLogs.length === 0 ? (
+          <Text style={styles.emptyText}>Aucun log QA pour le moment.</Text>
+        ) : (
+          qaLogs.slice(0, 20).map((log) => (
+            <View key={log.id} style={styles.qaLogItem}>
+              <Text style={styles.qaLogTitle}>{log.scenario_name}</Text>
+              <Text style={styles.qaMetaText}>{log.domain} • {log.status} • {log.duration_ms ?? 0} ms</Text>
+              <Text style={styles.qaMetaText}>{formatDate(log.created_at)}</Text>
+            </View>
+          ))
+        )}
+      </Card>
+    </>
+  );
 
   const renderPaymentsTab = () => (
     <Card style={styles.listCard}>
@@ -1368,23 +1663,42 @@ export default function AdminScreen() {
   ] as VerificationRequest[], []);
 
   const renderTickets = () => {
+    const hasRealTickets = tickets && tickets.length > 0;
+    const displayTickets = hasRealTickets ? tickets : demoTickets;
+    const isDemo = !hasRealTickets;
 
-    const displayTickets = tickets && tickets.length > 0 ? tickets : demoTickets;
     return (
     <Card style={styles.listCard}>
       <View style={styles.cardTitleRow}>
-        <Text style={styles.cardTitle}>Tickets support ({displayTickets.length})</Text>
-        {tickets && tickets.length === 0 && (
-          <View style={styles.demoBadge}>
-            <Text style={styles.demoText}>DÉMO</Text>
-          </View>
-        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={styles.cardTitle}>Tickets support ({displayTickets.length})</Text>
+          {isDemo && (
+            <View style={[styles.demoBadge, { marginLeft: 8 }]}>
+              <Text style={styles.demoText}>DÉMO</Text>
+            </View>
+          )}
+        </View>
+        <TouchableOpacity 
+          style={styles.refreshBtn} 
+          onPress={() => {
+            queryClient.invalidateQueries({ queryKey: ['support', 'tickets'] });
+            Alert.alert('Rafraîchissement', 'Tickets en cours de rafraîchissement...');
+          }}
+        >
+          <RefreshCw size={16} color={Colors.primary.blue} />
+        </TouchableOpacity>
       </View>
+      {isDemo && (
+        <View style={styles.infoBanner}>
+          <AlertTriangle size={16} color={Colors.primary.orange} />
+          <Text style={styles.infoText}>Aucun ticket réel trouvé. Créez un ticket depuis l'écran "Nous contacter" pour tester.</Text>
+        </View>
+      )}
       {displayTickets.length === 0 ? (
         <View style={styles.emptyState}><Ticket size={40} color={Colors.text.muted} /><Text style={styles.emptyText}>Aucun ticket</Text></View>
       ) : (
         displayTickets.map((ticket: SupportTicket) => (
-          <View key={ticket.id} style={styles.ticketItem}>
+          <TouchableOpacity key={ticket.id} style={styles.ticketItem} onPress={() => setSelectedTicketDetail(ticket)}>
             <View style={styles.ticketInfo}>
               <View style={styles.ticketHeader}>
                 <Text style={styles.ticketSubject}>{ticket.subject}</Text>
@@ -1392,9 +1706,10 @@ export default function AdminScreen() {
                   <Text style={styles.ticketStatusText}>{ticket.status === 'open' ? 'Ouvert' : ticket.status === 'in_progress' ? 'En cours' : ticket.status === 'resolved' ? 'Résolu' : 'Fermé'}</Text>
                 </View>
               </View>
-              <Text style={styles.ticketUser}>{ticket.userName} • {ticket.userEmail}</Text>
+              <Text style={styles.ticketUser}>👤 {getUserName(ticket.userId)} (@{getUserUsername(ticket.userId)})</Text>
+              <Text style={styles.ticketUserId}>🆔 {ticket.userId}</Text>
               <Text style={styles.ticketDesc} numberOfLines={2}>{ticket.description}</Text>
-              <Text style={styles.ticketMeta}>Catégorie: {ticket.category} • {formatDate(ticket.createdAt)}</Text>
+              <Text style={styles.ticketMeta}>📁 {ticket.category} • 📅 {formatDate(ticket.createdAt)}</Text>
             </View>
             {(ticket.status === 'open' || ticket.status === 'in_progress') && (
               <View style={styles.ticketActions}>
@@ -1405,19 +1720,7 @@ export default function AdminScreen() {
                 <TouchableOpacity style={styles.actionBtnRed} onPress={() => handleTicketAction(ticket.id, 'close')}><XCircle size={16} color={Colors.status.error} /></TouchableOpacity>
               </View>
             )}
-            {ticket.responses && ticket.responses.length > 0 && (
-              <View style={styles.ticketResponses}>
-                <Text style={styles.ticketResponsesTitle}>Réponses ({ticket.responses.length})</Text>
-                {ticket.responses.map((response) => (
-                  <View key={response.id} style={styles.ticketResponseItem}>
-                    <Text style={styles.ticketResponseAuthor}>{response.userName} {response.isAdmin ? '(Admin)' : ''}</Text>
-                    <Text style={styles.ticketResponseText}>{response.message}</Text>
-                    <Text style={styles.ticketResponseDate}>{formatDate(response.createdAt)}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
+          </TouchableOpacity>
         ))
       )}
     </Card>
@@ -1440,26 +1743,26 @@ export default function AdminScreen() {
         <View style={styles.emptyState}><UserCheck size={40} color={Colors.text.muted} /><Text style={styles.emptyText}>Aucune demande</Text></View>
       ) : (
         displayVerifications.map((req: VerificationRequest) => (
-          <View key={req.id} style={styles.verificationItem}>
+          <TouchableOpacity key={req.id} style={styles.verificationItem} onPress={() => setSelectedVerificationDetail(req)}>
             <Avatar uri={req.userAvatar} name={req.userName} size="medium" />
             <View style={styles.verificationInfo}>
               <View style={styles.verificationHeader}>
-                <Text style={styles.verificationName}>{req.userName}</Text>
+                <Text style={styles.verificationName}>{req.userName} (@{getUserUsername(req.userId)})</Text>
                 <View style={[styles.ticketStatusBadge, req.status === 'pending' ? styles.statusOpen : req.status === 'approved' ? styles.statusCompleted : styles.statusCancelled]}>
                   <Text style={styles.ticketStatusText}>{req.status === 'pending' ? 'En attente' : req.status === 'approved' ? 'Approuvé' : 'Refusé'}</Text>
                 </View>
               </View>
-              <Text style={styles.verificationEmail}>{req.userEmail}</Text>
+              <Text style={styles.verificationUserId}>🆔 {req.userId}</Text>
               <Text style={styles.verificationReason} numberOfLines={2}>{req.reason}</Text>
-              <Text style={styles.ticketMeta}>{formatDate(req.createdAt)}</Text>
+              <Text style={styles.ticketMeta}>📅 {formatDate(req.createdAt)}</Text>
             </View>
             {req.status === 'pending' && (
               <View style={styles.verificationActions}>
-                <TouchableOpacity style={styles.actionBtnGreen} onPress={() => handleVerificationAction(req.id, 'approve', req.userId || '')}><CheckCircle size={16} color={Colors.status.success} /></TouchableOpacity>
-                <TouchableOpacity style={styles.actionBtnRed} onPress={() => handleVerificationAction(req.id, 'reject', req.userId || '')}><XCircle size={16} color={Colors.status.error} /></TouchableOpacity>
+                <TouchableOpacity style={styles.actionBtnGreen} onPress={(e) => { e.stopPropagation(); handleVerificationAction(req.id, 'approve', req.userId || ''); }}><CheckCircle size={16} color={Colors.status.success} /></TouchableOpacity>
+                <TouchableOpacity style={styles.actionBtnRed} onPress={(e) => { e.stopPropagation(); handleVerificationAction(req.id, 'reject', req.userId || ''); }}><XCircle size={16} color={Colors.status.error} /></TouchableOpacity>
               </View>
             )}
-          </View>
+          </TouchableOpacity>
         ))
       )}
     </Card>
@@ -1676,6 +1979,127 @@ export default function AdminScreen() {
     </>
   );
 
+  const runProdReport = async () => {
+    setProdReportRunning(true);
+    try {
+      const result = await reportRunner.run();
+      setProdReportResult(result);
+    } catch (e) {
+      Alert.alert('Rapport Prod', (e as Error).message);
+    } finally {
+      setProdReportRunning(false);
+    }
+  };
+
+  const renderProdReport = () => {
+    const r = prodReportResult;
+    const severityColor = (s: string) => {
+      if (s === 'critical') return Colors.status.error;
+      if (s === 'warning') return '#F59E0B';
+      if (s === 'passed' || s === 'info') return Colors.status.success;
+      return Colors.text.muted;
+    };
+    return (
+      <>
+        <Card style={styles.settingsCard}>
+          <Text style={styles.cardTitle}>Rapport Pré-Production</Text>
+          <Text style={styles.cardDesc}>Analyse complète de l&apos;app : config, sécurité, schéma DB, intégrité des données, performances et règles métier.</Text>
+          <Button
+            title={prodReportRunning ? 'Analyse en cours…' : '▶ Générer le rapport'}
+            onPress={runProdReport}
+            variant="primary"
+            style={{ marginTop: 12 }}
+            disabled={prodReportRunning}
+          />
+        </Card>
+
+        {r && (
+          <>
+            <Card style={styles.settingsCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={styles.cardTitle}>Résultat global</Text>
+                <View style={{ backgroundColor: r.readyForProduction ? Colors.status.success : Colors.status.error, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 }}>
+                  <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 12 }}>{r.readyForProduction ? '✅ PRÊT' : '🚫 NON PRÊT'}</Text>
+                </View>
+              </View>
+              <Text style={{ color: Colors.text.muted, fontSize: 13, marginBottom: 4 }}>Score global : <Text style={{ color: r.overallScore >= 80 ? Colors.status.success : Colors.status.error, fontWeight: '700' }}>{r.overallScore}/100</Text></Text>
+              <Text style={{ color: Colors.text.muted, fontSize: 12 }}>Durée : {r.durationMs}ms · {new Date(r.generatedAt).toLocaleString('fr-FR')}</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                <View style={{ backgroundColor: '#FF4D4D22', borderRadius: 8, padding: 8, minWidth: 80, alignItems: 'center' }}>
+                  <Text style={{ color: Colors.status.error, fontWeight: '700', fontSize: 18 }}>{r.blockers.length}</Text>
+                  <Text style={{ color: Colors.status.error, fontSize: 11 }}>Bloqueurs</Text>
+                </View>
+                <View style={{ backgroundColor: '#F59E0B22', borderRadius: 8, padding: 8, minWidth: 80, alignItems: 'center' }}>
+                  <Text style={{ color: '#F59E0B', fontWeight: '700', fontSize: 18 }}>{r.warnings.length}</Text>
+                  <Text style={{ color: '#F59E0B', fontSize: 11 }}>Avertissements</Text>
+                </View>
+                <View style={{ backgroundColor: '#22C55E22', borderRadius: 8, padding: 8, minWidth: 80, alignItems: 'center' }}>
+                  <Text style={{ color: Colors.status.success, fontWeight: '700', fontSize: 18 }}>{r.passed.length}</Text>
+                  <Text style={{ color: Colors.status.success, fontSize: 11 }}>Passés</Text>
+                </View>
+              </View>
+            </Card>
+
+            {r.categories.map((cat) => (
+              <Card key={cat.category} style={{ ...styles.settingsCard, paddingVertical: 10 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ color: Colors.text.primary, fontWeight: '600', fontSize: 13, textTransform: 'uppercase' }}>{cat.category.replace('_', ' ')}</Text>
+                  <Text style={{ color: cat.score >= 80 ? Colors.status.success : cat.score >= 50 ? '#F59E0B' : Colors.status.error, fontWeight: '700' }}>{cat.score}%</Text>
+                </View>
+                <View style={{ height: 4, backgroundColor: '#ffffff15', borderRadius: 2, marginTop: 6 }}>
+                  <View style={{ height: 4, width: `${cat.score}%` as any, backgroundColor: cat.score >= 80 ? Colors.status.success : cat.score >= 50 ? '#F59E0B' : Colors.status.error, borderRadius: 2 }} />
+                </View>
+                <Text style={{ color: Colors.text.muted, fontSize: 11, marginTop: 4 }}>✓{cat.passed} ⚠{cat.warnings} ✗{cat.critical} / {cat.total}</Text>
+              </Card>
+            ))}
+
+            {r.blockers.length > 0 && (
+              <Card style={{ ...styles.settingsCard, borderColor: Colors.status.error, borderWidth: 1 }}>
+                <Text style={{ color: Colors.status.error, fontWeight: '700', fontSize: 14, marginBottom: 10 }}>🚫 BLOQUEURS ({r.blockers.length})</Text>
+                {r.blockers.map((c) => (
+                  <View key={c.id} style={{ marginBottom: 10 }}>
+                    <Text style={{ color: Colors.status.error, fontWeight: '600', fontSize: 13 }}>{c.name}</Text>
+                    <Text style={{ color: Colors.text.muted, fontSize: 12, marginTop: 2 }}>{c.details}</Text>
+                    {c.suggestion && <Text style={{ color: '#F59E0B', fontSize: 11, marginTop: 2 }}>💡 {c.suggestion}</Text>}
+                  </View>
+                ))}
+              </Card>
+            )}
+
+            {r.warnings.length > 0 && (
+              <Card style={{ ...styles.settingsCard, borderColor: '#F59E0B', borderWidth: 1 }}>
+                <Text style={{ color: '#F59E0B', fontWeight: '700', fontSize: 14, marginBottom: 10 }}>⚠️ AVERTISSEMENTS ({r.warnings.length})</Text>
+                {r.warnings.map((c) => (
+                  <View key={c.id} style={{ marginBottom: 8 }}>
+                    <Text style={{ color: '#F59E0B', fontWeight: '600', fontSize: 13 }}>{c.name}</Text>
+                    <Text style={{ color: Colors.text.muted, fontSize: 12, marginTop: 2 }}>{c.details}</Text>
+                    {c.suggestion && <Text style={{ color: Colors.text.muted, fontSize: 11, marginTop: 2 }}>💡 {c.suggestion}</Text>}
+                  </View>
+                ))}
+              </Card>
+            )}
+
+            <Card style={styles.settingsCard}>
+              <Text style={{ color: Colors.status.success, fontWeight: '700', fontSize: 14, marginBottom: 10 }}>✅ CHECKS PASSÉS ({r.passed.length})</Text>
+              {r.passed.map((c) => (
+                <View key={c.id} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 }}>
+                  <Text style={{ color: Colors.status.success, fontSize: 12, marginRight: 6, marginTop: 1 }}>✓</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: Colors.text.secondary, fontSize: 12 }}>{c.name}</Text>
+                    <Text style={{ color: Colors.text.muted, fontSize: 11 }}>{c.details}</Text>
+                  </View>
+                  <View style={{ backgroundColor: severityColor(c.severity) + '33', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                    <Text style={{ color: severityColor(c.severity), fontSize: 10 }}>{c.category}</Text>
+                  </View>
+                </View>
+              ))}
+            </Card>
+          </>
+        )}
+      </>
+    );
+  };
+
   const renderSettings = () => (
     <>
       <Card style={styles.settingsCard}>
@@ -1844,6 +2268,8 @@ export default function AdminScreen() {
             {activeTab === 'payments' && renderPaymentsTab()}
             {activeTab === 'payouts' && renderPayoutsTab()}
             {activeTab === 'activity' && renderActivity()}
+            {activeTab === 'qa' && renderQa()}
+            {activeTab === 'prod_report' && renderProdReport()}
             {activeTab === 'analytics' && renderAnalytics()}
             {activeTab === 'settings' && renderSettings()}
             <View style={styles.bottomSpacer} />
@@ -1938,6 +2364,191 @@ export default function AdminScreen() {
                     <Button title="Envoyer" onPress={() => selectedTicketForResponse && handleRespondToTicket()} variant="primary" style={styles.modalButton} disabled={!selectedTicketForResponse || !ticketResponseText.trim()} />
                   </View>
                 </>
+              )}
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={selectedTicketDetail !== null} animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>📋 Détails du Ticket</Text>
+                <TouchableOpacity onPress={() => setSelectedTicketDetail(null)}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              {selectedTicketDetail && (
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Sujet</Text>
+                    <Text style={styles.detailValue}>{selectedTicketDetail.subject}</Text>
+                  </View>
+                  
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Utilisateur</Text>
+                    <Text style={styles.detailValue}>👤 {getUserName(selectedTicketDetail.userId)} (@{getUserUsername(selectedTicketDetail.userId)})</Text>
+                    <Text style={styles.detailSubValue}>🆔 ID: {selectedTicketDetail.userId}</Text>
+                  </View>
+                  
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Statut</Text>
+                    <View style={[styles.statusBadge, selectedTicketDetail.status === 'open' ? styles.statusOpen : selectedTicketDetail.status === 'in_progress' ? styles.statusConfirmed : styles.statusCompleted]}>
+                      <Text style={styles.statusBadgeText}>
+                        {selectedTicketDetail.status === 'open' ? '🔓 Ouvert' : 
+                         selectedTicketDetail.status === 'in_progress' ? '🔄 En cours' : 
+                         selectedTicketDetail.status === 'resolved' ? '✅ Résolu' : '📁 Fermé'}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Catégorie</Text>
+                    <Text style={styles.detailValue}>📁 {selectedTicketDetail.category}</Text>
+                  </View>
+                  
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Date de création</Text>
+                    <Text style={styles.detailValue}>📅 {formatDate(selectedTicketDetail.createdAt)}</Text>
+                  </View>
+                  
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Description</Text>
+                    <Text style={styles.detailDescription}>{selectedTicketDetail.description}</Text>
+                  </View>
+                  
+                  <View style={styles.detailActions}>
+                    {(selectedTicketDetail.status === 'open' || selectedTicketDetail.status === 'in_progress') && (
+                      <Button 
+                        title="✉️ Répondre" 
+                        onPress={() => {
+                          setSelectedTicketForResponse(selectedTicketDetail);
+                          setSelectedTicketDetail(null);
+                        }} 
+                        variant="primary" 
+                        style={styles.detailActionBtn}
+                      />
+                    )}
+                    {selectedTicketDetail.status === 'open' && (
+                      <Button 
+                        title="🔄 Marquer en cours" 
+                        onPress={() => handleTicketAction(selectedTicketDetail.id, 'in_progress')} 
+                        variant="outline" 
+                        style={styles.detailActionBtn}
+                      />
+                    )}
+                    {(selectedTicketDetail.status === 'open' || selectedTicketDetail.status === 'in_progress') && (
+                      <Button 
+                        title="✅ Résoudre" 
+                        onPress={() => handleTicketAction(selectedTicketDetail.id, 'resolve')} 
+                        variant="outline" 
+                        style={styles.detailActionBtn}
+                      />
+                    )}
+                    <Button 
+                      title="❌ Fermer" 
+                      onPress={() => handleTicketAction(selectedTicketDetail.id, 'close')} 
+                      variant="outline" 
+                      style={[styles.detailActionBtn, { borderColor: Colors.status.error }]}
+                      textStyle={{ color: Colors.status.error }}
+                    />
+                  </View>
+                </ScrollView>
+              )}
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={selectedVerificationDetail !== null} animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>📋 Détails Vérification</Text>
+                <TouchableOpacity onPress={() => setSelectedVerificationDetail(null)}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              {selectedVerificationDetail && (
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Utilisateur</Text>
+                    <Text style={styles.detailValue}>👤 {selectedVerificationDetail.userName} (@{getUserUsername(selectedVerificationDetail.userId)})</Text>
+                    <Text style={styles.detailSubValue}>🆔 ID: {selectedVerificationDetail.userId}</Text>
+                  </View>
+                  
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Statut</Text>
+                    <View style={[styles.statusBadge, selectedVerificationDetail.status === 'pending' ? styles.statusOpen : selectedVerificationDetail.status === 'approved' ? styles.statusCompleted : styles.statusCancelled]}>
+                      <Text style={styles.statusBadgeText}>
+                        {selectedVerificationDetail.status === 'pending' ? '⏳ En attente' : 
+                         selectedVerificationDetail.status === 'approved' ? '✅ Approuvé' : '❌ Refusé'}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  {selectedVerificationDetail.userEmail && (
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailLabel}>Email</Text>
+                      <Text style={styles.detailValue}>📧 {selectedVerificationDetail.userEmail}</Text>
+                    </View>
+                  )}
+                  
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Date de demande</Text>
+                    <Text style={styles.detailValue}>📅 {formatDate(selectedVerificationDetail.createdAt)}</Text>
+                  </View>
+                  
+                  {selectedVerificationDetail.reviewedAt && (
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailLabel}>Date de révision</Text>
+                      <Text style={styles.detailValue}>📅 {formatDate(selectedVerificationDetail.reviewedAt)}</Text>
+                    </View>
+                  )}
+                  
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Raison / Justification</Text>
+                    <Text style={styles.detailDescription}>{selectedVerificationDetail.reason || 'Aucune raison fournie'}</Text>
+                  </View>
+                  
+                  {selectedVerificationDetail.rejectionReason && (
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailLabel}>Motif du refus</Text>
+                      <Text style={[styles.detailDescription, { backgroundColor: 'rgba(239,68,68,0.1)' }]}>{selectedVerificationDetail.rejectionReason}</Text>
+                    </View>
+                  )}
+                  
+                  <View style={styles.detailActions}>
+                    {selectedVerificationDetail.status === 'pending' && (
+                      <>
+                        <Button 
+                          title="✅ Approuver" 
+                          onPress={() => {
+                            handleVerificationAction(selectedVerificationDetail.id, 'approve', selectedVerificationDetail.userId || '');
+                            setSelectedVerificationDetail(null);
+                          }} 
+                          variant="primary" 
+                          style={styles.detailActionBtn}
+                        />
+                        <Button 
+                          title="❌ Refuser" 
+                          onPress={() => {
+                            handleVerificationAction(selectedVerificationDetail.id, 'reject', selectedVerificationDetail.userId || '');
+                            setSelectedVerificationDetail(null);
+                          }} 
+                          variant="outline" 
+                          style={[styles.detailActionBtn, { borderColor: Colors.status.error }]}
+                          textStyle={{ color: Colors.status.error }}
+                        />
+                      </>
+                    )}
+                    <Button 
+                      title="Fermer" 
+                      onPress={() => setSelectedVerificationDetail(null)} 
+                      variant="outline" 
+                      style={styles.detailActionBtn}
+                    />
+                  </View>
+                </ScrollView>
               )}
             </View>
           </View>
@@ -2046,7 +2657,8 @@ const styles = StyleSheet.create({
   ticketSubject: { color: Colors.text.primary, fontSize: 15, fontWeight: '500' as const, flex: 1 },
   ticketStatusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   ticketStatusText: { color: '#FFFFFF', fontSize: 10, fontWeight: '600' as const },
-  ticketUser: { color: Colors.text.secondary, fontSize: 13, marginBottom: 4 },
+  ticketUser: { color: Colors.text.secondary, fontSize: 13, marginBottom: 2 },
+  ticketUserId: { color: Colors.text.muted, fontSize: 11, marginBottom: 4 },
   ticketDesc: { color: Colors.text.muted, fontSize: 13, marginBottom: 4 },
   ticketMeta: { color: Colors.text.muted, fontSize: 11 },
   ticketActions: { flexDirection: 'column', gap: 8 },
@@ -2055,6 +2667,7 @@ const styles = StyleSheet.create({
   verificationHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   verificationName: { color: Colors.text.primary, fontSize: 15, fontWeight: '500' as const },
   verificationEmail: { color: Colors.text.secondary, fontSize: 13, marginBottom: 4 },
+  verificationUserId: { color: Colors.text.muted, fontSize: 11, marginBottom: 4 },
   verificationReason: { color: Colors.text.muted, fontSize: 13, marginBottom: 4 },
   verificationActions: { flexDirection: 'column', gap: 8 },
   emptyState: { alignItems: 'center', paddingVertical: 40 },
@@ -2182,5 +2795,39 @@ const styles = StyleSheet.create({
   demoText: { color: '#F59E0B', fontSize: 10, fontWeight: '700' as const },
   cityIconContainer: { width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(21,101,192,0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
   sportRank: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.background.cardLight, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
-  sportRankText: { color: Colors.text.primary, fontSize: 12, fontWeight: '700' as const }
+  sportRankText: { color: Colors.text.primary, fontSize: 12, fontWeight: '700' as const },
+  refreshBtn: { padding: 8, borderRadius: 8, backgroundColor: Colors.background.cardLight },
+  infoBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(245,158,11,0.1)', padding: 12, borderRadius: 8, marginBottom: 12 },
+  infoText: { color: '#F59E0B', fontSize: 13, flex: 1 },
+  detailSection: { marginBottom: 16 },
+  detailLabel: { color: Colors.text.secondary, fontSize: 13, fontWeight: '600' as const, marginBottom: 6 },
+  detailValue: { color: Colors.text.primary, fontSize: 15 },
+  detailSubValue: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
+  detailDescription: { color: Colors.text.primary, fontSize: 14, lineHeight: 20, backgroundColor: Colors.background.card, padding: 12, borderRadius: 8 },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, alignSelf: 'flex-start' },
+  statusBadgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' as const },
+  detailActions: { gap: 8, marginTop: 20 },
+  detailActionBtn: { marginBottom: 8 },
+  qaButtonRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  qaBtn: { flex: 1 },
+  qaDomainRow: { gap: 8, paddingBottom: 8 },
+  qaDomainChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: Colors.border.light, backgroundColor: Colors.background.card },
+  qaDomainChipActive: { backgroundColor: Colors.primary.blue, borderColor: Colors.primary.blue },
+  qaDomainChipText: { color: Colors.text.secondary, fontSize: 12 },
+  qaDomainChipTextActive: { color: '#FFFFFF' },
+  qaSummaryRow: { flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 8 },
+  qaSummaryItem: { flex: 1, backgroundColor: Colors.background.cardLight, borderRadius: 10, padding: 10, alignItems: 'center' },
+  qaSummaryLabel: { color: Colors.text.muted, fontSize: 11 },
+  qaSummaryValue: { color: Colors.text.primary, fontSize: 16, fontWeight: '700' as const, marginTop: 2 },
+  qaScenarioItem: { borderTopWidth: 1, borderTopColor: Colors.border.light, paddingTop: 10, marginTop: 10 },
+  qaScenarioHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  qaScenarioTitle: { color: Colors.text.primary, fontSize: 13, fontWeight: '600' as const, flex: 1 },
+  qaScenarioStatus: { fontSize: 11, fontWeight: '700' as const },
+  qaStepText: { color: Colors.text.secondary, fontSize: 12, marginTop: 4 },
+  qaMetaText: { color: Colors.text.muted, fontSize: 11, marginTop: 2 },
+  qaEventItem: { borderTopWidth: 1, borderTopColor: Colors.border.light, paddingTop: 10, marginTop: 10 },
+  qaEventText: { color: Colors.text.primary, fontSize: 12, fontWeight: '600' as const },
+  qaEventError: { color: Colors.status.error, fontSize: 12, marginTop: 2 },
+  qaLogItem: { borderTopWidth: 1, borderTopColor: Colors.border.light, paddingTop: 10, marginTop: 10 },
+  qaLogTitle: { color: Colors.text.primary, fontSize: 13, fontWeight: '600' as const },
 });

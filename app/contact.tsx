@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, Alert, Modal } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Send, Bug, CreditCard, Users, Swords, HelpCircle, MessageCircle, Clock } from 'lucide-react-native';
+import { ArrowLeft, Send, Bug, CreditCard, Users, Swords, HelpCircle, MessageCircle, Clock, X, MessageSquare } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useI18n } from '@/contexts/I18nContext';
@@ -27,6 +27,7 @@ export default function ContactScreen() {
   const { user } = useAuth();
   const { createTicket, getUserTickets, isCreatingTicket } = useSupport();
   const [view, setView] = useState<'list' | 'new'>('list');
+  const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [category, setCategory] = useState<TicketCategory | null>(null);
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
@@ -39,14 +40,33 @@ export default function ContactScreen() {
       return;
     }
     try {
-      await createTicket({ userId: user.id, userName: user.fullName, userEmail: user.email, category, subject: subject.trim(), description: description.trim() });
-      Alert.alert(t('common.success'), t('contact.ticketCreated'));
-      setCategory(null);
-      setSubject('');
-      setDescription('');
-      setView('list');
+      const newTicket = await createTicket({ 
+        userId: user.id, 
+        category, 
+        subject: subject.trim(), 
+        description: description.trim() 
+      });
+      
+      // Confirmation explicite
+      Alert.alert(
+        '✅ Ticket envoyé !',
+        `Votre ticket "${newTicket.subject}" a été créé avec succès.\n\nNous vous répondrons dans les plus brefs délais.`,
+        [{ 
+          text: 'OK', 
+          onPress: () => {
+            setCategory(null);
+            setSubject('');
+            setDescription('');
+            setView('list');
+          }
+        }]
+      );
     } catch (error: any) {
-      Alert.alert(t('common.error'), error.message);
+      console.error('[Contact] Ticket creation error:', error);
+      Alert.alert(
+        '❌ Erreur',
+        error.message || 'Une erreur est survenue lors de la création du ticket. Veuillez réessayer.'
+      );
     }
   };
 
@@ -89,19 +109,21 @@ export default function ContactScreen() {
       </View>
       {myTickets.length > 0 ? (
         myTickets.map((ticket: SupportTicket) => (
-          <Card key={ticket.id} style={styles.ticketCard}>
-            <View style={styles.ticketHeader}>
-              <View style={styles.ticketCategory}>{CATEGORIES.find(c => c.key === ticket.category)?.icon}</View>
-              <View style={styles.ticketInfo}>
-                <Text style={styles.ticketSubject}>{ticket.subject}</Text>
-                <Text style={styles.ticketMeta}>{formatDate(ticket.createdAt)} • {t('contact.responsesCount', { count: ticket.responses.length })}</Text>
+          <TouchableOpacity key={ticket.id} onPress={() => setSelectedTicket(ticket)}>
+            <Card style={styles.ticketCard}>
+              <View style={styles.ticketHeader}>
+                <View style={styles.ticketCategory}>{CATEGORIES.find(c => c.key === ticket.category)?.icon}</View>
+                <View style={styles.ticketInfo}>
+                  <Text style={styles.ticketSubject}>{ticket.subject}</Text>
+                  <Text style={styles.ticketMeta}>{formatDate(ticket.createdAt)} • {t('contact.responsesCount', { count: ticket.responses?.length || 0 })}</Text>
+                </View>
+                <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(ticket.status)}20` }]}>
+                  <Text style={[styles.statusText, { color: getStatusColor(ticket.status) }]}>{getStatusLabel(ticket.status)}</Text>
+                </View>
               </View>
-              <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(ticket.status)}20` }]}>
-                <Text style={[styles.statusText, { color: getStatusColor(ticket.status) }]}>{getStatusLabel(ticket.status)}</Text>
-              </View>
-            </View>
-            <Text style={styles.ticketPreview} numberOfLines={2}>{ticket.description}</Text>
-          </Card>
+              <Text style={styles.ticketPreview} numberOfLines={2}>{ticket.description}</Text>
+            </Card>
+          </TouchableOpacity>
         ))
       ) : (
         <View style={styles.emptyState}>
@@ -159,6 +181,88 @@ export default function ContactScreen() {
           </ScrollView>
         </SafeAreaView>
       </View>
+
+      {/* Ticket Detail Modal */}
+      <Modal visible={selectedTicket !== null} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>📋 Mon Ticket</Text>
+              <TouchableOpacity onPress={() => setSelectedTicket(null)}>
+                <X size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            {selectedTicket && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.detailSection}>
+                  <Text style={styles.detailLabel}>Sujet</Text>
+                  <Text style={styles.detailValue}>{selectedTicket.subject}</Text>
+                </View>
+                
+                <View style={styles.detailSection}>
+                  <Text style={styles.detailLabel}>Statut</Text>
+                  <View style={[styles.statusBadgeLarge, { backgroundColor: `${getStatusColor(selectedTicket.status)}20` }]}>
+                    <Text style={[styles.statusTextLarge, { color: getStatusColor(selectedTicket.status) }]}>
+                      {selectedTicket.status === 'open' ? '🔓 Ouvert' : 
+                       selectedTicket.status === 'in_progress' ? '🔄 En cours' : 
+                       selectedTicket.status === 'resolved' ? '✅ Résolu' : '📁 Fermé'}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.detailSection}>
+                  <Text style={styles.detailLabel}>Catégorie</Text>
+                  <Text style={styles.detailValue}>📁 {categoryLabel(selectedTicket.category)}</Text>
+                </View>
+                
+                <View style={styles.detailSection}>
+                  <Text style={styles.detailLabel}>Date</Text>
+                  <Text style={styles.detailValue}>📅 {formatDate(selectedTicket.createdAt)}</Text>
+                </View>
+                
+                <View style={styles.detailSection}>
+                  <Text style={styles.detailLabel}>Description</Text>
+                  <Text style={styles.detailDescription}>{selectedTicket.description}</Text>
+                </View>
+                
+                {/* Responses Section */}
+                <View style={styles.responsesSection}>
+                  <Text style={styles.detailLabel}>
+                    <MessageSquare size={14} color={Colors.primary.blue} /> Réponses ({selectedTicket.responses?.length || 0})
+                  </Text>
+                  {selectedTicket.responses && selectedTicket.responses.length > 0 ? (
+                    selectedTicket.responses.map((response, index) => (
+                      <View key={index} style={[styles.responseItem, response.isAdmin ? styles.responseAdmin : styles.responseUser]}>
+                        <View style={styles.responseHeader}>
+                          <Text style={styles.responseAuthor}>
+                            {response.isAdmin ? '👨‍💼 Admin' : '👤 Vous'}
+                          </Text>
+                          <Text style={styles.responseDate}>
+                            {new Date(response.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR', { 
+                              day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' 
+                            })}
+                          </Text>
+                        </View>
+                        <Text style={styles.responseMessage}>{response.message}</Text>
+                      </View>
+                    ))
+                  ) : (
+                    <View style={styles.noResponseBox}>
+                      <Text style={styles.noResponseText}>
+                        Aucune réponse pour le moment. Notre équipe vous répondra sous 24-48h.
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                
+                <TouchableOpacity style={styles.closeBtn} onPress={() => setSelectedTicket(null)}>
+                  <Text style={styles.closeBtnText}>Fermer</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -206,4 +310,26 @@ const styles = StyleSheet.create({
   infoBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.background.card, padding: 14, borderRadius: 12 },
   infoText: { flex: 1, color: Colors.text.muted, fontSize: 13 },
   bottomSpacer: { height: 40 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '90%' },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  modalTitle: { color: Colors.text.primary, fontSize: 20, fontWeight: '700' as const },
+  detailSection: { marginBottom: 16 },
+  detailLabel: { color: Colors.text.secondary, fontSize: 13, fontWeight: '600' as const, marginBottom: 6 },
+  detailValue: { color: Colors.text.primary, fontSize: 15 },
+  detailDescription: { color: Colors.text.primary, fontSize: 14, lineHeight: 20, backgroundColor: Colors.background.card, padding: 12, borderRadius: 8 },
+  statusBadgeLarge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, alignSelf: 'flex-start' },
+  statusTextLarge: { fontSize: 13, fontWeight: '600' as const },
+  responsesSection: { marginTop: 8, marginBottom: 16 },
+  responseItem: { backgroundColor: Colors.background.card, padding: 12, borderRadius: 8, marginBottom: 8 },
+  responseAdmin: { borderLeftWidth: 3, borderLeftColor: Colors.primary.blue },
+  responseUser: { borderLeftWidth: 3, borderLeftColor: Colors.status.success },
+  responseHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  responseAuthor: { color: Colors.text.primary, fontSize: 13, fontWeight: '600' as const },
+  responseDate: { color: Colors.text.muted, fontSize: 11 },
+  responseMessage: { color: Colors.text.secondary, fontSize: 14, lineHeight: 18 },
+  noResponseBox: { backgroundColor: Colors.background.card, padding: 16, borderRadius: 8, alignItems: 'center' },
+  noResponseText: { color: Colors.text.muted, fontSize: 13, textAlign: 'center' },
+  closeBtn: { backgroundColor: Colors.primary.blue, paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 8 },
+  closeBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' as const },
 });

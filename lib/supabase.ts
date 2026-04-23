@@ -18,8 +18,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 // Admin client with service role key - bypasses RLS entirely
-// Used for admin operations like banning users
-const supabaseServiceRoleKey = process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || '';
+// Reads from SUPABASE_SERVICE_ROLE_KEY (server/backend only)
+// NEVER use EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY (would expose key in client bundle)
+const supabaseServiceRoleKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY ||
+  '';
 export const supabaseAdmin = supabaseServiceRoleKey
   ? createClient(supabaseUrl, supabaseServiceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },

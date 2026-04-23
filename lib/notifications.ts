@@ -9,6 +9,18 @@ Notifications.setNotificationHandler({
   handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: true, shouldShowBanner: true, shouldShowList: true }),
 });
 
+if (Platform.OS === 'android') {
+  Notifications.setNotificationChannelAsync('default', {
+    name: 'VERSUS Notifications',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#FF6B35',
+    sound: 'default',
+    enableVibrate: true,
+    showBadge: true,
+  }).catch(() => {});
+}
+
 export async function registerForPushNotifications(): Promise<string | null> {
   if (Platform.OS === 'web') {
     console.log('[Notifications] Web platform, skipping push registration');
@@ -28,9 +40,6 @@ export async function registerForPushNotifications(): Promise<string | null> {
     const token = (await Notifications.getExpoPushTokenAsync()).data;
     await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
     console.log('[Notifications] Push token:', token);
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', { name: 'default', importance: Notifications.AndroidImportance.MAX, vibrationPattern: [0, 250, 250, 250], lightColor: '#FF6B35' });
-    }
     return token;
   } catch (e) { console.log('[Notifications] Error registering:', e); return null; }
 }
@@ -39,7 +48,7 @@ export async function scheduleLocalNotification(title: string, body: string, dat
   try {
     const enabled = await AsyncStorage.getItem(NOTIFICATIONS_ENABLED_KEY);
     if (enabled === 'false') return null;
-    const id = await Notifications.scheduleNotificationAsync({ content: { title, body, data, sound: true }, trigger: trigger || null });
+    const id = await Notifications.scheduleNotificationAsync({ content: { title, body, data, sound: 'default' }, trigger: trigger || null });
     console.log('[Notifications] Scheduled:', id);
     return id;
   } catch (e) { console.log('[Notifications] Error scheduling:', e); return null; }

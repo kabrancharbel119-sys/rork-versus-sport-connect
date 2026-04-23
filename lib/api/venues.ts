@@ -463,6 +463,10 @@ export const venuesApi = {
     cancellationHours?: number;
   }) {
     console.log('[VenuesAPI] Creating venue for owner:', ownerId);
+    // Filter out any local file URLs - only public http/https URLs allowed
+    const publicImages = (venue.images || []).filter(url => 
+      typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
+    );
     const { data, error } = await (supabase
       .from('venues')
       .insert({
@@ -476,7 +480,7 @@ export const venuesApi = {
         phone: venue.phone || null,
         email: venue.email || null,
         amenities: venue.amenities || [],
-        images: venue.images || [],
+        images: publicImages,
         latitude: venue.latitude || null,
         longitude: venue.longitude || null,
         opening_hours: venue.openingHours || null,
@@ -526,7 +530,12 @@ export const venuesApi = {
     if (updates.phone !== undefined) payload.phone = updates.phone;
     if (updates.email !== undefined) payload.email = updates.email;
     if (updates.amenities !== undefined) payload.amenities = updates.amenities;
-    if (updates.images !== undefined) payload.images = updates.images;
+    if (updates.images !== undefined) {
+      // Filter out any local file URLs - only public http/https URLs allowed
+      payload.images = updates.images.filter(url => 
+        typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
+      );
+    }
     if (updates.latitude !== undefined) payload.latitude = updates.latitude;
     if (updates.longitude !== undefined) payload.longitude = updates.longitude;
     if (updates.openingHours !== undefined) payload.opening_hours = updates.openingHours;

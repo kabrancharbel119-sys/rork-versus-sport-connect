@@ -10,6 +10,7 @@ import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { venuesApi } from '@/lib/api/venues';
 import { venueReviewsApi } from '@/lib/api/venue-reviews';
+import { supabase } from '@/lib/supabase';
 import { tournamentsApi } from '@/lib/api/tournaments';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
@@ -238,6 +239,21 @@ export default function VenueDetailScreen() {
     }
   }, [myReviewQuery.data]);
 
+  // Realtime subscription for venue updates (images, edits, etc.)
+  useEffect(() => {
+    if (!id) return;
+    const channel = supabase
+      .channel(`venue-${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'venues', filter: `id=eq.${id}` }, () => {
+        console.log('[VenueDetail] Realtime update received, refreshing venue data');
+        queryClient.invalidateQueries({ queryKey: ['venue', id] });
+      })
+      .subscribe();
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [id, queryClient]);
+
   const handleBook = () => {
     if (!user) {
       Alert.alert(
@@ -339,6 +355,8 @@ export default function VenueDetailScreen() {
   const amenities = Array.isArray(venue.amenities) ? venue.amenities : [];
   const venueImages = Array.isArray(venue.images) ? venue.images.filter(Boolean) : [];
   const heroImageUri = venueImages[0] ?? null;
+  // Force image reload when URL changes (cache-busting key based on image URL)
+  const heroImageKey = heroImageUri ? `${heroImageUri}#${venueImages.length}` : null;
   const selectedDayOfWeek = new Date(`${selectedDate}T00:00:00`).getDay();
   const openingHours = Array.isArray(venue.openingHours) ? venue.openingHours : [];
   const selectedDayHours = openingHours.find((d: any) => Number(d?.dayOfWeek) === selectedDayOfWeek);
@@ -363,11 +381,14 @@ export default function VenueDetailScreen() {
         <SafeAreaView style={styles.safeArea} edges={['top']}>
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             <View style={styles.heroCard}>
-              {heroImageUri ? (
-                <Image source={heroImageUri} style={styles.heroImage} contentFit="cover" />
-              ) : (
-                <View style={styles.heroFallbackBackground} />
-              )}
+              <Image
+                key={heroImageKey}
+                source={{ uri: heroImageUri || '' }}
+                style={styles.heroImage}
+                contentFit="cover"
+                cachePolicy="none"
+                placeholder={{}} 
+              />
               <LinearGradient
                 colors={['rgba(0,0,0,0.12)', 'rgba(0,0,0,0.72)']}
                 start={{ x: 0, y: 0 }}
@@ -515,11 +536,12 @@ export default function VenueDetailScreen() {
                   style={styles.galleryScroller}
                 >
                   {venueImages.map((uri, idx) => (
-                    <TouchableOpacity key={`${uri}-${idx}`} activeOpacity={0.9} onPress={() => setSelectedImageUri(uri)}>
+                    <TouchableOpacity key={`${uri}-${idx}-${venueImages.length}`} activeOpacity={0.9} onPress={() => setSelectedImageUri(uri)}>
                       <Image
-                        source={uri}
+                        source={{ uri }}
                         style={styles.galleryImage}
                         contentFit="cover"
+                        cachePolicy="none"
                       />
                     </TouchableOpacity>
                   ))}

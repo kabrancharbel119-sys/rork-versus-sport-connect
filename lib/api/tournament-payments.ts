@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { notificationsApi } from '@/lib/api/notifications';
 import type {
   TournamentPayment,
@@ -194,7 +194,8 @@ export const tournamentPaymentsApi = {
    */
   async getPendingPayments(): Promise<TournamentPayment[]> {
     console.log('[PaymentsAPI] Getting pending payments');
-    const { data, error } = await (supabase
+    const client = (supabaseAdmin ?? supabase) as typeof supabase;
+    const { data, error } = await (client
       .from('tournament_payments')
       .select('*')
       .eq('status', 'submitted')
@@ -302,8 +303,9 @@ export const tournamentPaymentsApi = {
    */
   async approvePayment(paymentId: string, adminId: string): Promise<TournamentPayment> {
     console.log('[PaymentsAPI] Approving payment:', paymentId);
+    const client = (supabaseAdmin ?? supabase) as typeof supabase;
 
-    const { data: row, error } = await (supabase
+    const { data: row, error } = await (client
       .from('tournament_payments')
       .update({
         status: 'approved',
@@ -319,7 +321,7 @@ export const tournamentPaymentsApi = {
     const payment = mapPaymentRowToPayment(row as TournamentPaymentRow);
 
     // Mettre à jour le statut de l'équipe
-    await supabase
+    await (supabaseAdmin ?? supabase)
       .from('tournament_teams')
       .update({
         status: 'confirmed',
@@ -376,8 +378,9 @@ export const tournamentPaymentsApi = {
    */
   async rejectPayment(paymentId: string, adminId: string, reason?: string): Promise<TournamentPayment> {
     console.log('[PaymentsAPI] Rejecting payment:', paymentId);
+    const client = (supabaseAdmin ?? supabase) as typeof supabase;
 
-    const { data: row, error } = await (supabase
+    const { data: row, error } = await (client
       .from('tournament_payments')
       .update({
         status: 'rejected',
@@ -393,7 +396,7 @@ export const tournamentPaymentsApi = {
     const payment = mapPaymentRowToPayment(row as TournamentPaymentRow);
 
     // Mettre à jour le statut de l'équipe
-    await supabase
+    await (supabaseAdmin ?? supabase)
       .from('tournament_teams')
       .update({ status: 'rejected' })
       .eq('tournament_id', payment.tournamentId)
@@ -432,9 +435,10 @@ export const tournamentPaymentsApi = {
    */
   async cancelExpiredPayments(): Promise<number> {
     console.log('[PaymentsAPI] Cancelling expired payments');
-    
+    const client = (supabaseAdmin ?? supabase) as typeof supabase;
+
     // Appeler la fonction SQL
-    const { error } = await supabase.rpc('cancel_expired_payments');
+    const { error } = await client.rpc('cancel_expired_payments' as any);
     if (error) throw error;
 
     // Compter combien ont été annulés
@@ -527,7 +531,8 @@ export const tournamentPayoutRequestsApi = {
   },
 
   async approveRequest(requestId: string, adminId: string, adminNote?: string): Promise<TournamentPayoutRequest> {
-    const { data, error } = await (supabase
+    const client = (supabaseAdmin ?? supabase) as typeof supabase;
+    const { data, error } = await (client
       .from('tournament_payout_requests')
       .update({
         status: 'approved',
@@ -544,7 +549,8 @@ export const tournamentPayoutRequestsApi = {
   },
 
   async rejectRequest(requestId: string, adminId: string, adminNote?: string): Promise<TournamentPayoutRequest> {
-    const { data, error } = await (supabase
+    const client = (supabaseAdmin ?? supabase) as typeof supabase;
+    const { data, error } = await (client
       .from('tournament_payout_requests')
       .update({
         status: 'rejected',

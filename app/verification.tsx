@@ -108,7 +108,12 @@ export default function VerificationScreen() {
               <Card style={styles.requestCard}>
                 <Text style={styles.requestLabel}>{t('verification.requestLabel')}</Text>
                 <Text style={styles.requestReason}>{pendingRequest.reason}</Text>
-                <Text style={styles.requestDate}>{t('verification.submittedOn', { date: new Date(pendingRequest.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR') })}</Text>
+                <Text style={styles.requestDate}>{t('verification.submittedOn', { 
+                  date: (() => {
+                    const date = pendingRequest.createdAt ? new Date(pendingRequest.createdAt) : new Date();
+                    return isNaN(date.getTime()) ? new Date().toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR') : date.toLocaleDateString(locale === 'en' ? 'en-US' : 'fr-FR');
+                  })()
+                })}</Text>
               </Card>
             </View>
           </SafeAreaView>

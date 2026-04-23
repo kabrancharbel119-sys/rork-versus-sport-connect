@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, KeyboardAvoidingView, Platform, Switch } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, KeyboardAvoidingView, Platform, Switch, BackHandler } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import { useRouter, useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -77,6 +77,7 @@ export default function EditVenueScreen() {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
     if (venueQuery.data) {
@@ -124,6 +125,7 @@ export default function EditVenueScreen() {
       openingHours: formData.openingHours,
     }),
     onSuccess: () => {
+      setHasChanges(false);
       queryClient.invalidateQueries({ queryKey: ['myVenues'] });
       queryClient.invalidateQueries({ queryKey: ['venues'] });
       queryClient.invalidateQueries({ queryKey: ['venue', id] });
@@ -134,8 +136,32 @@ export default function EditVenueScreen() {
     },
   });
 
+  // Handle back button press - show confirmation if there are unsaved changes
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        if (hasChanges) {
+          Alert.alert(
+            'Modifications non sauvegardées',
+            'Vous avez des modifications en cours. Voulez-vous vraiment quitter sans enregistrer ?',
+            [
+              { text: 'Rester', style: 'cancel', onPress: () => {} },
+              { text: 'Quitter', style: 'destructive', onPress: () => safeBack(router, '/venue-manager') },
+            ]
+          );
+          return true; // Prevent default back action
+        }
+        return false; // Let default back action happen
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => subscription.remove();
+    }, [hasChanges, router])
+  );
+
   const updateField = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    setHasChanges(true);
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }));
   };
 
@@ -146,6 +172,7 @@ export default function EditVenueScreen() {
         ? prev.sports.filter(s => s !== sport)
         : [...prev.sports, sport],
     }));
+    setHasChanges(true);
   };
 
   const toggleAmenity = (amenity: string) => {
@@ -155,6 +182,7 @@ export default function EditVenueScreen() {
         ? prev.amenities.filter(a => a !== amenity)
         : [...prev.amenities, amenity],
     }));
+    setHasChanges(true);
   };
 
   const pickVenuePhoto = async () => {
@@ -187,6 +215,7 @@ export default function EditVenueScreen() {
         ...prev,
         images: prev.images.includes(publicUrl) ? prev.images : [...prev.images, publicUrl],
       }));
+      setHasChanges(true);
     } catch (err: any) {
       console.error('[pickVenuePhoto] upload error:', err.message);
       Alert.alert('Erreur upload', err.message || 'Impossible de télécharger la photo.');
@@ -200,6 +229,7 @@ export default function EditVenueScreen() {
       ...prev,
       images: prev.images.filter((_, i) => i !== index),
     }));
+    setHasChanges(true);
   };
 
   const validate = () => {
@@ -248,7 +278,23 @@ export default function EditVenueScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/venue-manager')}>
+            <TouchableOpacity 
+              style={styles.backButton} 
+              onPress={() => {
+                if (hasChanges) {
+                  Alert.alert(
+                    'Modifications non sauvegardées',
+                    'Vous avez des modifications en cours. Voulez-vous vraiment quitter sans enregistrer ?',
+                    [
+                      { text: 'Rester', style: 'cancel' },
+                      { text: 'Quitter', style: 'destructive', onPress: () => safeBack(router, '/venue-manager') },
+                    ]
+                  );
+                } else {
+                  safeBack(router, '/venue-manager');
+                }
+              }}
+            >
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Modifier le terrain</Text>
