@@ -116,6 +116,8 @@ export const teamsApi = {
     ambiance: string;
     city: string;
     country: string;
+    locationLat?: number;
+    locationLng?: number;
     description?: string;
     maxMembers: number;
     isRecruiting?: boolean;
@@ -141,6 +143,8 @@ export const teamsApi = {
         ambiance: teamData.ambiance,
         city: teamData.city,
         country: teamData.country,
+        location_lat: teamData.locationLat,
+        location_lng: teamData.locationLng,
         description: teamData.description,
         captain_id: userId,
         max_members: teamData.maxMembers,

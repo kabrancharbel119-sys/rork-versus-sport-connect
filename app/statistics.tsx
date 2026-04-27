@@ -9,7 +9,7 @@ import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMatches } from '@/contexts/MatchesContext';
 import { Card } from '@/components/Card';
-import { BarChart, ProgressRing, StatComparison, MatchHistoryReal } from '@/components/StatisticsChart';
+import { BarChart, ProgressRing, StatComparison, MatchHistoryReal, MatchHistory } from '@/components/StatisticsChart';
 import { EmptyState } from '@/components/EmptyState';
 import { sportLabels } from '@/mocks/data';
 
@@ -33,9 +33,19 @@ export default function StatisticsScreen() {
   const assistsPerMatch = stats.matchesPlayed > 0 ? (stats.assists / stats.matchesPlayed).toFixed(1) : '0.0';
 
   const monthlyData = useMemo(() => {
-    const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun'];
-    return months.map((label, i) => ({ label, value: Math.floor(Math.random() * 10) + (stats.matchesPlayed > 0 ? 2 : 0), color: Colors.primary.blue }));
-  }, [stats.matchesPlayed]);
+    const now = new Date();
+    const result = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthLabel = d.toLocaleDateString('fr-FR', { month: 'short' });
+      const count = completedMatches.filter(m => {
+        const md = m.dateTime instanceof Date ? m.dateTime : new Date(m.dateTime);
+        return md.getFullYear() === d.getFullYear() && md.getMonth() === d.getMonth();
+      }).length;
+      result.push({ label: monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1, 3), value: count, color: Colors.primary.blue });
+    }
+    return result;
+  }, [completedMatches]);
 
   const performanceData = [
     { label: 'Buts', value: stats.goalsScored, color: Colors.primary.blue },
@@ -45,13 +55,39 @@ export default function StatisticsScreen() {
   ];
 
   const matchHistory = useMemo(() => {
+    if (!user) return [];
     const results: Array<{ result: 'win' | 'loss' | 'draw'; date: string }> = [];
-    for (let i = 0; i < Math.min(stats.matchesPlayed, 10); i++) {
-      const rand = Math.random();
-      results.push({ result: rand < 0.5 ? 'win' : rand < 0.8 ? 'loss' : 'draw', date: new Date(Date.now() - i * 86400000 * 3).toISOString() });
+    for (const m of completedMatches.slice(0, 10)) {
+      const score = m.score;
+      // Exclure les matchs sans score saisi — ils ne permettent pas de déduire W/L/D
+      if (!score || (score.home === 0 && score.away === 0 && !m.homeTeamId && !m.awayTeamId)) continue;
+      // Déterminer le côté du joueur :
+      // 1. Équipe home → le joueur est dans une des équipes du joueur
+      // 2. Équipe away → idem pour away
+      // 3. Match open (pas d'équipes) → on ne peut pas déterminer le côté, on skip
+      let isHome: boolean | null = null;
+      if (m.homeTeamId && m.awayTeamId) {
+        if (user.teams?.includes(m.homeTeamId)) isHome = true;
+        else if (user.teams?.includes(m.awayTeamId)) isHome = false;
+        // Si le joueur n'est dans aucune équipe (ex: rejoint en solo), skip
+        if (isHome === null) continue;
+      } else {
+        // Match open sans équipes : pas de notion home/away claire, skip les dots
+        continue;
+      }
+      const myScore = isHome ? score.home : score.away;
+      const theirScore = isHome ? score.away : score.home;
+      let result: 'win' | 'loss' | 'draw';
+      if (myScore > theirScore) result = 'win';
+      else if (myScore < theirScore) result = 'loss';
+      else result = 'draw';
+      results.push({
+        result,
+        date: (m.dateTime instanceof Date ? m.dateTime : new Date(m.dateTime)).toISOString(),
+      });
     }
     return results;
-  }, [stats.matchesPlayed]);
+  }, [completedMatches, user]);
 
   return (
     <>
@@ -68,7 +104,7 @@ export default function StatisticsScreen() {
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             {completedMatches.length === 0 ? (
               <EmptyState
-                icon={<Target size={64} color={Colors.text.muted} />}
+                icon={Target}
                 title="Pas encore de statistiques"
                 message="Jouez votre premier match pour voir vos statistiques ici"
               />
@@ -97,9 +133,18 @@ export default function StatisticsScreen() {
                 <View style={styles.spacer} />
                 <StatComparison label="Passes par match" userValue={parseFloat(assistsPerMatch)} avgValue={0.8} />
 
-                {(stats.matchesPlayed > 0 || historyItems.length > 0) && (
+                {matchHistory.length > 0 && (
                   <>
-                    <Text style={styles.sectionTitle}>Matchs joués (résultats réels)</Text>
+                    <Text style={styles.sectionTitle}>Derniers résultats</Text>
+                    <Card style={styles.chartCard}>
+                      <MatchHistory matches={matchHistory} />
+                    </Card>
+                  </>
+                )}
+
+                {historyItems.length > 0 && (
+                  <>
+                    <Text style={styles.sectionTitle}>Historique des matchs</Text>
                     <MatchHistoryReal items={historyItems} />
                   </>
                 )}
@@ -107,6 +152,9 @@ export default function StatisticsScreen() {
                 <Text style={styles.sectionTitle}>Détails</Text>
                 <Card style={styles.detailsCard}>
                   <View style={styles.detailRow}><View style={styles.detailIcon}><Zap size={18} color={Colors.primary.blue} /></View><Text style={styles.detailLabel}>Matchs joués</Text><Text style={styles.detailValue}>{stats.matchesPlayed}</Text></View>
+                  <View style={styles.detailRow}><View style={styles.detailIcon}><TrendingUp size={18} color={Colors.status.success} /></View><Text style={styles.detailLabel}>Victoires</Text><Text style={styles.detailValue}>{stats.wins}</Text></View>
+                  <View style={styles.detailRow}><View style={styles.detailIcon}><Award size={18} color={Colors.primary.orange} /></View><Text style={styles.detailLabel}>Nuls</Text><Text style={styles.detailValue}>{stats.draws}</Text></View>
+                  <View style={styles.detailRow}><View style={styles.detailIcon}><Users size={18} color={Colors.status.error} /></View><Text style={styles.detailLabel}>Défaites</Text><Text style={styles.detailValue}>{stats.losses}</Text></View>
                   <View style={styles.detailRow}><View style={styles.detailIcon}><Star size={18} color='#8B5CF6' /></View><Text style={styles.detailLabel}>Tournois gagnés</Text><Text style={styles.detailValue}>{stats.tournamentWins}</Text></View>
                 </Card>
               </>

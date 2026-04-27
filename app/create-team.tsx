@@ -13,6 +13,7 @@ import { uploadTeamImage } from '@/lib/uploadImage';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { Avatar } from '@/components/Avatar';
+import { CityAutocomplete, CityResult } from '@/components/CityAutocomplete';
 import { Sport, SkillLevel, PlayStyle, TeamRole } from '@/types';
 import { ALL_SPORTS, sportLabels, levelLabels, ambianceLabels, DEFAULT_POSITIONS, TEAM_ROLES } from '@/mocks/data';
 
@@ -104,8 +105,10 @@ export default function CreateTeamScreen() {
     format: '5v5',
     level: 'intermediate' as SkillLevel,
     ambiance: 'mixed' as PlayStyle,
-    city: user?.city || 'Abidjan',
-    country: user?.country || 'Côte d\'Ivoire',
+    city: user?.city || '',
+    country: user?.country || '',
+    latitude: undefined as number | undefined,
+    longitude: undefined as number | undefined,
     description: '',
     maxMembers: '15',
     isRecruiting: true,
@@ -230,6 +233,8 @@ export default function CreateTeamScreen() {
       ambiance: formData.ambiance,
       city: formData.city.trim(),
       country: formData.country,
+      locationLat: formData.latitude,
+      locationLng: formData.longitude,
       description: formData.description?.trim() || undefined,
       maxMembers: parseInt(formData.maxMembers, 10),
       captainId: user.id,
@@ -422,17 +427,33 @@ export default function CreateTeamScreen() {
       </View>
 
       <View style={styles.rowInputs}>
-        <View style={styles.halfInput}>
-          <Input
-            scrollViewRef={scrollViewRef}
-            testID="input-city"
-            label="Ville *"
-            placeholder="Abidjan"
+        <View style={styles.cityInputContainer}>
+          <Text style={styles.cityLabel}>Ville *</Text>
+          <CityAutocomplete
             value={formData.city}
-            onChangeText={(v) => updateField('city', v)}
-            error={errors.city}
-            icon={<MapPin size={18} color={Colors.text.muted} />}
+            onSelect={(city: CityResult) => {
+              setFormData(prev => ({
+                ...prev,
+                city: city.name,
+                country: city.country,
+                latitude: city.latitude,
+                longitude: city.longitude,
+              }));
+              if (errors.city) setErrors(prev => ({ ...prev, city: '' }));
+            }}
+            onClear={() => {
+              setFormData(prev => ({
+                ...prev,
+                city: '',
+                country: '',
+                latitude: undefined,
+                longitude: undefined,
+              }));
+            }}
+            placeholder="Ex: Abidjan"
+            maxResults={6}
           />
+          {errors.city && <Text style={styles.cityError}>{errors.city}</Text>}
         </View>
         <View style={styles.halfInput}>
           <Input
@@ -936,4 +957,7 @@ const styles = StyleSheet.create({
   customUrlConfirmBtnDisabled: { backgroundColor: Colors.background.cardLight },
   customUrlConfirmText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' as const },
   addRoleConfirmBtn: { marginTop: 16 },
+  cityInputContainer: { flex: 1.5, zIndex: 10 },
+  cityLabel: { color: Colors.text.primary, fontSize: 14, fontWeight: '600', marginBottom: 8 },
+  cityError: { color: Colors.status.error, fontSize: 12, marginTop: 4 },
 });

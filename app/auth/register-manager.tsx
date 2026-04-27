@@ -7,6 +7,7 @@ import { ArrowLeft, MapPin, Phone, Mail, Building2, User, Lock, Eye, EyeOff, Che
 import { Colors } from '@/constants/colors';
 import { Button } from '@/components/Button';
 import { useAuth } from '@/contexts/AuthContext';
+import { LocationSelector, LocationResult } from '@/components/LocationSelector';
 
 export default function RegisterManagerScreen() {
   const router = useRouter();
@@ -21,7 +22,10 @@ export default function RegisterManagerScreen() {
     lastName: '',
     businessName: '',
     phone: '',
-    city: 'Abidjan',
+    city: '',
+    country: '',
+    latitude: undefined as number | undefined,
+    longitude: undefined as number | undefined,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPassword, setShowPassword] = useState(false);
@@ -72,6 +76,14 @@ export default function RegisterManagerScreen() {
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
         city: formData.city,
+        country: formData.country,
+        location: formData.latitude && formData.longitude ? {
+          latitude: formData.latitude,
+          longitude: formData.longitude,
+          city: formData.city,
+          country: formData.country,
+          lastUpdated: new Date(),
+        } : undefined,
         role: 'venue_manager',
       });
       router.replace('/(manager-tabs)' as any);
@@ -249,33 +261,32 @@ export default function RegisterManagerScreen() {
                   </View>
                   {errors.phone ? <Text style={styles.error}>{errors.phone}</Text> : null}
 
-                  <Text style={styles.label}>Ville *</Text>
-                  <View style={[styles.inputWrap, errors.city ? styles.inputError : null]}>
-                    <MapPin size={18} color={Colors.text.muted} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Abidjan"
-                      placeholderTextColor={Colors.text.muted}
-                      value={formData.city}
-                      onChangeText={v => updateField('city', v)}
+                  <View style={styles.citySection}>
+                    <LocationSelector
+                      initialCity={formData.city}
+                      initialCountry={formData.country}
+                      onSelect={(location: LocationResult) => {
+                        setFormData(prev => ({
+                          ...prev,
+                          city: location.city,
+                          country: location.country,
+                          latitude: location.latitude,
+                          longitude: location.longitude,
+                        }));
+                        if (errors.city) setErrors(prev => ({ ...prev, city: '' }));
+                      }}
+                      onClear={() => {
+                        setFormData(prev => ({
+                          ...prev,
+                          city: '',
+                          country: '',
+                          latitude: undefined,
+                          longitude: undefined,
+                        }));
+                      }}
                     />
+                    {errors.city ? <Text style={styles.error}>{errors.city}</Text> : null}
                   </View>
-                  {errors.city ? <Text style={styles.error}>{errors.city}</Text> : null}
-                </View>
-
-                {/* What happens next */}
-                <View style={styles.nextStepsCard}>
-                  <Text style={styles.nextStepsTitle}>Après l'inscription :</Text>
-                  {[
-                    'Vous accéderez à votre tableau de bord gestionnaire',
-                    'Vous pourrez créer et configurer vos terrains',
-                    'Les joueurs pourront réserver vos créneaux',
-                  ].map((text, i) => (
-                    <View key={i} style={styles.nextStepRow}>
-                      <CheckCircle size={16} color={Colors.status.success} />
-                      <Text style={styles.nextStepText}>{text}</Text>
-                    </View>
-                  ))}
                 </View>
 
                 <Button
@@ -348,14 +359,8 @@ const styles = StyleSheet.create({
   inputError: { borderColor: Colors.status.error },
   input: { flex: 1, color: Colors.text.primary, fontSize: 15 },
   error: { color: Colors.status.error, fontSize: 11, marginTop: 3 },
-  nextStepsCard: {
-    backgroundColor: Colors.background.card, borderRadius: 14, padding: 16,
-    borderWidth: 1, borderColor: Colors.border.light, marginTop: 20, gap: 10,
-  },
-  nextStepsTitle: { color: Colors.text.primary, fontSize: 15, fontWeight: '700' },
-  nextStepRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  nextStepText: { color: Colors.text.secondary, fontSize: 13, flex: 1 },
   loginLink: { alignItems: 'center', marginTop: 24 },
   loginLinkText: { color: Colors.text.muted, fontSize: 14 },
   loginLinkBold: { color: Colors.primary.orange, fontWeight: '700' },
+  citySection: { marginBottom: 16 },
 });

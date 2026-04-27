@@ -83,6 +83,10 @@ export const mapBookingRowToBooking = (row: BookingRow): Booking => ({
   tournamentId: (row as any).tournament_id ?? undefined,
   notes: row.notes ?? undefined,
   createdAt: new Date(row.created_at),
+  // QR Code validation fields
+  checkInToken: (row as any).check_in_token ?? undefined,
+  validatedAt: (row as any).validated_at ? new Date((row as any).validated_at) : undefined,
+  validatedBy: (row as any).validated_by ?? undefined,
 });
 
 // Extract hour from a TIMESTAMPTZ string or a plain time string
@@ -446,6 +450,7 @@ export const venuesApi = {
     name: string;
     address: string;
     city: string;
+    country?: string;
     sport: string[];
     pricePerHour: number;
     description?: string;
@@ -474,6 +479,7 @@ export const venuesApi = {
         name: venue.name,
         address: venue.address,
         city: venue.city,
+        country: venue.country || null,
         sport: venue.sport,
         price_per_hour: venue.pricePerHour,
         description: venue.description || null,
@@ -502,6 +508,7 @@ export const venuesApi = {
     name: string;
     address: string;
     city: string;
+    country: string;
     sport: string[];
     pricePerHour: number;
     description: string;
@@ -524,6 +531,7 @@ export const venuesApi = {
     if (updates.name !== undefined) payload.name = updates.name;
     if (updates.address !== undefined) payload.address = updates.address;
     if (updates.city !== undefined) payload.city = updates.city;
+    if (updates.country !== undefined) payload.country = updates.country;
     if (updates.sport !== undefined) payload.sport = updates.sport;
     if (updates.pricePerHour !== undefined) payload.price_per_hour = updates.pricePerHour;
     if (updates.description !== undefined) payload.description = updates.description;
@@ -871,6 +879,71 @@ export const venuesApi = {
       // Don't fail the status update if notification fails
     }
 
+    return booking;
+  },
+
+  // ── QR Code Validation ──
+
+  async validateCheckIn(bookingId: string, token: string, managerId: string) {
+    console.log('[VenuesAPI] Validating check-in:', { bookingId, token, managerId });
+    
+    const { data, error } = await (supabase
+      .rpc('validate_booking_check_in', {
+        p_booking_id: bookingId,
+        p_token: token,
+        p_manager_id: managerId,
+      }) as any);
+    
+    if (error) {
+      console.error('[VenuesAPI] Check-in validation error:', error);
+      throw new Error(`Erreur de validation : ${error.message}`);
+    }
+    
+    if (!data?.success) {
+      const err = new Error(data?.error || 'Validation échouée') as any;
+      err.code = data?.error_code ?? 'VALIDATION_ERROR';
+      throw err;
+    }
+    
+    console.log('[VenuesAPI] Check-in validated successfully:', data);
+    return data;
+  },
+
+  async getBookingByToken(token: string) {
+    console.log('[VenuesAPI] Getting booking by token:', token);
+    
+    const { data, error } = await (supabase
+      .from('bookings')
+      .select(`
+        *,
+        venue:venues(*),
+        user:users!bookings_user_id_fkey(id, username, full_name, avatar, completed_bookings_count, created_at)
+      `)
+      .eq('check_in_token', token)
+      .single() as any);
+    
+    if (error) {
+      console.error('[VenuesAPI] Error fetching booking by token — code:', error?.code, '— message:', error?.message, '— details:', error?.details, '— hint:', error?.hint);
+      throw new Error(`[${error?.code ?? '?'}] ${error?.message ?? 'Réservation introuvable'}${error?.hint ? ' | ' + error.hint : ''}`);
+    }
+
+    // Fetch reliability stats via RPC (completed / no-shows — hors cancelled/rejected)
+    const userId = data?.user_id ?? data?.user?.id;
+    let reliability = { completed: 0, no_shows: 0, total: 0 };
+    if (userId) {
+      const { data: rel } = await (supabase
+        .rpc('get_user_reliability', { p_user_id: userId }) as any);
+      if (rel) reliability = rel;
+    }
+    
+    const booking = mapBookingRowToBooking(data);
+    const rawUser = data.user ?? null;
+    if (rawUser) {
+      rawUser.completed_bookings_count = reliability.completed;
+      rawUser.no_shows = reliability.no_shows;
+      rawUser.total_bookings_count = reliability.total;
+    }
+    (booking as any).user = rawUser;
     return booking;
   },
 };

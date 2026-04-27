@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Plus, MapPin, Calendar, DollarSign, Clock, Check,
   ChevronRight, TrendingUp, Users, AlertCircle, Settings,
-  Star, Activity, Eye, Trophy,
+  Star, Activity, Eye, Trophy, ScanLine,
 } from 'lucide-react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
@@ -244,6 +244,39 @@ export default function ManagerDashboardTab() {
                 </Card>
               </View>
 
+              {/* QR Reminder */}
+              <View style={styles.qrReminder}>
+                <ScanLine size={16} color={Colors.primary.orange} />
+                <Text style={styles.qrReminderText}>
+                  Pensez à scanner le QR Code de chaque joueur à son arrivée pour valider sa présence.
+                </Text>
+              </View>
+
+              {/* Quick Actions */}
+              <View style={styles.quickActions}>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => router.push('/manager/scan-qr')}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient colors={[Colors.primary.orange, Colors.primary.orangeDark]} style={styles.actionButtonGradient}>
+                    <ScanLine size={20} color="#fff" />
+                    <Text style={styles.actionButtonText}>Scanner QR Code</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => router.push('/(manager-tabs)/bookings')}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient colors={[Colors.primary.blue, Colors.primary.blueDark]} style={styles.actionButtonGradient}>
+                    <Calendar size={20} color="#fff" />
+                    <Text style={styles.actionButtonText}>Réservations</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+
               {/* My Tournaments */}
               {tournaments.length > 0 && (
                 <>
@@ -465,5 +498,44 @@ const styles = StyleSheet.create({
     color: Colors.primary.orange,
     fontSize: 13,
     fontWeight: '600',
+  },
+  
+  // Action buttons
+  actionButton: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  actionButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  qrReminder: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.primary.orange + '15',
+    borderWidth: 1,
+    borderColor: Colors.primary.orange + '30',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  qrReminderText: {
+    flex: 1,
+    color: Colors.primary.orange,
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 17,
   },
 });

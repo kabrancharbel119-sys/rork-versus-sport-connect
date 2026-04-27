@@ -51,6 +51,10 @@ export interface User {
   location?: UserLocation;
   createdAt: Date;
   availability: Availability[];
+  // QR Code validation counters
+  completedBookingsCount?: number;
+  noShowCount?: number;
+  memberSince?: Date;
 }
 
 export interface UserSport {
@@ -200,6 +204,9 @@ export interface Venue {
   name: string;
   address: string;
   city: string;
+  country?: string;
+  latitude?: number;
+  longitude?: number;
   sport: Sport[];
   pricePerHour: number;
   images?: string[];
@@ -247,6 +254,10 @@ export interface Booking {
   tournamentId?: string;
   notes?: string;
   createdAt: Date;
+  // QR Code validation fields
+  checkInToken?: string;
+  validatedAt?: Date;
+  validatedBy?: string;
 }
 
 export interface Tournament {

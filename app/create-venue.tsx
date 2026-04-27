@@ -12,6 +12,7 @@ import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { venuesApi } from '@/lib/api/venues';
 import { Button } from '@/components/Button';
+import { CityAutocomplete, CityResult } from '@/components/CityAutocomplete';
 import { uploadVenueImage } from '@/lib/uploadImage';
 import type { Sport } from '@/types';
 
@@ -53,6 +54,9 @@ export default function CreateVenueScreen() {
     name: '',
     address: '',
     city: '',
+    country: '',
+    latitude: undefined as number | undefined,
+    longitude: undefined as number | undefined,
     description: '',
     phone: '',
     email: '',
@@ -70,11 +74,37 @@ export default function CreateVenueScreen() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
+  const handleCitySelect = (city: CityResult) => {
+    setFormData(prev => ({
+      ...prev,
+      city: city.name,
+      country: city.country,
+      latitude: city.latitude,
+      longitude: city.longitude,
+    }));
+    if (errors.city) {
+      setErrors(prev => ({ ...prev, city: '' }));
+    }
+  };
+
+  const handleCityClear = () => {
+    setFormData(prev => ({
+      ...prev,
+      city: '',
+      country: '',
+      latitude: undefined,
+      longitude: undefined,
+    }));
+  };
+
   const createMutation = useMutation({
     mutationFn: () => venuesApi.create(user!.id, {
       name: formData.name.trim(),
       address: formData.address.trim(),
       city: formData.city.trim(),
+      country: formData.country || undefined,
+      latitude: formData.latitude,
+      longitude: formData.longitude,
       sport: formData.sports,
       pricePerHour: parseInt(formData.pricePerHour) || 0,
       description: formData.description.trim() || undefined,
@@ -244,14 +274,20 @@ export default function CreateVenueScreen() {
               {errors.address && <Text style={styles.fieldError}>{errors.address}</Text>}
 
               <Text style={styles.label}>Ville *</Text>
-              <TextInput
-                style={[styles.input, errors.city ? styles.inputError : null]}
-                placeholder="Ex: Abidjan"
-                placeholderTextColor={Colors.text.muted}
+              <CityAutocomplete
                 value={formData.city}
-                onChangeText={v => updateField('city', v)}
+                onSelect={handleCitySelect}
+                onClear={handleCityClear}
+                placeholder="Ex: Abidjan"
+                style={errors.city ? { borderColor: Colors.status.error } : undefined}
               />
               {errors.city && <Text style={styles.fieldError}>{errors.city}</Text>}
+
+              {formData.latitude && formData.longitude && (
+                <Text style={styles.geoInfo}>
+                  📍 {formData.latitude.toFixed(4)}, {formData.longitude.toFixed(4)}
+                </Text>
+              )}
 
               <Text style={styles.label}>Description</Text>
               <TextInput
@@ -589,6 +625,7 @@ const styles = StyleSheet.create({
   dayName: { color: Colors.status.success, fontSize: 12, fontWeight: '700' },
   dayNameClosed: { color: Colors.text.muted, textDecorationLine: 'line-through' },
   closedLabel: { color: Colors.text.muted, fontSize: 13, fontStyle: 'italic', flex: 1, textAlign: 'center' },
+  geoInfo: { color: Colors.text.secondary, fontSize: 12, marginTop: 4 },
   hoursInputs: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
   hourInput: {
     flex: 1, backgroundColor: Colors.background.cardLight,

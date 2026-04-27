@@ -11,6 +11,7 @@ import { Avatar } from '@/components/Avatar';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
+import { LocationSelector, LocationResult } from '@/components/LocationSelector';
 import { ALL_SPORTS, sportLabels, levelLabels, DEFAULT_POSITIONS } from '@/mocks/data';
 import { Sport, SkillLevel, UserSport } from '@/types';
 
@@ -18,7 +19,7 @@ export default function EditProfileScreen() {
   const router = useRouter();
   const { user, updateProfile, isUpdateLoading, pickAvatar, isPickingAvatar, addSport, removeSport, refreshUser } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
-  const [formData, setFormData] = useState({ fullName: '', username: '', phone: '', city: '', country: '', bio: '' });
+  const [formData, setFormData] = useState({ fullName: '', username: '', phone: '', city: '', country: '', latitude: undefined as number | undefined, longitude: undefined as number | undefined, bio: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showSportModal, setShowSportModal] = useState(false);
 
@@ -30,6 +31,8 @@ export default function EditProfileScreen() {
         phone: user.phone || '',
         city: user.city || '',
         country: user.country || '',
+        latitude: user.location?.latitude,
+        longitude: user.location?.longitude,
         bio: user.bio || '',
       });
     }
@@ -58,7 +61,21 @@ export default function EditProfileScreen() {
     }
     if (!validate()) return;
     try {
-      await updateProfile({ fullName: formData.fullName, username: formData.username, phone: formData.phone || undefined, city: formData.city, country: formData.country, bio: formData.bio || undefined });
+      await updateProfile({
+        fullName: formData.fullName,
+        username: formData.username,
+        phone: formData.phone || undefined,
+        city: formData.city,
+        country: formData.country,
+        location: formData.latitude && formData.longitude ? {
+          latitude: formData.latitude,
+          longitude: formData.longitude,
+          city: formData.city,
+          country: formData.country,
+          lastUpdated: new Date(),
+        } : undefined,
+        bio: formData.bio || undefined
+      });
       Alert.alert('Succès', 'Profil mis à jour');
       safeBack(router, '/(tabs)/profile');
     } catch (e: any) {
@@ -202,8 +219,32 @@ export default function EditProfileScreen() {
               <Input label="Nom d'utilisateur" placeholder="kouame_yao" value={formData.username} onChangeText={(v) => updateField('username', v)} autoCapitalize="none" error={errors.username} icon={<User size={20} color={Colors.text.muted} />} />
               <Input scrollViewRef={scrollViewRef} label="Email" placeholder={user?.email || 'votre@email.com'} value={user?.email || ''} onChangeText={() => {}} editable={false} icon={<Mail size={20} color={Colors.text.muted} />} />
               <Input label="Téléphone" placeholder="+225 07 00 00 00" value={formData.phone} onChangeText={(v) => updateField('phone', v)} keyboardType="phone-pad" icon={<Phone size={20} color={Colors.text.muted} />} />
-              <Input scrollViewRef={scrollViewRef} label="Ville" placeholder="Abidjan" value={formData.city} onChangeText={(v) => updateField('city', v)} autoCapitalize="words" error={errors.city} icon={<MapPin size={20} color={Colors.text.muted} />} />
-              <Input label="Pays" placeholder="Côte d'Ivoire" value={formData.country} onChangeText={(v) => updateField('country', v)} autoCapitalize="words" icon={<MapPin size={20} color={Colors.text.muted} />} />
+              <View style={styles.citySection}>
+                <LocationSelector
+                  initialCity={formData.city}
+                  initialCountry={formData.country}
+                  onSelect={(location: LocationResult) => {
+                    setFormData(prev => ({
+                      ...prev,
+                      city: location.city,
+                      country: location.country,
+                      latitude: location.latitude,
+                      longitude: location.longitude,
+                    }));
+                    if (errors.city) setErrors(prev => ({ ...prev, city: '' }));
+                  }}
+                  onClear={() => {
+                    setFormData(prev => ({
+                      ...prev,
+                      city: '',
+                      country: '',
+                      latitude: undefined,
+                      longitude: undefined,
+                    }));
+                  }}
+                />
+                {errors.city && <Text style={styles.fieldError}>{errors.city}</Text>}
+              </View>
               <Input scrollViewRef={scrollViewRef} label="Bio" placeholder="Parlez de vous..." value={formData.bio} onChangeText={(v) => updateField('bio', v)} multiline numberOfLines={4} icon={<FileText size={20} color={Colors.text.muted} />} />
 
               <View style={styles.sportsSection}>
@@ -378,6 +419,9 @@ const styles = StyleSheet.create({
   sportItemMeta: { color: Colors.text.muted, fontSize: 13, marginTop: 2 },
   noSportsText: { color: Colors.text.muted, fontSize: 14, textAlign: 'center', paddingVertical: 20 },
   saveButton: { marginTop: 16 },
+  citySection: { marginBottom: 16 },
+  label: { color: Colors.text.primary, fontSize: 14, fontWeight: '600', marginBottom: 8 },
+  fieldError: { color: Colors.status.error, fontSize: 12, marginTop: 4 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '85%' },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },

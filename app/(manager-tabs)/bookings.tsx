@@ -1,14 +1,15 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl, ActivityIndicator, Modal, Pressable } from 'react-native';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl, ActivityIndicator, Modal, Pressable, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  Calendar, Check, X, Trophy, User, Users,
+  Calendar, Check, X, Trophy, User, Users, CheckCircle, Clock, MapPin, DollarSign, FileText,
 } from 'lucide-react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { venuesApi } from '@/lib/api/venues';
+import { usersApi } from '@/lib/api/users';
 import { Card } from '@/components/Card';
 import type { Venue, Booking, BookingStatus } from '@/types';
 
@@ -38,6 +39,8 @@ export default function ManagerBookingsTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [bookingFilter, setBookingFilter] = useState<'all' | 'pending' | 'confirmed' | 'past'>('all');
   const [selectedBooking, setSelectedBooking] = useState<any | null>(null);
+  const [bookingUser, setBookingUser] = useState<any | null>(null);
+  const [loadingUser, setLoadingUser] = useState(false);
 
   console.log('[ManagerBookings] User ID:', user?.id, 'Enabled:', !!user?.id);
 
@@ -165,6 +168,16 @@ export default function ManagerBookingsTab() {
       ]
     );
   };
+
+  // Fetch user info when a booking is selected
+  useEffect(() => {
+    if (!selectedBooking?.userId) { setBookingUser(null); return; }
+    setLoadingUser(true);
+    usersApi.getById(selectedBooking.userId)
+      .then(u => setBookingUser(u))
+      .catch(() => setBookingUser(null))
+      .finally(() => setLoadingUser(false));
+  }, [selectedBooking?.id]);
 
   const isLoading = bookingsQuery.isLoading;
 
@@ -316,119 +329,187 @@ export default function ManagerBookingsTab() {
         <Modal visible transparent animationType="slide" onRequestClose={() => setSelectedBooking(null)}>
           <Pressable style={styles.modalOverlay} onPress={() => setSelectedBooking(null)}>
             <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
+
+              {/* Handle */}
+              <View style={styles.modalHandle} />
+
               {/* Header */}
               <View style={styles.modalHeader}>
-                <View style={{ flex: 1 }}>
-                  {selectedBooking.tournamentId ? (
+                <View style={{ flex: 1, gap: 4 }}>
+                  {selectedBooking.tournamentId && (
                     <View style={styles.tournamentBadge}>
-                      <Trophy size={12} color={Colors.primary.orange} />
+                      <Trophy size={11} color={Colors.primary.orange} />
                       <Text style={styles.tournamentBadgeText}>Tournoi</Text>
                     </View>
-                  ) : null}
-                  <Text style={styles.modalTitle}>
+                  )}
+                  <Text style={styles.modalTitle} numberOfLines={1}>
                     {selectedBooking.tournamentName || getVenueName(selectedBooking.venueId)}
                   </Text>
                 </View>
+                <View style={[styles.modalStatusChip, { backgroundColor: (statusConfig[selectedBooking.status]?.color ?? Colors.text.muted) + '20' }]}>
+                  <Text style={[styles.modalStatusChipText, { color: statusConfig[selectedBooking.status]?.color ?? Colors.text.muted }]}>
+                    {statusConfig[selectedBooking.status]?.label ?? selectedBooking.status}
+                  </Text>
+                </View>
                 <TouchableOpacity onPress={() => setSelectedBooking(null)} style={styles.modalClose}>
-                  <X size={20} color={Colors.text.muted} />
+                  <X size={18} color={Colors.text.muted} />
                 </TouchableOpacity>
               </View>
 
               <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-                {/* Status */}
-                <View style={[styles.modalStatusRow, { backgroundColor: (statusConfig[selectedBooking.status]?.color ?? Colors.text.muted) + '15' }]}>
-                  <Text style={[styles.modalStatusText, { color: statusConfig[selectedBooking.status]?.color ?? Colors.text.muted }]}>
-                    {statusConfig[selectedBooking.status]?.label ?? selectedBooking.status}
-                  </Text>
+
+                {/* Info card */}
+                <View style={styles.infoCard}>
+                  <View style={styles.infoRow}>
+                    <View style={styles.infoIcon}><MapPin size={14} color={Colors.primary.orange} /></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.infoLabel}>Terrain</Text>
+                      <Text style={styles.infoValue}>{getVenueName(selectedBooking.venueId)}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.infoDivider} />
+                  <View style={styles.infoRow}>
+                    <View style={styles.infoIcon}><Calendar size={14} color={Colors.primary.orange} /></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.infoLabel}>Date</Text>
+                      <Text style={styles.infoValue}>
+                        {selectedBooking.tournamentId
+                          ? `Du ${selectedBooking.date} au ${selectedBooking.endTime?.split('T')[0] ?? selectedBooking.date}`
+                          : selectedBooking.date}
+                      </Text>
+                    </View>
+                  </View>
+                  {!selectedBooking.tournamentId && (
+                    <>
+                      <View style={styles.infoDivider} />
+                      <View style={styles.infoRow}>
+                        <View style={styles.infoIcon}><Clock size={14} color={Colors.primary.orange} /></View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.infoLabel}>Horaire</Text>
+                          <Text style={styles.infoValue}>
+                            {parseHour(selectedBooking.startTime)}h00 — {parseHour(selectedBooking.endTime)}h00
+                          </Text>
+                        </View>
+                      </View>
+                    </>
+                  )}
+                  <View style={styles.infoDivider} />
+                  <View style={styles.infoRow}>
+                    <View style={styles.infoIcon}><DollarSign size={14} color={Colors.status.success} /></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.infoLabel}>Prix total</Text>
+                      <Text style={[styles.infoValue, { color: Colors.status.success, fontWeight: '700' }]}>
+                        {Number(selectedBooking.totalPrice) > 0
+                          ? `${Number(selectedBooking.totalPrice).toLocaleString()} FCFA`
+                          : 'Gratuit'}
+                      </Text>
+                    </View>
+                  </View>
+                  {selectedBooking.notes && (
+                    <>
+                      <View style={styles.infoDivider} />
+                      <View style={styles.infoRow}>
+                        <View style={styles.infoIcon}><FileText size={14} color={Colors.text.muted} /></View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.infoLabel}>Notes</Text>
+                          <Text style={styles.infoValue}>{selectedBooking.notes}</Text>
+                        </View>
+                      </View>
+                    </>
+                  )}
                 </View>
 
-                {/* Terrain */}
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionLabel}>Terrain</Text>
-                  <Text style={styles.modalSectionValue}>{getVenueName(selectedBooking.venueId)}</Text>
-                </View>
-
-                {/* Dates */}
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionLabel}>Période</Text>
-                  <Text style={styles.modalSectionValue}>
-                    {selectedBooking.tournamentId
-                      ? `Du ${selectedBooking.date} au ${selectedBooking.endTime?.split('T')[0] ?? selectedBooking.date}`
-                      : `${selectedBooking.date}  ${parseHour(selectedBooking.startTime)}h - ${parseHour(selectedBooking.endTime)}h`}
-                  </Text>
-                </View>
-
-                {/* Organizer (tournament only) */}
-                {selectedBooking.tournamentId && (
-                  <>
+                {/* Tournament organizer */}
+                {selectedBooking.tournamentId && (selectedBooking.organizerName || selectedBooking.organizerTeamName) && (
+                  <View style={styles.infoCard}>
                     {selectedBooking.organizerName && (
-                      <View style={styles.modalSection}>
-                        <Text style={styles.modalSectionLabel}>Organisateur</Text>
-                        <View style={styles.modalRow}>
-                          <User size={14} color={Colors.text.muted} />
-                          <Text style={styles.modalSectionValue}>{selectedBooking.organizerName}</Text>
+                      <View style={styles.infoRow}>
+                        <View style={styles.infoIcon}><User size={14} color={Colors.text.muted} /></View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.infoLabel}>Organisateur</Text>
+                          <Text style={styles.infoValue}>{selectedBooking.organizerName}</Text>
                         </View>
                       </View>
                     )}
+                    {selectedBooking.organizerName && selectedBooking.organizerTeamName && <View style={styles.infoDivider} />}
                     {selectedBooking.organizerTeamName && (
-                      <View style={styles.modalSection}>
-                        <Text style={styles.modalSectionLabel}>Equipe</Text>
-                        <View style={styles.modalRow}>
-                          <Users size={14} color={Colors.text.muted} />
-                          <Text style={styles.modalSectionValue}>{selectedBooking.organizerTeamName}</Text>
+                      <View style={styles.infoRow}>
+                        <View style={styles.infoIcon}><Users size={14} color={Colors.text.muted} /></View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.infoLabel}>Équipe</Text>
+                          <Text style={styles.infoValue}>{selectedBooking.organizerTeamName}</Text>
                         </View>
                       </View>
                     )}
-                  </>
+                  </View>
                 )}
 
-                {/* Price */}
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionLabel}>Prix total</Text>
-                  <Text style={[styles.modalSectionValue, { color: Colors.primary.orange, fontWeight: '700', fontSize: 18 }]}>
-                    {Number(selectedBooking.totalPrice) > 0
-                      ? `${Number(selectedBooking.totalPrice).toLocaleString()} FCFA`
-                      : 'Gratuit'}
-                  </Text>
-                </View>
-
-                {/* Notes */}
-                {selectedBooking.notes ? (
-                  <View style={styles.modalSection}>
-                    <Text style={styles.modalSectionLabel}>Notes</Text>
-                    <Text style={styles.modalSectionValue}>{selectedBooking.notes}</Text>
+                {/* Player card */}
+                {!selectedBooking.tournamentId && (
+                  <View style={styles.playerCard}>
+                    <Text style={styles.playerCardLabel}>Joueur</Text>
+                    {loadingUser ? (
+                      <ActivityIndicator size="small" color={Colors.primary.orange} style={{ marginTop: 8 }} />
+                    ) : bookingUser ? (
+                      <View style={styles.playerRow}>
+                        {bookingUser.avatar ? (
+                          <Image source={{ uri: bookingUser.avatar }} style={styles.playerAvatar} />
+                        ) : (
+                          <LinearGradient colors={[Colors.primary.orange, Colors.primary.orangeDark]} style={styles.playerAvatar}>
+                            <Text style={styles.playerAvatarText}>
+                              {(bookingUser.fullName || bookingUser.username || 'U').charAt(0).toUpperCase()}
+                            </Text>
+                          </LinearGradient>
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.playerName}>{bookingUser.fullName || bookingUser.username}</Text>
+                          <Text style={styles.playerUsername}>@{bookingUser.username}</Text>
+                        </View>
+                        <View style={styles.honoredBadge}>
+                          <CheckCircle size={12} color={Colors.status.success} />
+                          <Text style={styles.honoredText}>
+                            {bookingUser.completedBookingsCount ?? 0}/{(bookingUser as any).totalBookings ?? '?'} honorées
+                          </Text>
+                        </View>
+                      </View>
+                    ) : null}
                   </View>
-                ) : null}
+                )}
 
                 {/* Actions */}
                 {selectedBooking.status === 'pending' && (
                   <View style={styles.modalActions}>
                     <TouchableOpacity
-                      style={[styles.bookingBtn, styles.approveBtn, { flex: 1, justifyContent: 'center' }]}
+                      style={styles.modalApproveBtn}
                       onPress={() => { handleApproveBooking(selectedBooking.id); setSelectedBooking(null); }}
+                      activeOpacity={0.85}
                     >
-                      <Check size={16} color="#FFF" />
-                      <Text style={styles.bookingBtnText}>Approuver</Text>
+                      <LinearGradient colors={[Colors.status.success, '#1a8a3c']} style={styles.modalActionGradient}>
+                        <Check size={18} color="#FFF" />
+                        <Text style={styles.modalActionText}>Approuver</Text>
+                      </LinearGradient>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.bookingBtn, styles.rejectBtn, { flex: 1, justifyContent: 'center' }]}
+                      style={styles.modalRejectBtn}
                       onPress={() => { handleRejectBooking(selectedBooking.id); setSelectedBooking(null); }}
+                      activeOpacity={0.85}
                     >
-                      <X size={16} color="#FFF" />
-                      <Text style={styles.bookingBtnText}>Refuser</Text>
+                      <X size={18} color={Colors.status.error} />
+                      <Text style={[styles.modalActionText, { color: Colors.status.error }]}>Refuser</Text>
                     </TouchableOpacity>
                   </View>
                 )}
                 {selectedBooking.status === 'confirmed' && selectedBooking.date >= todayStr && (
                   <TouchableOpacity
-                    style={[styles.bookingBtn, styles.cancelBtn, { alignSelf: 'stretch', justifyContent: 'center', marginTop: 12 }]}
+                    style={styles.modalCancelBtn}
                     onPress={() => { handleCancelConfirmed(selectedBooking.id); setSelectedBooking(null); }}
+                    activeOpacity={0.85}
                   >
-                    <X size={14} color="#FFF" />
-                    <Text style={styles.bookingBtnText}>Annuler la reservation</Text>
+                    <X size={16} color={Colors.text.muted} />
+                    <Text style={styles.modalCancelText}>Annuler la réservation</Text>
                   </TouchableOpacity>
                 )}
-                <View style={{ height: 20 }} />
+                <View style={{ height: 32 }} />
               </ScrollView>
             </Pressable>
           </Pressable>
@@ -489,17 +570,59 @@ const styles = StyleSheet.create({
   organizerSection: { flexDirection: 'row', gap: 14, marginTop: 6, marginBottom: 4, paddingTop: 8, borderTopWidth: 1, borderTopColor: Colors.border.light },
   organizerRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   organizerText: { color: Colors.text.muted, fontSize: 12 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%' },
-  modalHeader: { flexDirection: 'row' as const, alignItems: 'center' as const, padding: 20, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
-  modalTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '700' as const, marginTop: 6 },
-  modalClose: { padding: 4 },
-  modalBody: { padding: 20 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: Colors.background.card, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '88%' },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border.light, alignSelf: 'center' as const, marginTop: 12, marginBottom: 4 },
+  modalHeader: { flexDirection: 'row' as const, alignItems: 'center' as const, paddingHorizontal: 20, paddingVertical: 16, gap: 10 },
+  modalTitle: { color: Colors.text.primary, fontSize: 17, fontWeight: '700' as const },
+  modalStatusChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  modalStatusChipText: { fontSize: 12, fontWeight: '700' as const },
+  modalClose: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.background.cardLight, alignItems: 'center' as const, justifyContent: 'center' as const },
+  modalBody: { paddingHorizontal: 16, paddingBottom: 8 },
   modalStatusRow: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start' as const, marginBottom: 16 },
   modalStatusText: { fontSize: 13, fontWeight: '700' as const },
   modalSection: { marginBottom: 16 },
   modalSectionLabel: { color: Colors.text.muted, fontSize: 12, fontWeight: '600' as const, marginBottom: 4, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
   modalSectionValue: { color: Colors.text.primary, fontSize: 15 },
   modalRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 8 },
-  modalActions: { flexDirection: 'row' as const, gap: 12, marginTop: 12 },
+  modalActions: { flexDirection: 'row' as const, gap: 10, marginTop: 4, marginBottom: 8 },
+  // Info card (rows with icon + label + value)
+  infoCard: { backgroundColor: Colors.background.cardLight, borderRadius: 16, padding: 4, marginBottom: 12 },
+  infoRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 12, padding: 12 },
+  infoIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: Colors.background.dark, alignItems: 'center' as const, justifyContent: 'center' as const },
+  infoLabel: { color: Colors.text.muted, fontSize: 11, fontWeight: '600' as const, textTransform: 'uppercase' as const, letterSpacing: 0.4, marginBottom: 2 },
+  infoValue: { color: Colors.text.primary, fontSize: 14, fontWeight: '500' as const },
+  infoDivider: { height: 1, backgroundColor: Colors.border.light, marginHorizontal: 12 },
+  // Player card
+  playerCard: { backgroundColor: Colors.background.cardLight, borderRadius: 16, padding: 14, marginBottom: 12 },
+  playerCardLabel: { color: Colors.text.muted, fontSize: 11, fontWeight: '600' as const, textTransform: 'uppercase' as const, letterSpacing: 0.4, marginBottom: 10 },
+  playerName: { color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const },
+  // Action buttons
+  modalApproveBtn: { flex: 1, borderRadius: 14, overflow: 'hidden' as const },
+  modalActionGradient: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const, gap: 8, paddingVertical: 14 },
+  modalActionText: { color: '#fff', fontSize: 15, fontWeight: '700' as const },
+  modalRejectBtn: { flex: 1, flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const, gap: 8, paddingVertical: 14, borderRadius: 14, backgroundColor: Colors.status.error + '15', borderWidth: 1, borderColor: Colors.status.error + '40' },
+  modalCancelBtn: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const, gap: 8, paddingVertical: 13, borderRadius: 14, backgroundColor: Colors.background.cardLight, borderWidth: 1, borderColor: Colors.border.light, marginBottom: 8 },
+  modalCancelText: { color: Colors.text.muted, fontSize: 14, fontWeight: '600' as const },
+  playerRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    backgroundColor: Colors.background.dark,
+    borderRadius: 12,
+    padding: 12,
+  },
+  playerAvatar: {
+    width: 46, height: 46, borderRadius: 23,
+    alignItems: 'center' as const, justifyContent: 'center' as const,
+    overflow: 'hidden' as const,
+  },
+  playerAvatarText: { color: '#fff', fontSize: 16, fontWeight: '700' as const },
+  playerUsername: { color: Colors.text.muted, fontSize: 13 },
+  honoredBadge: {
+    flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4,
+    backgroundColor: Colors.status.success + '20',
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
+  },
+  honoredText: { color: Colors.status.success, fontSize: 11, fontWeight: '700' as const },
 });

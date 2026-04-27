@@ -29,6 +29,14 @@ interface RegisterData {
   firstName: string;
   lastName: string;
   city?: string;
+  country?: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+    city: string;
+    country: string;
+    lastUpdated: Date;
+  };
   referralCode?: string;
   role?: 'user' | 'venue_manager';
 }
@@ -48,6 +56,13 @@ interface UpdateProfileData {
   avatar?: string;
   sports?: UserSport[];
   isProfileVisible?: boolean;
+  location?: {
+    latitude: number;
+    longitude: number;
+    city: string;
+    country: string;
+    lastUpdated: Date;
+  };
 }
 
 

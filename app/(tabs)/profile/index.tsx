@@ -32,10 +32,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { user, isAdmin, refreshUser } = useAuth();
   const { verificationRequests } = useSupport();
-  const hasApprovedVerification = !!user && verificationRequests.some(
-    (request) => (request.userId === user.id || request.oderId === user.id) && request.status === 'approved'
-  );
-  const effectiveVerified = user?.isVerified || hasApprovedVerification || isAdmin;
+  const effectiveVerified = user?.isVerified || isAdmin;
   const effectivePremium = user?.isPremium || isAdmin;
   const { getUserMatches } = useMatches();
   const { getUserTeams, teams } = useTeams();
@@ -191,7 +188,6 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.profileNameRow}>
               <Text style={styles.profileName}>{user?.fullName || 'Joueur'}</Text>
-              {effectiveVerified && <CheckCircle size={18} color={Colors.status.success} />}
               {effectivePremium && !isAdmin && <Star size={18} color="#F59E0B" />}
             </View>
             <Text style={styles.profileUsername}>@{user?.username || 'username'}</Text>
@@ -325,8 +321,8 @@ export default function ProfileScreen() {
                 {bookingPreview.map((booking) => {
                   const status = BOOKING_STATUS_UI[booking.status] || BOOKING_STATUS_UI.pending;
                   const venue = venueMap[booking.venueId];
-                  const startH = parseInt((booking.startTime || '0').split(':')[0], 10);
-                  const endH = parseInt((booking.endTime || '0').split(':')[0], 10);
+                  const startH = parseInt((booking.startTime || '0').split('T').pop()!.split(':')[0], 10);
+                  const endH = parseInt((booking.endTime || '0').split('T').pop()!.split(':')[0], 10);
 
                   return (
                     <View key={booking.id} style={styles.bookingPreviewItem}>

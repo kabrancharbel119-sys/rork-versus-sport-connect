@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { venuesApi } from '@/lib/api/venues';
 import { Button } from '@/components/Button';
 import { uploadVenueImage } from '@/lib/uploadImage';
+import { CityAutocomplete, CityResult } from '@/components/CityAutocomplete';
 import type { Sport } from '@/types';
 
 const ALL_SPORTS: Sport[] = ['football', 'basketball', 'volleyball', 'tennis', 'handball', 'rugby', 'badminton', 'tabletennis', 'padel', 'squash', 'futsal', 'beachvolleyball'];
@@ -60,6 +61,9 @@ export default function EditVenueScreen() {
     name: '',
     address: '',
     city: '',
+    country: '',
+    latitude: undefined as number | undefined,
+    longitude: undefined as number | undefined,
     description: '',
     phone: '',
     email: '',
@@ -86,6 +90,9 @@ export default function EditVenueScreen() {
         name: v.name,
         address: v.address,
         city: v.city,
+        country: v.country || '',
+        latitude: v.latitude,
+        longitude: v.longitude,
         description: v.description || '',
         phone: v.phone || '',
         email: v.email || '',
@@ -109,6 +116,9 @@ export default function EditVenueScreen() {
       name: formData.name.trim(),
       address: formData.address.trim(),
       city: formData.city.trim(),
+      country: formData.country,
+      latitude: formData.latitude,
+      longitude: formData.longitude,
       sport: formData.sports,
       pricePerHour: parseInt(formData.pricePerHour) || 0,
       description: formData.description.trim(),
@@ -334,14 +344,34 @@ export default function EditVenueScreen() {
               />
               {errors.address && <Text style={styles.fieldError}>{errors.address}</Text>}
 
-              <Text style={styles.label}>Ville *</Text>
-              <TextInput
-                style={[styles.input, errors.city ? styles.inputError : null]}
-                placeholderTextColor={Colors.text.muted}
-                value={formData.city}
-                onChangeText={v => updateField('city', v)}
-              />
-              {errors.city && <Text style={styles.fieldError}>{errors.city}</Text>}
+              <View style={styles.citySection}>
+                <Text style={styles.label}>Ville *</Text>
+                <CityAutocomplete
+                  value={formData.city}
+                  onSelect={(city: CityResult) => {
+                    setFormData(prev => ({
+                      ...prev,
+                      city: city.name,
+                      country: city.country,
+                      latitude: city.latitude,
+                      longitude: city.longitude,
+                    }));
+                    if (errors.city) setErrors(prev => ({ ...prev, city: '' }));
+                  }}
+                  onClear={() => {
+                    setFormData(prev => ({
+                      ...prev,
+                      city: '',
+                      country: '',
+                      latitude: undefined,
+                      longitude: undefined,
+                    }));
+                  }}
+                  placeholder="Ex: Abidjan"
+                  maxResults={6}
+                />
+                {errors.city && <Text style={styles.fieldError}>{errors.city}</Text>}
+              </View>
 
               <Text style={styles.label}>Description</Text>
               <TextInput
@@ -730,5 +760,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  citySection: {
+    marginBottom: 16,
   },
 });

@@ -154,19 +154,37 @@ export const notificationsApi = {
   }) {
     console.log('[NotificationsAPI] Sending notification to:', targetUserId);
     
-    const client = (supabaseAdmin ?? supabase) as typeof supabase;
-    const { data, error } = await (client
-      .from('notifications')
-      .insert({
-        user_id: targetUserId,
-        type: notification.type,
-        title: notification.title,
-        message: notification.message,
-        data: notification.data ?? null,
-      } as any)
-      .select()
-      .single() as any);
-    
+    let data: any = null;
+    let error: any = null;
+
+    if (supabaseAdmin) {
+      // Service role disponible : insert direct
+      const res = await (supabaseAdmin
+        .from('notifications')
+        .insert({
+          user_id: targetUserId,
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          data: notification.data ?? null,
+        } as any)
+        .select()
+        .single() as any);
+      data = res.data;
+      error = res.error;
+    } else {
+      // Pas de service role : passer par le RPC SECURITY DEFINER
+      const res = await (supabase.rpc as any)('admin_send_notification', {
+        p_target_user_id: targetUserId,
+        p_type: notification.type,
+        p_title: notification.title,
+        p_message: notification.message,
+      });
+      error = res.error;
+      // Le RPC ne retourne pas la row, on crée un objet minimal
+      data = error ? null : { id: '', user_id: targetUserId, ...notification, is_read: false, created_at: new Date().toISOString() };
+    }
+
     if (error) throw error;
 
     const { data: pushToken } = await (supabase

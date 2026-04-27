@@ -74,7 +74,7 @@ const cardShadow: ViewStyle = Platform.select({
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { getUnreadCount, refetchNotifications } = useNotifications();
+  const { getUnreadCount, refetchNotifications, notifications } = useNotifications();
   const { getRecruitingTeams, getUserTeams, getAllTeams, teams, getPendingRequests, refetchTeams } = useTeams();
   const { getUpcomingMatches, matches, venues } = useMatches();
   const { tournaments, getUserTournaments, getActiveTournaments } = useTournaments();
@@ -88,38 +88,54 @@ export default function HomeScreen() {
   const userTeams = user ? getUserTeams(user.id) : [];
   const myTeam = userTeams[0] ?? null;
   const allTeams = getAllTeams();
-  const city = user?.city?.trim()?.toLowerCase();
+  const city = user?.city?.trim() || '';
+  const cityLower = city.toLowerCase();
+  const hasLocation = !!city;
+
+  // Filter teams by user location
   const otherTeamsInCity = allTeams
     .filter((t) => {
       if (myTeam && t.id === myTeam.id) return false;
-      if (city && t.city?.toLowerCase() !== city) return false;
+      if (hasLocation && t.city?.toLowerCase() !== cityLower) return false;
       return true;
     })
     .slice(0, 5);
 
-  const upcomingMatches = getUpcomingMatches().slice(0, 3);
+  // Filter matches by user location (via venue city)
+  const upcomingMatches = getUpcomingMatches()
+    .filter((m) => !hasLocation || !m.venue?.city || m.venue.city.toLowerCase() === cityLower)
+    .slice(0, 3);
   const userCreatedMatches = user
     ? matches.filter((m) => m.createdBy === user.id && m.status !== 'completed').slice(0, 3)
     : [];
   const displayMatches = upcomingMatches.length > 0 ? upcomingMatches : userCreatedMatches;
+
+  // Filter recruiting teams by user location
   const recruitingTeams = getRecruitingTeams()
     .filter((t) => !userTeams.some((ut) => ut.id === t.id))
+    .filter((t) => !hasLocation || !t.city || t.city.toLowerCase() === cityLower)
     .slice(0, 3);
+
+  // Filter tournaments by user location (via venue)
   const allTournaments = [...getActiveTournaments(), ...tournaments.filter(t => t.status === 'completed')]
     .filter((t, i, arr) => arr.findIndex(x => x.id === t.id) === i)
+    .filter((t) => !hasLocation || !t.venue?.city || t.venue.city.toLowerCase() === cityLower)
     .sort((a, b) => {
       const order: Record<string, number> = { in_progress: 0, registration: 1, completed: 2 };
       return (order[a.status] ?? 3) - (order[b.status] ?? 3) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     })
     .slice(0, 8);
+
+  // Filter venues by user location
+  const venuesInCity = venues
+    .filter((v) => !hasLocation || !v.city || v.city.toLowerCase() === cityLower)
+    .slice(0, 6);
   const userTournaments = user ? getUserTournaments(user.id).slice(0, 5) : [];
 
-  // Recent notifications (last 3)
-  const recentNotifications = [
-    { id: '1', title: 'Match confirmé', desc: 'Football 5v5 demain à 18h', time: '2h', icon: 'check' },
-    { id: '2', title: 'Nouvelle demande', desc: 'Les Lions veulent te recruter', time: '5h', icon: 'users' },
-    { id: '3', title: 'Tournoi bientôt', desc: 'Coupe de Basketball dans 2j', time: '1j', icon: 'trophy' },
-  ].slice(0, unreadNotifs > 0 ? 3 : 0);
+  // Recent notifications (last 3 unread, real data)
+  const recentNotifications = (notifications ?? [])
+    .filter(n => !n.isRead && n.type !== 'chat')
+    .slice(0, 3);
 
   useEffect(() => {
     if (__DEV__) {
@@ -407,6 +423,26 @@ export default function HomeScreen() {
             </View>
           </View>
 
+          {/* Location prompt banner */}
+          {!hasLocation && (
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => router.push('/edit-profile')}
+              style={styles.locationBannerWrap}
+            >
+              <View style={styles.locationBanner}>
+                <MapPin size={20} color={Colors.primary.orange} />
+                <View style={styles.locationBannerTextWrap}>
+                  <Text style={styles.locationBannerTitle}>Définissez votre ville</Text>
+                  <Text style={styles.locationBannerSub}>
+                    Pour découvrir matchs, équipes et terrains près de chez vous
+                  </Text>
+                </View>
+                <ChevronRight size={20} color={Colors.text.muted} />
+              </View>
+            </TouchableOpacity>
+          )}
+
           <View>
             <TouchableOpacity
               activeOpacity={0.93}
@@ -539,7 +575,12 @@ export default function HomeScreen() {
             )}
           </Section>
 
-          <Section title="Tournois" subtitle="Découvrir et participer" icon={Trophy} onSeeAll={() => router.push('/tournaments')}>
+          <Section
+            title={hasLocation ? `Tournois à ${city}` : 'Tournois'}
+            subtitle={hasLocation ? 'À proximité' : 'Découvrir et participer'}
+            icon={Trophy}
+            onSeeAll={() => router.push('/tournaments')}
+          >
             {allTournaments.length > 0 ? (
               <ScrollView
                 horizontal
@@ -566,8 +607,8 @@ export default function HomeScreen() {
           </Section>
 
           <Section
-            title="Matchs à venir"
-            subtitle="Prochains rendez-vous"
+            title={hasLocation ? `Matchs à ${city}` : 'Matchs à venir'}
+            subtitle={hasLocation ? 'Prochains rendez-vous près de chez vous' : 'Prochains rendez-vous'}
             icon={Swords}
             onSeeAll={() => router.push('/(tabs)/matches')}
           >
@@ -628,10 +669,15 @@ export default function HomeScreen() {
             )}
           </Section>
 
-          <Section title="Terrains disponibles" subtitle="Réservez un terrain" icon={MapPin} onSeeAll={() => router.push('/venues' as any)}>
-            {venues.length > 0 ? (
+          <Section
+            title={hasLocation ? `Terrains à ${city}` : 'Terrains disponibles'}
+            subtitle={hasLocation ? 'Réservez près de chez vous' : 'Réservez un terrain'}
+            icon={MapPin}
+            onSeeAll={() => router.push('/venues' as any)}
+          >
+            {venuesInCity.length > 0 ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hScroll}>
-                {venues.slice(0, 6).map((venue) => (
+                {venuesInCity.map((venue) => (
                   <TouchableOpacity
                     key={venue.id}
                     activeOpacity={0.85}
@@ -663,7 +709,11 @@ export default function HomeScreen() {
             )}
           </Section>
 
-          <Section title="Équipes qui recrutent" icon={Users} onSeeAll={() => router.push('/(tabs)/teams')}>
+          <Section
+            title={hasLocation ? `Équipes qui recrutent à ${city}` : 'Équipes qui recrutent'}
+            icon={Users}
+            onSeeAll={() => router.push('/(tabs)/teams')}
+          >
             {recruitingTeams.length > 0 ? (
               recruitingTeams.map((team, idx) => <TeamCard key={team.id} team={team} index={idx} />)
             ) : (
@@ -1035,6 +1085,20 @@ const styles = StyleSheet.create({
   },
   emptyTextSmall: { color: Colors.text.muted, fontSize: 13, marginBottom: 10 },
   emptyLink: { color: Colors.primary.orange, fontSize: 13, fontWeight: '600' as const },
+  locationBannerWrap: { marginHorizontal: PAD, marginBottom: 12 },
+  locationBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Colors.background.card,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+  },
+  locationBannerTextWrap: { flex: 1 },
+  locationBannerTitle: { color: Colors.text.primary, fontSize: 14, fontWeight: '600' as const },
+  locationBannerSub: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
   spacer: { height: 40 },
   notifHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   notifTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

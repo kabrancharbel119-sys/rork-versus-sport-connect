@@ -9,6 +9,7 @@ import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { venuesApi } from '@/lib/api/venues';
 import { Card } from '@/components/Card';
+import { ShowQRButton } from '@/components/ShowQRButton';
 import type { Booking, BookingStatus } from '@/types';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof CheckCircle }> = {
@@ -225,8 +226,6 @@ export default function MyBookingsScreen() {
                   const statusCfg = STATUS_CONFIG[booking.status] || STATUS_CONFIG.pending;
                   const StatusIcon = statusCfg.icon;
                   const upcoming = isUpcoming(booking.date);
-                  const isCancellable = upcoming && (booking.status === 'confirmed' || booking.status === 'pending');
-
                   // Compute hours until start and deadline
                   const startH = parseInt((booking.startTime || '0').split('T').pop()!.split(':')[0], 10);
                   const endH = parseInt((booking.endTime || '0').split('T').pop()!.split(':')[0], 10);
@@ -236,7 +235,13 @@ export default function MyBookingsScreen() {
                   const bookingStart = new Date(by, bm - 1, bd, startH, 0, 0);
                   const hoursUntil = (bookingStart.getTime() - Date.now()) / (1000 * 60 * 60);
                   const deadlinePassed = hoursUntil < cancellationHours;
-                  const canCancel = isCancellable && !deadlinePassed;
+
+                  // pending → toujours annulable (pas encore validé par le manager)
+                  // confirmed → annulable uniquement si délai pas dépassé
+                  const isPending = booking.status === 'pending';
+                  const isConfirmed = booking.status === 'confirmed';
+                  const isCancellable = upcoming && (isPending || isConfirmed);
+                  const canCancel = upcoming && (isPending || (isConfirmed && !deadlinePassed));
                   const deadlineDate = new Date(bookingStart.getTime() - cancellationHours * 60 * 60 * 1000);
 
                   return (
@@ -273,10 +278,22 @@ export default function MyBookingsScreen() {
                             {formatTime(booking.startTime)} - {formatTime(booking.endTime)} ({duration}h)
                           </Text>
                         </View>
+                        <View style={styles.metaRow}>
+                          <MapPin size={14} color={Colors.text.muted} />
+                          <Text style={styles.metaText}>{venue?.name || 'Chargement...'}</Text>
+                        </View>
                       </View>
 
-                      {/* Cancellation deadline info */}
-                      {isCancellable && (
+                      {/* QR Code Button for confirmed bookings */}
+                      {booking.status === 'confirmed' && (
+                        <ShowQRButton 
+                          booking={booking} 
+                          venueName={venue?.name || 'Terrain'} 
+                        />
+                      )}
+
+                      {/* Cancellation deadline info — confirmed only */}
+                      {isConfirmed && isCancellable && (
                         <View style={[styles.deadlineRow, deadlinePassed && styles.deadlineRowExpired]}>
                           <AlertCircle size={12} color={deadlinePassed ? Colors.status.error : Colors.status.warning} />
                           <Text style={[styles.deadlineText, deadlinePassed && styles.deadlineTextExpired]}>

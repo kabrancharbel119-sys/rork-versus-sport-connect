@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, RefreshControl, Switch, Share, Platform, Modal, KeyboardAvoidingView } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, RefreshControl, Switch, Share, Platform, Modal, KeyboardAvoidingView, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, Stack } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
@@ -46,7 +46,7 @@ export default function AdminScreen() {
   const { user, isAdmin } = useAuth();
   const { teams = [], refetchTeams, deleteTeam } = useTeams();
   const { matches = [], refetchMatches, deleteMatch } = useMatches();
-  const { users = [], banUser, unbanUser, verifyUser } = useUsers();
+  const { users = [], banUser, unbanUser, verifyUser, unverifyUser } = useUsers();
   const { addNotification } = useNotifications();
   const { tickets = [], verificationRequests = [], updateTicketStatus, handleVerification, getPendingTickets, getPendingVerifications, respondToTicket } = useSupport();
   const { tournaments = [], refetchTournaments } = useTournaments();
@@ -108,6 +108,8 @@ export default function AdminScreen() {
   const [unbanningUserId, setUnbanningUserId] = useState<string | null>(null);
   const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null);
   const [deletingMatchId, setDeletingMatchId] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<{ id: string; userId: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const pendingPayoutRequestsQuery = useQuery({
     queryKey: ['pending-payout-requests'],
@@ -576,9 +578,7 @@ export default function AdminScreen() {
             await verifyUser(userId);
             try {
               await addNotification({ userId, type: 'system', title: 'Compte vérifié ✓', message: 'Félicitations ! Votre compte est maintenant vérifié.' });
-            } catch (_) {
-              // Notification échouée mais la vérification a réussi
-            }
+            } catch (_) {}
             await queryClient.invalidateQueries({ queryKey: ['allUsers'] });
             Alert.alert('Succès', `${userName} est maintenant vérifié`);
           } catch (e) {
@@ -587,6 +587,33 @@ export default function AdminScreen() {
         },
       },
     ]);
+  };
+
+  const handleUnverifyUser = async (userId: string, userName: string) => {
+    if (!userId?.trim()) return;
+    Alert.alert(
+      'Retirer la vérification',
+      `Retirer le badge vérifié de ${userName} ? Cette action est réversible.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Retirer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await unverifyUser(userId);
+              try {
+                await addNotification({ userId, type: 'system', title: 'Vérification retirée', message: 'Votre badge de vérification a été retiré par un administrateur. Vous pouvez soumettre une nouvelle demande.' });
+              } catch (_) {}
+              await queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+              Alert.alert('Succès', `Badge vérifié retiré pour ${userName}`);
+            } catch (e) {
+              Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de retirer la vérification.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleTicketAction = async (ticketId: string, action: 'in_progress' | 'resolve' | 'close') => {
@@ -627,13 +654,13 @@ export default function AdminScreen() {
     }
   };
 
-  const handleVerificationAction = async (requestId: string, action: 'approve' | 'reject', userId: string) => {
+  const handleVerificationAction = async (requestId: string, action: 'approve' | 'reject', userId: string, reason?: string) => {
     if (!requestId?.trim()) {
       Alert.alert('Erreur', 'Demande invalide.');
       return;
     }
     try {
-      await handleVerification({ requestId, action, adminId: user?.id ?? '' });
+      await handleVerification({ requestId, action, reason, adminId: user?.id ?? '' });
       if (action === 'approve' && userId?.trim()) {
         try {
           await verifyUser(userId);
@@ -1445,7 +1472,10 @@ export default function AdminScreen() {
               ) : (
                 <TouchableOpacity style={styles.actionBtnRed} onPress={() => handleBanUser(u.id, u.fullName)}><Ban size={16} color={Colors.status.error} /></TouchableOpacity>
               )}
-              {!u.isVerified && <TouchableOpacity style={styles.actionBtnBlue} onPress={() => handleVerifyUser(u.id, u.fullName)}><CheckCircle size={16} color={Colors.primary.blue} /></TouchableOpacity>}
+              {u.isVerified
+                ? <TouchableOpacity style={styles.actionBtnRed} onPress={() => handleUnverifyUser(u.id, u.fullName)} accessibilityLabel={`Retirer vérification de ${u.fullName}`}><UserCheck size={16} color={Colors.status.error} /></TouchableOpacity>
+                : <TouchableOpacity style={styles.actionBtnBlue} onPress={() => handleVerifyUser(u.id, u.fullName)} accessibilityLabel={`Vérifier ${u.fullName}`}><CheckCircle size={16} color={Colors.primary.blue} /></TouchableOpacity>
+              }
             </View>
           </View>
         ))}
@@ -2509,6 +2539,23 @@ export default function AdminScreen() {
                     <Text style={styles.detailLabel}>Raison / Justification</Text>
                     <Text style={styles.detailDescription}>{selectedVerificationDetail.reason || 'Aucune raison fournie'}</Text>
                   </View>
+
+                  {selectedVerificationDetail.documentUrl ? (
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailLabel}>Document soumis</Text>
+                      <TouchableOpacity
+                        onPress={() => Linking.openURL(selectedVerificationDetail.documentUrl!)}
+                        style={{ paddingVertical: 8, paddingHorizontal: 12, backgroundColor: Colors.primary.blue + '20', borderRadius: 8, marginTop: 4 }}
+                      >
+                        <Text style={{ color: Colors.primary.blue, fontSize: 13, fontWeight: '600' as const }}>📎 Ouvrir le document</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailLabel}>Document soumis</Text>
+                      <Text style={{ color: Colors.text.muted, fontSize: 13 }}>Aucun document joint</Text>
+                    </View>
+                  )}
                   
                   {selectedVerificationDetail.rejectionReason && (
                     <View style={styles.detailSection}>
@@ -2518,6 +2565,20 @@ export default function AdminScreen() {
                   )}
                   
                   <View style={styles.detailActions}>
+                    {selectedVerificationDetail.status === 'approved' && (
+                      <Button
+                        title="🔕 Retirer la vérification"
+                        onPress={() => {
+                          const uid = selectedVerificationDetail.userId || '';
+                          const uname = selectedVerificationDetail.userName || 'cet utilisateur';
+                          setSelectedVerificationDetail(null);
+                          handleUnverifyUser(uid, uname);
+                        }}
+                        variant="outline"
+                        style={[styles.detailActionBtn, { borderColor: Colors.status.error }]}
+                        textStyle={{ color: Colors.status.error }}
+                      />
+                    )}
                     {selectedVerificationDetail.status === 'pending' && (
                       <>
                         <Button 
@@ -2532,7 +2593,8 @@ export default function AdminScreen() {
                         <Button 
                           title="❌ Refuser" 
                           onPress={() => {
-                            handleVerificationAction(selectedVerificationDetail.id, 'reject', selectedVerificationDetail.userId || '');
+                            setRejectTarget({ id: selectedVerificationDetail.id, userId: selectedVerificationDetail.userId || '' });
+                            setRejectReason('');
                             setSelectedVerificationDetail(null);
                           }} 
                           variant="outline" 
@@ -2552,6 +2614,51 @@ export default function AdminScreen() {
               )}
             </View>
           </View>
+        </Modal>
+
+        {/* Modale refus vérification avec motif obligatoire */}
+        <Modal visible={rejectTarget !== null} animationType="slide" transparent>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Refuser la vérification</Text>
+                <TouchableOpacity onPress={() => setRejectTarget(null)}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.modalLabel}>Motif du refus (obligatoire)</Text>
+              <TextInput
+                style={styles.modalTextInput}
+                value={rejectReason}
+                onChangeText={setRejectReason}
+                placeholder="Ex: document illisible, identité non vérifiable..."
+                placeholderTextColor={Colors.text.muted}
+                multiline
+                numberOfLines={4}
+                autoFocus
+              />
+              <View style={styles.modalActions}>
+                <Button title="Annuler" onPress={() => setRejectTarget(null)} variant="outline" style={styles.modalButton} />
+                <Button
+                  title="Confirmer le refus"
+                  onPress={() => {
+                    if (!rejectReason.trim()) {
+                      Alert.alert('Motif requis', 'Veuillez indiquer un motif de refus.');
+                      return;
+                    }
+                    if (rejectTarget) {
+                      handleVerificationAction(rejectTarget.id, 'reject', rejectTarget.userId, rejectReason.trim());
+                      setRejectTarget(null);
+                      setRejectReason('');
+                    }
+                  }}
+                  variant="orange"
+                  style={styles.modalButton}
+                  disabled={!rejectReason.trim()}
+                />
+              </View>
+            </View>
+          </KeyboardAvoidingView>
         </Modal>
       </View>
     </>

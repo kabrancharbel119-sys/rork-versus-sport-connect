@@ -32,7 +32,7 @@ export default function MatchesScreen() {
   const { user } = useAuth();
   const { matches, getUpcomingMatches, getUserMatches, getCompletedUserMatches, getMatchesNeedingPlayers, refetchMatches, isLoading, isError } = useMatches();
   const { getOpenTournaments, refetchTournaments } = useTournaments();
-  const { getUserById } = useUsers();
+  const { getUserByIdSync } = useUsers();
   const openTournaments = getOpenTournaments() ?? [];
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [refreshing, setRefreshing] = useState(false);
@@ -45,7 +45,7 @@ export default function MatchesScreen() {
   const matchesNeedingPlayers = getMatchesNeedingPlayers(user?.location, filters.maxDistance) ?? [];
 
   const filteredMatches = useMemo(() => {
-    let result = activeTab === 'all' ? allMatches : activeTab === 'my-matches' ? myMatches : activeTab === 'need-players' ? matchesNeedingPlayers : activeTab === 'history' ? [] : [];
+    let result = activeTab === 'all' ? allMatches : activeTab === 'my-matches' ? myMatches : activeTab === 'need-players' ? matchesNeedingPlayers : activeTab === 'history' ? completedMatches : [];
     if (activeTab !== 'history') {
       if (filters.sport !== 'all') result = result.filter(m => m.sport === filters.sport);
       if (filters.level !== 'all') result = result.filter(m => m.level === filters.level);
@@ -54,7 +54,7 @@ export default function MatchesScreen() {
       if (filters.matchType === 'friendly') result = result.filter(m => m.type === 'friendly');
     }
     return result;
-  }, [activeTab, allMatches, myMatches, matchesNeedingPlayers, filters]);
+  }, [activeTab, allMatches, myMatches, completedMatches, matchesNeedingPlayers, filters]);
 
   useEffect(() => {
     if (__DEV__) {
@@ -96,7 +96,7 @@ export default function MatchesScreen() {
   const matchesList = matches ?? [];
   const renderMatchCard = (match: typeof matchesList[0], showNeedsPlayers = false) => {
     if (__DEV__) console.log('[Matches] Rendering match:', match.id, match.sport, match.format);
-    const creator = getUserById(match.createdBy);
+    const creator = getUserByIdSync(match.createdBy);
     const isRanked = match.type === 'ranked';
     return (
       <Card

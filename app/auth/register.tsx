@@ -9,6 +9,7 @@ import { Colors } from '@/constants/colors';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { useAuth } from '@/contexts/AuthContext';
+import { LocationSelector, LocationResult } from '@/components/LocationSelector';
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -22,7 +23,10 @@ export default function RegisterScreen() {
     lastName: '',
     password: '',
     confirmPassword: '',
-    city: 'Abidjan',
+    city: '',
+    country: '',
+    latitude: undefined as number | undefined,
+    longitude: undefined as number | undefined,
     referralCode: '',
     role: 'user' as const,
   });
@@ -59,6 +63,10 @@ export default function RegisterScreen() {
       newErrors.lastName = 'Nom requis';
     }
     
+    if (!formData.city.trim()) {
+      newErrors.city = 'Ville requise';
+    }
+    
     if (!formData.password) {
       newErrors.password = 'Mot de passe requis';
     } else if (formData.password.length < 8) {
@@ -87,6 +95,14 @@ export default function RegisterScreen() {
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
         city: formData.city,
+        country: formData.country,
+        location: formData.latitude && formData.longitude ? {
+          latitude: formData.latitude,
+          longitude: formData.longitude,
+          city: formData.city,
+          country: formData.country,
+          lastUpdated: new Date(),
+        } : undefined,
         referralCode: formData.referralCode.trim() || undefined,
         role: 'user',
       });
@@ -210,6 +226,36 @@ export default function RegisterScreen() {
                   error={errors.confirmPassword}
                   icon={<Lock size={20} color={Colors.text.muted} />}
                 />
+
+                {/* Location Selector */}
+                <View style={styles.locationSection}>
+                  <LocationSelector
+                    initialCity={formData.city}
+                    initialCountry={formData.country}
+                    onSelect={(location: LocationResult) => {
+                      setFormData(prev => ({
+                        ...prev,
+                        city: location.city,
+                        country: location.country,
+                        latitude: location.latitude,
+                        longitude: location.longitude,
+                      }));
+                      if (errors.city) {
+                        setErrors(prev => ({ ...prev, city: '' }));
+                      }
+                    }}
+                    onClear={() => {
+                      setFormData(prev => ({
+                        ...prev,
+                        city: '',
+                        country: '',
+                        latitude: undefined,
+                        longitude: undefined,
+                      }));
+                    }}
+                  />
+                  {errors.city && <Text style={styles.fieldError}>{errors.city}</Text>}
+                </View>
 
                 <Input
                   scrollViewRef={scrollViewRef}
@@ -347,6 +393,36 @@ export default function RegisterScreen() {
                 error={errors.confirmPassword}
                 icon={<Lock size={20} color={Colors.text.muted} />}
               />
+
+              {/* Location Selector */}
+              <View style={styles.locationSection}>
+                <LocationSelector
+                  initialCity={formData.city}
+                  initialCountry={formData.country}
+                  onSelect={(location: LocationResult) => {
+                    setFormData(prev => ({
+                      ...prev,
+                      city: location.city,
+                      country: location.country,
+                      latitude: location.latitude,
+                      longitude: location.longitude,
+                    }));
+                    if (errors.city) {
+                      setErrors(prev => ({ ...prev, city: '' }));
+                    }
+                  }}
+                  onClear={() => {
+                    setFormData(prev => ({
+                      ...prev,
+                      city: '',
+                      country: '',
+                      latitude: undefined,
+                      longitude: undefined,
+                    }));
+                  }}
+                />
+                {errors.city && <Text style={styles.fieldError}>{errors.city}</Text>}
+              </View>
 
               <Input
                 scrollViewRef={scrollViewRef}
@@ -513,5 +589,15 @@ const styles = StyleSheet.create({
     color: Colors.primary.blue,
     fontSize: 14,
     fontWeight: '600' as const,
+  },
+  locationSection: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  fieldError: {
+    color: Colors.status.error,
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 4,
   },
 });

@@ -1,3 +1,4 @@
+import { supabase } from '@/lib/supabase';
 import type { ReportCheck } from '../types';
 
 const mk = (
@@ -14,12 +15,13 @@ export async function runConfigChecks(): Promise<ReportCheck[]> {
   const results: ReportCheck[] = [];
   const env: Record<string, string | undefined> = typeof process !== 'undefined' ? (process.env as Record<string, string | undefined>) : {};
 
-  // ── Env vars ──────────────────────────────────────────────
-  const supabaseUrl = env.EXPO_PUBLIC_SUPABASE_URL;
-  results.push(mk('cfg-supabase-url', 'EXPO_PUBLIC_SUPABASE_URL définie', !!supabaseUrl, supabaseUrl ? `url=${supabaseUrl.slice(0, 40)}…` : 'manquant', 'critical', 'Définir EXPO_PUBLIC_SUPABASE_URL dans .env'));
-
-  const anonKey = env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  results.push(mk('cfg-anon-key', 'EXPO_PUBLIC_SUPABASE_ANON_KEY définie', !!anonKey, anonKey ? 'présente' : 'manquant', 'critical', 'Définir EXPO_PUBLIC_SUPABASE_ANON_KEY'));
+  // ── Supabase connectivity (replaces env var check — vars are bundled by Expo, not in process.env at runtime) ──
+  const t0 = Date.now();
+  const { error: connError } = await (supabase.from('users').select('id').limit(1) as any);
+  const connMs = Date.now() - t0;
+  const supabaseReachable = !connError;
+  results.push(mk('cfg-supabase-url', 'EXPO_PUBLIC_SUPABASE_URL définie', supabaseReachable, supabaseReachable ? `connexion_ok=${connMs}ms` : `erreur: ${connError?.message}`, 'critical', 'Définir EXPO_PUBLIC_SUPABASE_URL dans .env'));
+  results.push(mk('cfg-anon-key', 'EXPO_PUBLIC_SUPABASE_ANON_KEY définie', supabaseReachable, supabaseReachable ? 'présente (connexion réussie)' : 'non fonctionnelle', 'critical', 'Définir EXPO_PUBLIC_SUPABASE_ANON_KEY'));
 
   const serviceRoleExposed = !!env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
   results.push(mk(

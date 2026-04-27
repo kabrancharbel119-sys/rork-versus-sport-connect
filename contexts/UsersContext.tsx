@@ -6,6 +6,8 @@ import { AppState, AppStateStatus } from 'react-native';
 import { User } from '@/types';
 import { mockUser, mockAdminUser } from '@/mocks/data';
 import { usersApi } from '@/lib/api/users';
+import { verificationsApi } from '@/lib/api/verifications';
+import { supabase } from '@/lib/supabase';
 
 const USERS_REFETCH_INTERVAL_MS = 30_000;
 
@@ -204,6 +206,41 @@ export const [UsersProvider, useUsers] = createContextHook(() => {
       const verifiedUser = await usersApi.update(userId, { isVerified: true });
       const updatedUsers = users.map(u => (u.id === userId ? { ...u, ...verifiedUser, isVerified: true } : u));
       await saveUsers(updatedUsers);
+      await queryClient.refetchQueries({ queryKey: ['auth'] });
+      queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+    },
+  });
+
+  const unverifyUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      console.log('[Users] Unverifying user:', userId);
+      await usersApi.update(userId, { isVerified: false });
+      const updatedUsers = users.map(u => (u.id === userId ? { ...u, isVerified: false } : u));
+      await saveUsers(updatedUsers);
+      // Si l'utilisateur cible est connecté, mettre à jour son cache local
+      try {
+        const raw = await AsyncStorage.getItem('vs_user');
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (cached?.id === userId) {
+            await AsyncStorage.setItem('vs_user', JSON.stringify({ ...cached, isVerified: false }));
+          }
+        }
+      } catch (_) {}
+      // Remettre la demande de vérification approved → rejected pour permettre une re-soumission
+      try {
+        const requests = await verificationsApi.getByUser(userId);
+        const approved = requests.find(r => r.status === 'approved');
+        if (approved) {
+          await supabase
+            .from('verification_requests')
+            .update({ status: 'rejected', rejection_reason: 'Vérification retirée par un administrateur' })
+            .eq('id', approved.id);
+        }
+      } catch (_) {}
+      await queryClient.refetchQueries({ queryKey: ['auth'] });
+      queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+      queryClient.invalidateQueries({ queryKey: ['support'] });
     },
   });
 
@@ -245,6 +282,7 @@ export const [UsersProvider, useUsers] = createContextHook(() => {
       return undefined;
     }
   }, [users]);
+  const getUserByIdSync = useCallback((id: string) => users.find(u => u.id === id), [users]);
   const getUserByEmail = useCallback((email: string) => users.find(u => u.email === email), [users]);
   const isFollowing = useCallback((followerId: string, followingId: string) => follows.some(f => f.followerId === followerId && f.followingId === followingId), [follows]);
   const getFollowers = useCallback((userId: string) => follows
@@ -268,9 +306,11 @@ export const [UsersProvider, useUsers] = createContextHook(() => {
     banUser: banUserMutation.mutateAsync,
     unbanUser: unbanUserMutation.mutateAsync,
     verifyUser: verifyUserMutation.mutateAsync,
+    unverifyUser: unverifyUserMutation.mutateAsync,
     updateUser: updateUserMutation.mutateAsync,
     addUser: addUserMutation.mutateAsync,
     getUserById,
+    getUserByIdSync,
     getUserByEmail,
     isFollowing,
     getFollowers,

@@ -233,25 +233,28 @@ export default function CreateMatchScreen() {
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Type de match</Text>
                 <View style={styles.typeRow}>
-                  {matchTypes.map((type) => (
-                    <TouchableOpacity
-                      key={type}
-                      style={[
-                        styles.typeChip,
-                        formData.type === type && (type === 'ranked' ? styles.rankedChipActive : styles.friendlyChipActive),
-                      ]}
-                      onPress={() => updateField('type', type)}
-                    >
-                      <Text style={[styles.typeChipText, formData.type === type && styles.typeChipTextActive]}>
-                        {type === 'friendly' ? '⚽ Amical' : '🏆 Classé'}
-                      </Text>
-                      {type === 'ranked' && !isAdmin && (
-                        <Text style={[styles.typeChipSub, formData.type === type && styles.typeChipSubActive]}>
-                          Bientôt
+                  {matchTypes.map((type) => {
+                    const isDisabled = type === 'ranked' && !isAdmin;
+                    return (
+                      <TouchableOpacity
+                        key={type}
+                        style={[
+                          styles.typeChip,
+                          formData.type === type && (type === 'ranked' ? styles.rankedChipActive : styles.friendlyChipActive),
+                          isDisabled && styles.typeChipDisabled,
+                        ]}
+                        onPress={() => !isDisabled && updateField('type', type)}
+                        activeOpacity={isDisabled ? 1 : 0.8}
+                      >
+                        <Text style={[styles.typeChipText, formData.type === type && styles.typeChipTextActive, isDisabled && styles.typeChipTextDisabled]}>
+                          {type === 'friendly' ? 'Amical' : 'Classé'}
                         </Text>
-                      )}
-                    </TouchableOpacity>
-                  ))}
+                        {isDisabled && (
+                          <Text style={styles.typeChipSoonBadge}>Bientôt</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
 
@@ -575,6 +578,19 @@ const styles = StyleSheet.create({
   },
   typeChipSubActive: {
     color: 'rgba(255,255,255,0.85)',
+  },
+  typeChipDisabled: {
+    opacity: 0.45,
+    borderStyle: 'dashed',
+  },
+  typeChipTextDisabled: {
+    color: Colors.text.muted,
+  },
+  typeChipSoonBadge: {
+    fontSize: 10,
+    color: Colors.text.muted,
+    marginTop: 2,
+    fontWeight: '500',
   },
   friendlyChipActive: {
     backgroundColor: Colors.primary.blue,

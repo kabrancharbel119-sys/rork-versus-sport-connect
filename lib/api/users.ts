@@ -64,6 +64,10 @@ export interface UserRow {
   availability: { dayOfWeek: number; startTime: string; endTime: string }[];
   referral_code: string | null;
   created_at: string;
+  // QR Code validation counters
+  completed_bookings_count: number | null;
+  no_show_count: number | null;
+  member_since: string | null;
 }
 
 export const mapUserRowToUser = (row: UserRow): User => ({
@@ -103,6 +107,10 @@ export const mapUserRowToUser = (row: UserRow): User => ({
   } : undefined,
   availability: row.availability || [],
   createdAt: new Date(row.created_at),
+  // QR Code validation counters
+  completedBookingsCount: row.completed_bookings_count ?? 0,
+  noShowCount: row.no_show_count ?? 0,
+  memberSince: row.member_since ? new Date(row.member_since) : undefined,
 });
 
 async function getViewerContext(): Promise<{ viewerId: string | null; isAdmin: boolean }> {
@@ -159,15 +167,17 @@ export const usersApi = {
 
   async getById(id: string) {
     logger.debug('UsersAPI', 'Getting user by id:', id);
-    const { data, error } = await (supabase
-      .from('users')
-      .select('*')
-      .eq('id', id)
-      .single() as any);
+    const [{ data, error }, { data: rel }] = await Promise.all([
+      supabase.from('users').select('*').eq('id', id).single() as any,
+      supabase.rpc('get_user_reliability', { p_user_id: id }) as any,
+    ]);
     
     if (error) throw error;
     if (!data) throw new Error('Utilisateur non trouvé');
     const mapped = mapUserRowToUser(data as UserRow);
+    (mapped as any).completedBookingsCount = rel?.completed ?? mapped.completedBookingsCount ?? 0;
+    (mapped as any).noShows = rel?.no_shows ?? 0;
+    (mapped as any).totalBookings = rel?.total ?? 0;
     const { viewerId, isAdmin } = await getViewerContext();
     if (!canViewerSeeUser(mapped, viewerId, isAdmin)) {
       throw new Error('Profil indisponible');
@@ -412,14 +422,26 @@ export const usersApi = {
     if (updates.isProfileVisible !== undefined) dbUpdates.is_profile_visible = updates.isProfileVisible;
     if (updates.role !== undefined) dbUpdates.role = updates.role;
     
-    const { data, error } = await ((supabase.from('users') as any)
-      .update(dbUpdates)
-      .eq('id', id)
-      .select('*')
-      .single());
-    
-    if (error) throw error;
-    return mapUserRowToUser(data as UserRow);
+    // is_verified doit passer par le RPC SECURITY DEFINER (RLS bloque le PATCH direct)
+    if (updates.isVerified !== undefined) {
+      const { error: rpcError } = await (supabase.rpc as any)('admin_set_user_verified', {
+        p_user_id: id,
+        p_verified: updates.isVerified,
+      });
+      if (rpcError) throw rpcError;
+      delete dbUpdates.is_verified;
+    }
+
+    // Si d'autres champs à mettre à jour
+    if (Object.keys(dbUpdates).length > 0) {
+      const client = supabaseAdmin || supabase;
+      const { error } = await ((client.from('users') as any)
+        .update(dbUpdates)
+        .eq('id', id));
+      if (error) throw error;
+    }
+
+    return { id } as unknown as ReturnType<typeof mapUserRowToUser>;
   },
 
   async delete(id: string) {
