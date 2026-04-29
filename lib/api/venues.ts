@@ -230,7 +230,8 @@ export const venuesApi = {
       .select('start_time, end_time')
       .eq('venue_id', venueId)
       .eq('date', date)
-      .neq('status', 'cancelled') as any);
+      .neq('status', 'cancelled')
+      .neq('status', 'rejected') as any);
 
     if (bookingsError) {
       console.error('[VenuesAPI] Error fetching bookings:', bookingsError);
@@ -306,7 +307,8 @@ export const venuesApi = {
       .select('start_time, end_time')
       .eq('venue_id', booking.venueId)
       .eq('date', booking.date)
-      .neq('status', 'cancelled') as any);
+      .neq('status', 'cancelled')
+      .neq('status', 'rejected') as any);
 
     if (fetchErr) {
       console.error('[VenuesAPI] Error checking existing bookings:', fetchErr);

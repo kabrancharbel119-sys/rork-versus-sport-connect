@@ -35,15 +35,20 @@ function formatDateFR(dateStr: string): string {
 function formatTime(timeStr: string): string {
   try {
     if (!timeStr) return '';
-    // Handle TIMESTAMPTZ: '2026-03-16T18:00:00+00:00'
+    let h: number, m: number;
+    // Handle TIMESTAMPTZ: '2026-03-16T18:30:00+00:00'
     if (timeStr.includes('T')) {
       const timePart = timeStr.split('T')[1];
-      const hour = parseInt(timePart.split(':')[0], 10);
-      return `${hour}h`;
+      const parts = timePart.split(':');
+      h = parseInt(parts[0], 10);
+      m = parseInt(parts[1], 10) || 0;
+    } else {
+      // Handle plain time: '18:30:00' or '18:30'
+      const parts = timeStr.split(':');
+      h = parseInt(parts[0], 10);
+      m = parseInt(parts[1], 10) || 0;
     }
-    // Handle plain time: '18:00:00' or '18:00'
-    const hour = parseInt(timeStr.split(':')[0], 10);
-    return `${hour}h`;
+    return m > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
   } catch {
     return timeStr;
   }

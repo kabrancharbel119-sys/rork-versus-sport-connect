@@ -222,15 +222,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       logger.debug('Auth', 'Updating profile...');
       if (!authState.user) throw new Error('Non authentifié');
 
-      try {
-        const updatedUser = await usersApi.update(authState.user.id, data);
-        await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
-        return updatedUser;
-      } catch (e) {
-        const updatedUser: User = { ...authState.user, ...data };
-        await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
-        return updatedUser;
-      }
+      const updatedUser = await usersApi.update(authState.user.id, data);
+      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
+      return updatedUser;
     },
     onSuccess: (user) => {
       setAuthState(prev => ({ ...prev, user }));
