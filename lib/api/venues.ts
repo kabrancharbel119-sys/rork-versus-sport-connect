@@ -418,15 +418,26 @@ export const venuesApi = {
   },
 
   async getNearby(lat: number, lng: number, radiusKm: number = 20) {
-    console.log('[VenuesAPI] Getting nearby venues');
-    
-    const { data, error } = await (supabase.from('venues').select('*') as any);
+    // Bounding box pre-filter: 1 degree latitude ≈ 111 km
+    const latDelta = radiusKm / 111;
+    const lngDelta = radiusKm / (111 * Math.cos((lat * Math.PI) / 180));
+
+    const { data, error } = await (supabase
+      .from('venues')
+      .select('id,name,address,city,sport,price_per_hour,images,rating,amenities,latitude,longitude,owner_id,description,phone,email,opening_hours,auto_approve,is_active,capacity,surface_type,rules,cancellation_hours,created_at')
+      .eq('is_active', true)
+      .gte('latitude', lat - latDelta)
+      .lte('latitude', lat + latDelta)
+      .gte('longitude', lng - lngDelta)
+      .lte('longitude', lng + lngDelta)
+      .limit(100) as any);
+
     if (error) throw error;
 
     return ((data || []) as VenueRow[])
       .map(row => {
         const venue = mapVenueRowToVenue(row);
-        const distance = venue.coordinates 
+        const distance = venue.coordinates
           ? getDistance(lat, lng, venue.coordinates.latitude, venue.coordinates.longitude)
           : null;
         return { ...venue, distance };

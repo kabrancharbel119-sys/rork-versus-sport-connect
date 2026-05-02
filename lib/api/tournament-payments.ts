@@ -1,5 +1,6 @@
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { notificationsApi } from '@/lib/api/notifications';
+import { DEMO_TOURNAMENT_ID, DEMO_TEAMS } from '@/lib/demo-data';
 import type {
   TournamentPayment,
   PaymentLog,
@@ -603,6 +604,15 @@ export const tournamentTeamsApi = {
    * Récupérer toutes les équipes d'un tournoi avec leurs statuts
    */
   async getTournamentTeams(tournamentId: string): Promise<TournamentTeam[]> {
+    if (tournamentId === DEMO_TOURNAMENT_ID) {
+      return DEMO_TEAMS.map((t, i) => ({
+        id: `demo-tt-${i}`,
+        tournamentId,
+        teamId: t.id,
+        status: 'confirmed' as TournamentTeamStatus,
+        registeredAt: new Date(),
+      }));
+    }
     console.log('[TournamentTeamsAPI] Getting teams for tournament:', tournamentId);
     const { data, error } = await (supabase
       .from('tournament_teams')

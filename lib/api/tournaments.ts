@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import { matchesApi } from '@/lib/api/matches';
 import type { Tournament, TournamentPrize, Venue, Sport, SkillLevel } from '@/types';
 import type { Match } from '@/types';
+import { DEMO_TOURNAMENT_ID, DEMO_MATCHES } from '@/lib/demo-data';
 
 export interface TournamentRow {
   id: string;
@@ -28,6 +29,7 @@ export interface TournamentRow {
   managers: string[] | null;
   created_by: string | null;
   created_at: string;
+  is_demo?: boolean;
 }
 
 const defaultVenue: Venue = {
@@ -82,6 +84,7 @@ export function mapTournamentRowToTournament(row: TournamentRow): Tournament {
     managers: (row.managers as string[]) || [],
     createdBy: row.created_by ?? '',
     createdAt: new Date(row.created_at),
+    isDemo: row.is_demo ?? false,
   };
 }
 
@@ -485,6 +488,7 @@ export const tournamentsApi = {
   },
 
   async getMatches(tournamentId: string): Promise<Match[]> {
+    if (tournamentId === DEMO_TOURNAMENT_ID) return DEMO_MATCHES;
     const { data: row, error } = await (supabase
       .from('tournaments')
       .select('match_ids')

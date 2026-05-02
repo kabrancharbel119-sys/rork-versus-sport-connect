@@ -267,7 +267,7 @@ export interface Tournament {
   sport: Sport;
   format: string;
   type: 'knockout' | 'league' | 'group_knockout';
-  status: 'registration' | 'in_progress' | 'completed';
+  status: 'registration' | 'in_progress' | 'completed' | 'venue_pending';
   level: SkillLevel;
   maxTeams: number;
   registeredTeams: string[];
@@ -284,6 +284,7 @@ export interface Tournament {
   managers?: string[];
   createdBy: string;
   createdAt: Date;
+  isDemo?: boolean;
 }
 
 export interface TournamentPayment {

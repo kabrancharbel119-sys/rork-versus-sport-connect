@@ -138,17 +138,17 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (user) {
       checkAndUnlockTrophies(user.id, {
-        matchesPlayed: user.stats.matchesPlayed,
-        wins: user.stats.wins,
-        goalsScored: user.stats.goalsScored,
-        assists: user.stats.assists,
-        mvpAwards: user.stats.mvpAwards,
-        tournamentWins: user.stats.tournamentWins,
+        matchesPlayed: user.stats?.matchesPlayed ?? 0,
+        wins: user.stats?.wins ?? 0,
+        goalsScored: user.stats?.goalsScored ?? 0,
+        assists: user.stats?.assists ?? 0,
+        mvpAwards: user.stats?.mvpAwards ?? 0,
+        tournamentWins: user.stats?.tournamentWins ?? 0,
         followers: user.followers,
         isVerified: effectiveVerified,
         isPremium: effectivePremium,
         isCaptain: isCaptain || isAdmin,
-        fairPlayScore: user.stats.fairPlayScore,
+        fairPlayScore: user.stats?.fairPlayScore ?? 0,
         hasTeam: userTeams.length > 0 || isAdmin,
         profileComplete: !!(user.fullName && user.city && user.sports?.length > 0) || isAdmin,
       });

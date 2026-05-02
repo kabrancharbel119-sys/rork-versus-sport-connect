@@ -18,6 +18,7 @@ import { useI18n } from '@/contexts/I18nContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
 import { useTeams } from '@/contexts/TeamsContext';
 import { tournamentsApi } from '@/lib/api/tournaments';
+import { DEMO_TOURNAMENT_ID, DEMO_TEAMS } from '@/lib/demo-data';
 import { tournamentTeamsApi, tournamentPaymentsApi } from '@/lib/api/tournament-payments';
 import { sportLabels, levelLabels } from '@/mocks/data';
 import type { Tournament, Match, TournamentTeam, PaymentMethod } from '@/types';
@@ -30,7 +31,14 @@ export default function TournamentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, isAdmin } = useAuth();
   const { getTournamentById, registerTeam, unregisterTeam, refetchTournaments, isRegistering } = useTournaments();
-  const { getUserTeams, getTeamById } = useTeams();
+  const { getUserTeams, getTeamById: _getTeamById } = useTeams();
+  const getTeamById = useCallback((teamId: string) => {
+    const real = _getTeamById(teamId);
+    if (real) return real;
+    const demo = DEMO_TEAMS.find(t => t.id === teamId);
+    if (demo) return { id: demo.id, name: demo.name } as any;
+    return undefined;
+  }, [_getTeamById]);
   const fromContext = getTournamentById(id || '');
   const [fetchedTournament, setFetchedTournament] = useState<Tournament | null>(null);
   const [loading, setLoading] = useState(false);
@@ -711,6 +719,70 @@ export default function TournamentDetailScreen() {
             {/* ═══════ TAB: OVERVIEW ═══════ */}
             {activeTab === 'overview' && (
               <Animated.View style={{ opacity: tabFade }}>
+
+                {/* ── Parcours du tournoi ── */}
+                {(() => {
+                  const phases = [
+                    {
+                      key: 'registration',
+                      label: 'Inscriptions',
+                      sub: `${reservedSpots}/${tournament.maxTeams} équipes`,
+                      icon: <Users size={14} color={tournament.status === 'registration' ? '#FFF' : tournament.status === 'in_progress' || tournament.status === 'completed' ? Colors.status.success : Colors.text.muted} />,
+                      done: tournament.status === 'in_progress' || tournament.status === 'completed',
+                      active: tournament.status === 'registration',
+                    },
+                    {
+                      key: 'in_progress',
+                      label: 'Matchs',
+                      sub: hasMatches ? `${completedCount}/${tournamentMatches.length} joués` : 'Phase de jeu',
+                      icon: <Target size={14} color={tournament.status === 'in_progress' ? '#FFF' : tournament.status === 'completed' ? Colors.status.success : Colors.text.muted} />,
+                      done: tournament.status === 'completed',
+                      active: tournament.status === 'in_progress',
+                    },
+                    {
+                      key: 'completed',
+                      label: 'Résultat',
+                      sub: tournament.winnerId ? (getTeamById(tournament.winnerId)?.name ?? 'Vainqueur') : 'Final',
+                      icon: <Trophy size={14} color={tournament.status === 'completed' ? '#FFD700' : Colors.text.muted} />,
+                      done: false,
+                      active: tournament.status === 'completed',
+                    },
+                  ];
+                  return (
+                    <View style={tlStyles.wrap}>
+                      <Text style={tlStyles.title}>Déroulement</Text>
+                      <View style={tlStyles.row}>
+                        {phases.map((phase, i) => (
+                          <React.Fragment key={phase.key}>
+                            <View style={tlStyles.step}>
+                              <View style={[
+                                tlStyles.dot,
+                                phase.done && tlStyles.dotDone,
+                                phase.active && tlStyles.dotActive,
+                              ]}>
+                                {phase.done
+                                  ? <CheckCircle size={14} color="#FFF" />
+                                  : phase.icon}
+                              </View>
+                              <Text style={[tlStyles.label, phase.active && tlStyles.labelActive, phase.done && tlStyles.labelDone]} numberOfLines={1}>{phase.label}</Text>
+                              <Text style={tlStyles.sub} numberOfLines={1}>{phase.sub}</Text>
+                            </View>
+                            {i < phases.length - 1 && (
+                              <View style={[tlStyles.line, phase.done && tlStyles.lineDone, phase.active && tlStyles.lineActive]} />
+                            )}
+                          </React.Fragment>
+                        ))}
+                      </View>
+                      {tournament.isDemo && (
+                        <View style={tlStyles.demoBadge}>
+                          <Zap size={11} color={Colors.primary.orange} />
+                          <Text style={tlStyles.demoText}>Tournoi exemple — pour voir comment ça se passe</Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })()}
+
                 {/* Last result prominent card */}
                 {lastResult && (
                   <TouchableOpacity style={styles.lastResultCard} onPress={() => switchTab('matches')} activeOpacity={0.8}>
@@ -1725,4 +1797,103 @@ const styles = StyleSheet.create({
   /* Success */
   successBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: Colors.status.success, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 12, borderRadius: 12 },
   successBannerText: { color: '#FFF', fontSize: 14, fontWeight: '700' as const },
+});
+
+const tlStyles = StyleSheet.create({
+  wrap: {
+    backgroundColor: Colors.background.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.border.light + '60',
+  },
+  title: {
+    color: Colors.text.muted,
+    fontSize: 11,
+    fontWeight: '600' as const,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase' as const,
+    marginBottom: 16,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  step: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 6,
+  },
+  dot: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.background.cardLight,
+    borderWidth: 1.5,
+    borderColor: Colors.border.light,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dotActive: {
+    backgroundColor: Colors.primary.orange,
+    borderColor: Colors.primary.orange,
+    shadowColor: Colors.primary.orange,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  dotDone: {
+    backgroundColor: Colors.status.success,
+    borderColor: Colors.status.success,
+  },
+  label: {
+    color: Colors.text.muted,
+    fontSize: 11,
+    fontWeight: '500' as const,
+    textAlign: 'center' as const,
+  },
+  labelActive: {
+    color: Colors.primary.orange,
+    fontWeight: '700' as const,
+  },
+  labelDone: {
+    color: Colors.status.success,
+    fontWeight: '600' as const,
+  },
+  sub: {
+    color: Colors.text.muted,
+    fontSize: 10,
+    textAlign: 'center' as const,
+    opacity: 0.8,
+  },
+  line: {
+    flex: 0.8,
+    height: 2,
+    backgroundColor: Colors.border.light,
+    marginTop: 15,
+    borderRadius: 1,
+  },
+  lineDone: {
+    backgroundColor: Colors.status.success,
+  },
+  lineActive: {
+    backgroundColor: Colors.primary.orange + '60',
+  },
+  demoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light + '40',
+  },
+  demoText: {
+    color: Colors.primary.orange,
+    fontSize: 11,
+    fontWeight: '500' as const,
+    flex: 1,
+  },
 });

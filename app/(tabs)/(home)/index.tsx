@@ -1,15 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   Dimensions,
   RefreshControl,
   Platform,
   ViewStyle,
   Animated,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,16 +25,13 @@ import {
   Trophy,
   Users,
   Swords,
-  TrendingUp,
   MapPin,
   Calendar,
   ChevronRight,
   Sparkles,
   Zap,
-  Target,
   CheckCircle,
   Star,
-  Clock,
 } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -42,6 +42,10 @@ import { useNotifications } from '@/contexts/NotificationsContext';
 import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
 import { sportLabels, levelLabels } from '@/mocks/data';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const { width } = Dimensions.get('window');
 const PAD = 20;
@@ -80,6 +84,15 @@ export default function HomeScreen() {
   const { tournaments, getUserTournaments, getActiveTournaments } = useTournaments();
 
   const [refreshing, setRefreshing] = React.useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 320,
+      useNativeDriver: true,
+    }).start();
+  }, []);
   const pendingTeamRequestsCount = user
     ? teams.filter((t) => t.captainId === user.id || (t.coCaptainIds ?? []).includes(user.id)).reduce((sum, t) => sum + getPendingRequests(t.id).length, 0)
     : 0;
@@ -126,26 +139,7 @@ export default function HomeScreen() {
     })
     .slice(0, 8);
 
-  // Filter venues by user location
-  const venuesInCity = venues
-    .filter((v) => !hasLocation || !v.city || v.city.toLowerCase() === cityLower)
-    .slice(0, 6);
   const userTournaments = user ? getUserTournaments(user.id).slice(0, 5) : [];
-
-  // Recent notifications (last 3 unread, real data)
-  const recentNotifications = (notifications ?? [])
-    .filter(n => !n.isRead && n.type !== 'chat')
-    .slice(0, 3);
-
-  useEffect(() => {
-    if (__DEV__) {
-      console.log('[Home] allTeams:', allTeams?.length ?? 0);
-      console.log('[Home] otherTeamsInCity:', otherTeamsInCity?.length ?? 0);
-      console.log('[Home] matches:', matches?.length ?? 0);
-      console.log('[Home] upcomingMatches:', upcomingMatches?.length ?? 0);
-      console.log('[Home] displayMatches (à afficher):', displayMatches?.length ?? 0, displayMatches);
-    }
-  }, [allTeams, otherTeamsInCity, matches, upcomingMatches, displayMatches]);
 
 
   const onRefresh = async () => {
@@ -156,6 +150,18 @@ export default function HomeScreen() {
       setRefreshing(false);
     }
   };
+
+  const [teamTab, setTeamTab] = React.useState<'mine' | 'discover'>('mine');
+  const switchTab = (tab: 'mine' | 'discover') => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setTeamTab(tab);
+  };
+
+  const quickItems = [
+    { icon: Swords, color: Colors.primary.orange, label: 'Match', route: '/(tabs)/matches', desc: 'Jouer' },
+    { icon: Users, color: Colors.primary.blue, label: 'Équipe', route: '/(tabs)/teams', desc: 'Rejoindre' },
+    { icon: Trophy, color: Colors.status.success, label: 'Tournoi', route: '/tournaments', desc: 'Découvrir' },
+  ];
 
   const statusColors: Record<string, [string, string]> = {
     registration: [Colors.gradient.orangeStart, Colors.gradient.orangeEnd],
@@ -288,10 +294,9 @@ export default function HomeScreen() {
   const TeamCard = ({ team, index }: { team: any; index?: number }) => {
     return (
       <View>
-        <TouchableOpacity
-          style={[styles.teamCard, cardShadow]}
+        <Pressable
+          style={({ pressed }) => [styles.teamCard, cardShadow, { opacity: pressed ? 0.85 : 1 }]}
           onPress={() => router.push(`/team/${team.id}`)}
-          activeOpacity={0.8}
         >
           <LinearGradient
             colors={[Colors.primary.blue + '08', 'transparent']}
@@ -321,7 +326,7 @@ export default function HomeScreen() {
         </View>
         <ChevronRight size={16} color={Colors.text.muted} />
         </View>
-      </TouchableOpacity>
+        </Pressable>
       </View>
     );
   };
@@ -363,14 +368,6 @@ export default function HomeScreen() {
     </View>
   );
 
-  const quickItems = [
-    { icon: Swords, color: Colors.primary.orange, label: 'Match', route: '/create-match', desc: 'Créer' },
-    { icon: Users, color: Colors.primary.blue, label: 'Équipe', route: '/create-team', desc: 'Rejoindre' },
-    { icon: Trophy, color: Colors.status.success, label: 'Tournoi', route: '/tournaments', desc: 'Découvrir' },
-    { icon: TrendingUp, color: '#8B5CF6', label: 'Stats', route: '/(tabs)/profile', desc: 'Profil' },
-    { icon: Trophy, color: '#FFD700', label: 'Classements', route: '/rankings', desc: 'Global' },
-  ];
-
   return (
     <View style={styles.container}>
       <LinearGradient
@@ -384,10 +381,12 @@ export default function HomeScreen() {
       </View>
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScrollView
-          style={styles.scroll}
+        <Animated.ScrollView
+          style={[styles.scroll, { opacity: fadeAnim }]}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
+          scrollEventThrottle={16}
+          decelerationRate="fast"
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />
           }
@@ -403,15 +402,15 @@ export default function HomeScreen() {
                   <Avatar uri={user?.avatar} name={user?.fullName} size="medium" />
                 </View>
                 <View style={styles.headerText}>
-                  <Text style={styles.greeting}>{getGreeting()} 👋</Text>
+                  <Text style={styles.greeting}>{getGreeting()}</Text>
                   <Text style={styles.userName}>{user?.fullName?.split(' ')[0] || 'Joueur'}</Text>
                 </View>
               </TouchableOpacity>
               <View style={styles.headerRight}>
-                <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/search')} accessibilityLabel="Recherche" accessibilityRole="button">
+                <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/search')}>
                   <Search size={20} color={Colors.text.primary} strokeWidth={2} />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/notifications')} accessibilityLabel="Notifications" accessibilityRole="button">
+                <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/notifications')}>
                   <Bell size={20} color={Colors.text.primary} strokeWidth={2} />
                   {unreadNotifs > 0 && (
                     <View style={styles.badge}>
@@ -420,6 +419,22 @@ export default function HomeScreen() {
                   )}
                 </TouchableOpacity>
               </View>
+            </View>
+
+            <View style={styles.quickGrid}>
+              {quickItems.map((item, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={styles.quickItem}
+                  onPress={() => router.push(item.route as any)}
+                  activeOpacity={0.7}
+                >
+                  <LinearGradient colors={[`${item.color}22`, `${item.color}0A`]} style={styles.quickIconBg}>
+                    <item.icon size={20} color={item.color} strokeWidth={2} />
+                  </LinearGradient>
+                  <Text style={styles.quickLabel}>{item.label}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
 
@@ -443,137 +458,28 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
 
-          <View>
-            <TouchableOpacity
-              activeOpacity={0.93}
-              onPress={() => router.push('/(tabs)/matches')}
-              style={[styles.bannerWrap, cardShadow]}
-            >
-              <LinearGradient
-                colors={['#0E4DA4', '#1565C0', '#0D47A1', '#0A3D8F']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.banner}
-              >
-                <View style={styles.bannerGlow} />
-                <View style={styles.bannerContent}>
-                  <View style={styles.bannerLeft}>
-                    <View style={styles.bannerPill}>
-                      <Zap size={11} color="#FFD700" />
-                      <Text style={styles.bannerPillText}>Prêt à jouer</Text>
-                    </View>
-                    <Text style={styles.bannerTitle}>Trouve un{'\n'}match</Text>
-                    <Text style={styles.bannerSub}>Ou crée le tien en un clic</Text>
-                    <View style={styles.bannerCta}>
-                      <Text style={styles.bannerCtaText}>Voir les matchs</Text>
-                      <ChevronRight size={18} color="#FFF" strokeWidth={2.5} />
-                    </View>
-                  </View>
-                  <View style={styles.bannerRight}>
-                    <View style={styles.bannerCircle}>
-                      <Swords size={36} color="rgba(255,255,255,0.9)" strokeWidth={1.5} />
-                    </View>
-                  </View>
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.quickWrap}>
-            <View style={styles.quickGrid}>
-              {quickItems.map((item, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={styles.quickItem}
-                  onPress={() => router.push(item.route as any)}
-                  activeOpacity={0.7}
-                >
-                  <LinearGradient colors={[`${item.color}18`, `${item.color}08`]} style={styles.quickIconBg}>
-                    <item.icon size={22} color={item.color} strokeWidth={2} />
-                  </LinearGradient>
-                  <Text style={styles.quickLabel}>{item.label}</Text>
-                  <Text style={styles.quickDesc}>{item.desc}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* Notifications card removed as per user request */}
-
-          {userTournaments.length > 0 && (
-            <Section
-              title="Mes tournois"
-              subtitle={`${userTournaments.filter(t => t.status === 'in_progress').length > 0 ? userTournaments.filter(t => t.status === 'in_progress').length + ' en cours' : userTournaments.length + ' tournoi' + (userTournaments.length > 1 ? 's' : '')}`}
-              icon={Trophy}
-              onSeeAll={() => router.push('/tournaments')}
-            >
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.hScroll}
-              >
-                {userTournaments
-                  .sort((a, b) => {
-                    const o: Record<string, number> = { in_progress: 0, registration: 1, completed: 2 };
-                    return (o[a.status] ?? 3) - (o[b.status] ?? 3);
-                  })
-                  .map((t, idx) => (
-                    <TournamentCard key={t.id} tournament={t} index={idx} />
-                  ))}
-              </ScrollView>
-            </Section>
-          )}
-
-          <Section
-            title="Mon équipe"
-            subtitle={myTeam ? undefined : 'Rejoins ou crée une équipe'}
-            icon={Target}
-            onSeeAll={() => router.push('/(tabs)/teams')}
+          <Pressable
+            onPress={() => router.push('/(tabs)/matches')}
+            style={({ pressed }) => [styles.bannerWrap, cardShadow, { opacity: pressed ? 0.92 : 1, transform: [{ scale: pressed ? 0.99 : 1 }] }]}
           >
-            {userTeams.length > 0 ? (
-              userTeams.slice(0, 3).map((team, idx) => <TeamCard key={team.id} team={team} index={idx} />)
-            ) : (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => router.push('/create-team')}
-                style={[styles.emptyCard, cardShadow]}
-              >
-                <LinearGradient
-                  colors={[Colors.background.card, Colors.background.cardLight]}
-                  style={StyleSheet.absoluteFill}
-                />
-                <View style={styles.emptyIconWrap}>
-                  <Users size={36} color={Colors.primary.blue} strokeWidth={1.8} />
+            <LinearGradient
+              colors={['#0E4DA4', '#0D47A1']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.banner}
+            >
+              <View style={styles.bannerContent}>
+                <View style={styles.bannerLeft}>
+                  <Text style={styles.bannerTitle}>Trouve un match</Text>
+                  <Text style={styles.bannerSub}>Crée ou rejoins une partie</Text>
                 </View>
-                <Text style={styles.emptyTitle}>Aucune équipe</Text>
-                <Text style={styles.emptyText}>Crée la tienne ou rejoins une équipe près de toi</Text>
-                <View style={styles.emptyCta}>
-                  <Sparkles size={16} color={Colors.primary.orange} />
-                  <Text style={styles.emptyCtaText}>Créer une équipe</Text>
+                <View style={styles.bannerRight}>
+                  <Swords size={32} color="rgba(255,255,255,0.85)" strokeWidth={1.5} />
+                  <ChevronRight size={20} color="rgba(255,255,255,0.6)" />
                 </View>
-              </TouchableOpacity>
-            )}
-          </Section>
-
-          <Section
-            title={city ? `Équipes à ${user?.city ?? ''}` : 'Autres équipes'}
-            subtitle="À découvrir"
-            icon={Users}
-            onSeeAll={() => router.push('/(tabs)/teams')}
-          >
-            {otherTeamsInCity.length > 0 ? (
-              otherTeamsInCity.map((team, idx) => <TeamCard key={team.id} team={team} index={idx} />)
-            ) : (
-              <View style={styles.emptyCardSmall}>
-                <Text style={styles.emptyTextSmall}>
-                  {city ? `Aucune autre équipe à ${user?.city ?? ''}` : 'Aucune autre équipe'}
-                </Text>
-                <TouchableOpacity onPress={() => router.push('/(tabs)/teams')}>
-                  <Text style={styles.emptyLink}>Voir les équipes</Text>
-                </TouchableOpacity>
               </View>
-            )}
-          </Section>
+            </LinearGradient>
+          </Pressable>
 
           <Section
             title={hasLocation ? `Tournois à ${city}` : 'Tournois'}
@@ -586,6 +492,9 @@ export default function HomeScreen() {
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.hScroll}
+                decelerationRate="fast"
+                snapToInterval={width * 0.72 + 14}
+                snapToAlignment="start"
               >
                 {allTournaments.map((t, idx) => (
                   <TournamentCard key={t.id} tournament={t} index={idx} />
@@ -607,124 +516,65 @@ export default function HomeScreen() {
           </Section>
 
           <Section
-            title={hasLocation ? `Matchs à ${city}` : 'Matchs à venir'}
-            subtitle={hasLocation ? 'Prochains rendez-vous près de chez vous' : 'Prochains rendez-vous'}
-            icon={Swords}
-            onSeeAll={() => router.push('/(tabs)/matches')}
-          >
-            {displayMatches.length > 0 ? (
-              displayMatches.map((match) => {
-                const isRanked = match.type === 'ranked';
-                return (
-                  <Card
-                    key={match.id}
-                    style={[styles.matchCard, isRanked && styles.matchCardRanked, cardShadow]}
-                    onPress={() => router.push(`/match/${match.id}`)}
-                    variant="gradient"
-                  >
-                    <View style={styles.matchTop}>
-                      <View style={[styles.matchBadge, isRanked && styles.matchBadgeRanked]}>
-                        <Text style={styles.matchBadgeText}>
-                          {match.type === 'friendly' ? 'Amical' : isRanked ? 'Classé' : 'Tournoi'}
-                        </Text>
-                      </View>
-                      <Text style={styles.matchLevel}>{levelLabels[match.level]}</Text>
-                    </View>
-                    {isRanked && <Text style={styles.rankedTagline}>Compte pour le classement</Text>}
-                    <Text style={styles.matchSport}>{sportLabels[match.sport]} • {match.format}</Text>
-                    <View style={styles.matchMeta}>
-                      <View style={styles.matchMetaRow}>
-                        <Calendar size={14} color={Colors.text.muted} />
-                        <Text style={styles.matchMetaText}>
-                          {formatDate(match.dateTime)} à {formatTime(match.dateTime)}
-                        </Text>
-                      </View>
-                      <View style={styles.matchMetaRow}>
-                        <MapPin size={14} color={Colors.text.muted} />
-                        <Text style={styles.matchMetaText} numberOfLines={1}>{match.venue?.name || 'Terrain'}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.matchFooter}>
-                      <Text style={styles.matchPlayers}>
-                        {match.registeredPlayers.length}/{match.maxPlayers} joueurs
-                      </Text>
-                      {isRanked ? (
-                        <Text style={styles.rankedLabel}>Compte pour le rang</Text>
-                      ) : match.prize ? (
-                        <Text style={styles.matchPrize}>💰 {match.prize.toLocaleString()} FCFA</Text>
-                      ) : null}
-                    </View>
-                  </Card>
-                );
-              })
-            ) : (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => router.push('/create-match')}
-                style={styles.emptyCardSmall}
-              >
-                <Text style={styles.emptyTextSmall}>Aucun match prévu</Text>
-                <Text style={styles.emptyLink}>Créer un match</Text>
-              </TouchableOpacity>
-            )}
-          </Section>
-
-          <Section
-            title={hasLocation ? `Terrains à ${city}` : 'Terrains disponibles'}
-            subtitle={hasLocation ? 'Réservez près de chez vous' : 'Réservez un terrain'}
-            icon={MapPin}
-            onSeeAll={() => router.push('/venues' as any)}
-          >
-            {venuesInCity.length > 0 ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hScroll}>
-                {venuesInCity.map((venue) => (
-                  <TouchableOpacity
-                    key={venue.id}
-                    activeOpacity={0.85}
-                    onPress={() => router.push(`/venue/${venue.id}` as any)}
-                    style={[styles.venueHomeCard, cardShadow]}
-                  >
-                    <View style={styles.venueHomeTop}>
-                      <MapPin size={18} color={Colors.primary.orange} />
-                      <View style={styles.venueHomeRating}>
-                        <Star size={11} color={Colors.primary.orange} />
-                        <Text style={styles.venueHomeRatingText}>{(Number(venue.rating) || 0).toFixed(1)}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.venueHomeName} numberOfLines={1}>{venue.name || 'Terrain'}</Text>
-                    <Text style={styles.venueHomeCity} numberOfLines={1}>{venue.city || ''}</Text>
-                    <Text style={styles.venueHomePrice}>{(Number(venue.pricePerHour) || 0).toLocaleString()} FCFA/h</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            ) : (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => router.push('/venues' as any)}
-                style={styles.emptyCardSmall}
-              >
-                <Text style={styles.emptyTextSmall}>Aucun terrain pour le moment</Text>
-                <Text style={styles.emptyLink}>Voir les terrains</Text>
-              </TouchableOpacity>
-            )}
-          </Section>
-
-          <Section
-            title={hasLocation ? `Équipes qui recrutent à ${city}` : 'Équipes qui recrutent'}
+            title="Équipes"
             icon={Users}
             onSeeAll={() => router.push('/(tabs)/teams')}
           >
-            {recruitingTeams.length > 0 ? (
-              recruitingTeams.map((team, idx) => <TeamCard key={team.id} team={team} index={idx} />)
+            <View style={styles.teamTabRow}>
+              <TouchableOpacity
+                style={[styles.teamTabBtn, teamTab === 'mine' && styles.teamTabBtnActive]}
+                onPress={() => switchTab('mine')}
+              >
+                <Text style={[styles.teamTabText, teamTab === 'mine' && styles.teamTabTextActive]}>Mes équipes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.teamTabBtn, teamTab === 'discover' && styles.teamTabBtnActive]}
+                onPress={() => switchTab('discover')}
+              >
+                <Text style={[styles.teamTabText, teamTab === 'discover' && styles.teamTabTextActive]}>À rejoindre</Text>
+              </TouchableOpacity>
+            </View>
+
+            {teamTab === 'mine' ? (
+              userTeams.length > 0 ? (
+                userTeams.slice(0, 3).map((team) => <TeamCard key={team.id} team={team} />)
+              ) : (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => router.push('/create-team')}
+                  style={[styles.emptyCard, cardShadow]}
+                >
+                  <LinearGradient
+                    colors={[Colors.background.card, Colors.background.cardLight]}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View style={styles.emptyIconWrap}>
+                    <Users size={36} color={Colors.primary.blue} strokeWidth={1.8} />
+                  </View>
+                  <Text style={styles.emptyTitle}>Aucune équipe</Text>
+                  <Text style={styles.emptyText}>Crée la tienne ou rejoins une équipe près de toi</Text>
+                  <View style={styles.emptyCta}>
+                    <Sparkles size={16} color={Colors.primary.orange} />
+                    <Text style={styles.emptyCtaText}>Créer une équipe</Text>
+                  </View>
+                </TouchableOpacity>
+              )
             ) : (
-              <View style={styles.emptyCardSmall}>
-                <Text style={styles.emptyTextSmall}>Aucune équipe en recrutement</Text>
-              </View>
+              recruitingTeams.length > 0 ? (
+                recruitingTeams.map((team) => <TeamCard key={team.id} team={team} />)
+              ) : (
+                <View style={styles.emptyCardSmall}>
+                  <Text style={styles.emptyTextSmall}>Aucune équipe en recrutement</Text>
+                  <TouchableOpacity onPress={() => router.push('/(tabs)/teams')}>
+                    <Text style={styles.emptyLink}>Voir toutes les équipes</Text>
+                  </TouchableOpacity>
+                </View>
+              )
             )}
           </Section>
 
           <View style={styles.spacer} />
-        </ScrollView>
+        </Animated.ScrollView>
       </SafeAreaView>
     </View>
   );
@@ -747,9 +597,9 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: PAD,
-    paddingTop: 12,
-    paddingBottom: 20,
-    marginBottom: 12,
+    paddingTop: 8,
+    paddingBottom: 16,
+    gap: 16,
   },
   headerInner: {
     flexDirection: 'row',
@@ -805,104 +655,40 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: PAD, paddingTop: 8, paddingBottom: 28 },
   bannerWrap: {
-    borderRadius: RADIUS + 2,
-    marginBottom: 24,
+    borderRadius: 16,
+    marginBottom: 20,
     overflow: 'hidden',
   },
   banner: {
-    borderRadius: RADIUS + 2,
+    borderRadius: 16,
     overflow: 'hidden',
-    minHeight: 170,
-    position: 'relative',
-  },
-  bannerGlow: {
-    position: 'absolute',
-    top: -50,
-    right: -50,
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    opacity: 0.5,
   },
   bannerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 24,
-    minHeight: 170,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
   },
-  bannerLeft: { flex: 1, justifyContent: 'center', paddingRight: 16 },
-  bannerPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  bannerPillText: { color: 'rgba(255,255,255,0.95)', fontSize: 11, fontWeight: '500' as const },
+  bannerLeft: { gap: 4 },
   bannerTitle: {
     color: '#FFF',
-    fontSize: 28,
-    fontWeight: '600' as const,
-    marginBottom: 8,
-    letterSpacing: -0.7,
-    lineHeight: 32,
-    textShadowColor: 'rgba(0,0,0,0.3)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    fontSize: 17,
+    fontWeight: '700' as const,
+    letterSpacing: -0.3,
   },
-  bannerSub: { color: 'rgba(255,255,255,0.85)', fontSize: 14, marginBottom: 18, fontWeight: '500' as const },
-  bannerCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  bannerCtaText: { color: '#FFF', fontWeight: '500' as const, fontSize: 13 },
-  bannerRight: { alignItems: 'center', justifyContent: 'center' },
-  bannerCircle: {
-    width: 85,
-    height: 85,
-    borderRadius: 42.5,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.2)',
-    shadowColor: 'rgba(0,0,0,0.3)',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  quickWrap: {
-    marginBottom: 32,
-  },
-  quickGrid: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
-  quickItem: { flex: 1, alignItems: 'center', gap: 9, backgroundColor: Colors.background.card + 'DD', borderRadius: 18, paddingVertical: 18, paddingHorizontal: 6, borderWidth: 1.5, borderColor: Colors.border.light + '70', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 },
+  bannerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '400' as const },
+  bannerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  quickGrid: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  quickItem: { flex: 1, alignItems: 'center', gap: 7, backgroundColor: Colors.background.card + 'CC', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 4, borderWidth: 1, borderColor: Colors.border.light + '60' },
   quickIconBg: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
   },
-  quickLabel: { color: Colors.text.primary, fontSize: 12, fontWeight: '600' as const, letterSpacing: -0.2 },
+  quickLabel: { color: Colors.text.primary, fontSize: 11, fontWeight: '600' as const, letterSpacing: -0.2 },
   quickDesc: { color: Colors.text.muted, fontSize: 10, fontWeight: '500' as const },
   section: { marginBottom: 32 },
   sectionHeader: {
@@ -1100,6 +886,36 @@ const styles = StyleSheet.create({
   locationBannerTitle: { color: Colors.text.primary, fontSize: 14, fontWeight: '600' as const },
   locationBannerSub: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
   spacer: { height: 40 },
+  teamTabRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+    backgroundColor: Colors.background.card,
+    borderRadius: 12,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: Colors.border.light + '80',
+  },
+  teamTabBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  teamTabBtnActive: {
+    backgroundColor: Colors.primary.orange + '20',
+    borderWidth: 1,
+    borderColor: Colors.primary.orange + '40',
+  },
+  teamTabText: {
+    color: Colors.text.muted,
+    fontSize: 13,
+    fontWeight: '500' as const,
+  },
+  teamTabTextActive: {
+    color: Colors.primary.orange,
+    fontWeight: '600' as const,
+  },
   notifHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   notifTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   notifTitle: { color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const, letterSpacing: -0.2 },
