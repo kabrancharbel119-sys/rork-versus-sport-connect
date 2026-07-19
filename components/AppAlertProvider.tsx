@@ -11,6 +11,7 @@ import {
   type AlertOptions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { CheckCircle, AlertTriangle, XCircle, Info } from 'lucide-react-native';
 
 import { Colors } from '@/constants/colors';
 
@@ -115,6 +116,11 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
     button?.onPress?.();
   }, [closeAlert]);
 
+  const hasDestructive = buttons.some(b => b.style === 'destructive');
+  const alertIcon = hasDestructive ? AlertTriangle : Info;
+  const alertColor = hasDestructive ? Colors.status.warning : Colors.primary.orange;
+  const isTwoButtons = buttons.length === 2;
+
   return (
     <>
       {children}
@@ -128,20 +134,21 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
           <Pressable style={styles.overlayTouchable} onPress={handleBackdropPress} />
           <View style={styles.card}>
             <LinearGradient
-              colors={['#1A2035', '#0F1623']}
+              colors={[Colors.background.elevated, Colors.background.card]}
               style={styles.cardGradient}
             >
-              {/* Top accent bar based on button type */}
-              <View style={[
-                styles.accentBar,
-                buttons.some(b => b.style === 'destructive') ? styles.accentBarDestructive : styles.accentBarPrimary,
-              ]} />
+              {/* Icon circle */}
+              <View style={styles.iconWrap}>
+                <View style={[styles.iconCircle, { backgroundColor: alertColor + '18' }]}>
+                  {React.createElement(alertIcon, { size: 24, color: alertColor })}
+                </View>
+              </View>
 
               <View style={styles.cardContent}>
                 {!!activeAlert?.title && <Text style={styles.title}>{activeAlert.title}</Text>}
                 {!!activeAlert?.message && <Text style={styles.message}>{activeAlert.message}</Text>}
 
-                <View style={styles.buttonsContainer}>
+                <View style={[styles.buttonsContainer, isTwoButtons && styles.buttonsRow]}>
                   {buttons.map((button, idx) => {
                     const style = button.style;
                     const isDestructive = style === 'destructive';
@@ -152,7 +159,7 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
                         <TouchableOpacity
                           key={`${button.text || 'button'}-${idx}`}
                           activeOpacity={0.7}
-                          style={styles.buttonCancel}
+                          style={[styles.buttonCancel, isTwoButtons && styles.buttonHalf]}
                           onPress={() => handleButtonPress(button)}
                         >
                           <Text style={styles.buttonTextCancel}>{button.text || 'Annuler'}</Text>
@@ -165,11 +172,11 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
                         <TouchableOpacity
                           key={`${button.text || 'button'}-${idx}`}
                           activeOpacity={0.85}
-                          style={styles.buttonDestructive}
+                          style={[styles.buttonDestructive, isTwoButtons && styles.buttonHalf]}
                           onPress={() => handleButtonPress(button)}
                         >
                           <LinearGradient
-                            colors={['#EF4444', '#DC2626']}
+                            colors={[Colors.status.error, '#DC2626']}
                             style={styles.buttonGradient}
                           >
                             <Text style={styles.buttonTextDestructive}>{button.text || 'OK'}</Text>
@@ -182,11 +189,11 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
                       <TouchableOpacity
                         key={`${button.text || 'button'}-${idx}`}
                         activeOpacity={0.85}
-                        style={styles.buttonPrimary}
+                        style={[styles.buttonPrimary, isTwoButtons && styles.buttonHalf]}
                         onPress={() => handleButtonPress(button)}
                       >
                         <LinearGradient
-                          colors={[Colors.primary.blue, Colors.primary.blueDark ?? Colors.primary.blue]}
+                          colors={[Colors.primary.orange, Colors.primary.orangeDark]}
                           style={styles.buttonGradient}
                         >
                           <Text style={styles.buttonText}>{button.text || 'OK'}</Text>
@@ -209,90 +216,105 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(2, 6, 23, 0.80)',
-    paddingHorizontal: 24,
+    backgroundColor: 'rgba(2, 6, 23, 0.78)',
+    paddingHorizontal: 28,
   },
   overlayTouchable: {
     ...StyleSheet.absoluteFillObject,
   },
   card: {
     width: '100%',
-    maxWidth: 400,
-    borderRadius: 20,
+    maxWidth: 380,
+    borderRadius: 24,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: Colors.border.light,
   },
   cardGradient: {
     width: '100%',
+    paddingBottom: 4,
   },
-  accentBar: {
-    height: 3,
-    width: '100%',
+  iconWrap: {
+    alignItems: 'center',
+    paddingTop: 24,
+    paddingBottom: 4,
   },
-  accentBarDestructive: {
-    backgroundColor: Colors.status.error,
-  },
-  accentBarPrimary: {
-    backgroundColor: Colors.primary.blue,
+  iconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cardContent: {
-    padding: 24,
-    gap: 8,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    paddingTop: 12,
+    alignItems: 'center',
   },
   title: {
     color: Colors.text.primary,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700' as const,
-    lineHeight: 26,
-    marginBottom: 2,
+    lineHeight: 24,
+    textAlign: 'center',
+    marginBottom: 6,
   },
   message: {
     color: Colors.text.secondary,
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 4,
   },
   buttonsContainer: {
     gap: 10,
-    marginTop: 8,
+    marginTop: 20,
+    width: '100%',
+  },
+  buttonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  buttonHalf: {
+    flex: 1,
   },
   buttonPrimary: {
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: 'hidden',
   },
   buttonCancel: {
     minHeight: 48,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: Colors.border.light,
   },
   buttonDestructive: {
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: 'hidden',
   },
   buttonGradient: {
     minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
   },
   buttonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700' as const,
   },
   buttonTextCancel: {
     color: Colors.text.secondary,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600' as const,
   },
   buttonTextDestructive: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700' as const,
   },
 });

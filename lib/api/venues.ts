@@ -357,8 +357,12 @@ export const venuesApi = {
 
     // Statut de paiement selon le mode configuré par le terrain
     const venuePaymentMode = venue.paymentMode ?? 'cash_off_app';
-    const initialPaymentStatus = booking.paymentStatus
+    const VALID_PAYMENT_STATUSES = ['not_required', 'pending', 'paid', 'refunded', 'failed'] as const;
+    const rawStatus = booking.paymentStatus
       ?? (venuePaymentMode === 'cash_off_app' ? 'not_required' : 'pending');
+    const initialPaymentStatus = VALID_PAYMENT_STATUSES.includes(rawStatus as any)
+      ? rawStatus
+      : 'not_required';
 
     const insertPayload: any = {
       venue_id: booking.venueId,
@@ -376,7 +380,7 @@ export const venuesApi = {
       insertPayload.payment_transaction_id = booking.paymentTransactionId;
       insertPayload.paid_at = new Date().toISOString();
     }
-    console.log('[VenuesAPI] Booking insert payload:', JSON.stringify(insertPayload));
+    console.log('[VenuesAPI] Booking insert payload:', JSON.stringify(insertPayload), 'payment_status:', initialPaymentStatus);
 
     const { data, error } = await (supabase
       .from('bookings')
