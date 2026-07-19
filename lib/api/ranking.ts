@@ -2,6 +2,7 @@ import { supabase } from '../supabase';
 import { 
   PlayerRanking, 
   TeamRanking, 
+  SportRanking,
   EloCalculation, 
   RankingUpdate,
   Achievement,

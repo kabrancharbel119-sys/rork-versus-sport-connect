@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Platform, RefreshControl, Dimensions, Share, Animated, TextInput } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Platform, RefreshControl, Dimensions, Share, Animated, TextInput, Linking } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Trophy, Calendar, MapPin, Users, Award, DollarSign, UserMinus, CheckCircle, ChevronRight, Settings, Clock, Shield, Zap, Target, Share2, Info, Flame, TrendingUp, Search, Star, CreditCard, FileText } from 'lucide-react-native';
+import { ArrowLeft, Trophy, Calendar, MapPin, Users, Award, DollarSign, UserMinus, CheckCircle, ChevronRight, Settings, Clock, Shield, Zap, Target, Share2, Info, Flame, TrendingUp, Search, Star, CreditCard, FileText, AlertTriangle } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
@@ -20,8 +20,10 @@ import { useTeams } from '@/contexts/TeamsContext';
 import { tournamentsApi } from '@/lib/api/tournaments';
 import { DEMO_TOURNAMENT_ID, DEMO_TEAMS } from '@/lib/demo-data';
 import { tournamentTeamsApi, tournamentPaymentsApi } from '@/lib/api/tournament-payments';
+import { paymentProvider, isInAppPaymentAvailable } from '@/lib/payments/payment-provider';
+import { supabase } from '@/lib/supabase';
 import { sportLabels, levelLabels } from '@/mocks/data';
-import type { Tournament, Match, TournamentTeam, PaymentMethod } from '@/types';
+import type { Tournament, Match, TournamentTeam, PaymentMethod, VenuePaymentMode } from '@/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -47,6 +49,9 @@ export default function TournamentDetailScreen() {
   const [showPaymentInstructions, setShowPaymentInstructions] = useState(false);
   const [showPaymentSubmission, setShowPaymentSubmission] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>('wave');
+  const [entryPaymentPending, setEntryPaymentPending] = useState(false);
+  const [pendingEntryTeamId, setPendingEntryTeamId] = useState<string | null>(null);
+  const [pendingEntryReference, setPendingEntryReference] = useState<string | null>(null);
   useEffect(() => {
     if (!successMessage) return;
     const timer = setTimeout(() => setSuccessMessage(null), 2500);
@@ -103,9 +108,99 @@ export default function TournamentDetailScreen() {
     useCallback(() => {
       if (!id) return;
       refetchTournaments();
+      tournamentTeamsQuery.refetch();
       if (!fromContext) tournamentsApi.getById(id).then(setFetchedTournament).catch(() => setFetchedTournament(null));
-    }, [id, fromContext, refetchTournaments])
+    }, [id, fromContext, refetchTournaments, tournamentTeamsQuery])
   );
+
+  // Poll tournament_teams status when waiting for GeniusPay webhook confirmation
+  // Also verifies directly with GeniusPay as a fallback if the webhook hasn't arrived
+  useEffect(() => {
+    if (!entryPaymentPending || !pendingEntryTeamId || !id) return;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 60; // 5 min at 5s intervals
+
+    const poll = async () => {
+      while (!cancelled && attempts < maxAttempts) {
+        attempts++;
+        try {
+          // 1. Check DB for webhook-confirmed status
+          const { data, error } = await supabase
+            .from('tournament_teams')
+            .select('status')
+            .eq('tournament_id', id)
+            .eq('team_id', pendingEntryTeamId)
+            .single();
+
+          if (error) {
+            console.warn('[TournamentDetail] Polling error:', error.message);
+          } else if (data?.status === 'confirmed') {
+            tournamentTeamsQuery.refetch();
+            refetchTournaments();
+            setEntryPaymentPending(false);
+            setPendingEntryTeamId(null);
+            setPendingEntryReference(null);
+            Alert.alert('Paiement confirmé ✅', 'Votre paiement a été confirmé. Votre équipe est maintenant inscrite au tournoi.');
+            return;
+          } else if (data?.status === 'rejected' || data?.status === 'cancelled') {
+            setEntryPaymentPending(false);
+            setPendingEntryTeamId(null);
+            setPendingEntryReference(null);
+            Alert.alert('Paiement échoué', 'Le paiement n\'a pas abouti. Vous pouvez réessayer.');
+            return;
+          }
+
+          // 2. Fallback: verify directly with GeniusPay if webhook hasn't updated DB yet
+          if (pendingEntryReference && attempts % 2 === 0) {
+            try {
+              const gpStatus = await paymentProvider.verifyTransaction(pendingEntryReference);
+              if (gpStatus === 'succeeded') {
+                // GeniusPay confirmed but webhook may not have arrived yet — refetch and wait
+                console.log('[TournamentDetail] GeniusPay reports succeeded, refetching DB...');
+                await tournamentTeamsQuery.refetch();
+                await refetchTournaments();
+                // Re-check DB after refetch
+                const { data: recheck } = await supabase
+                  .from('tournament_teams')
+                  .select('status')
+                  .eq('tournament_id', id)
+                  .eq('team_id', pendingEntryTeamId)
+                  .single();
+                if (recheck?.status === 'confirmed') {
+                  setEntryPaymentPending(false);
+                  setPendingEntryTeamId(null);
+                  setPendingEntryReference(null);
+                  Alert.alert('Paiement confirmé ✅', 'Votre paiement a été confirmé. Votre équipe est maintenant inscrite au tournoi.');
+                  return;
+                }
+              } else if (gpStatus === 'failed') {
+                setEntryPaymentPending(false);
+                setPendingEntryTeamId(null);
+                setPendingEntryReference(null);
+                Alert.alert('Paiement échoué', 'Le paiement n\'a pas abouti. Vous pouvez réessayer.');
+                return;
+              }
+            } catch (e) {
+              console.warn('[TournamentDetail] GeniusPay verify error:', e);
+            }
+          }
+        } catch (e) {
+          console.warn('[TournamentDetail] Polling exception:', e);
+        }
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+      if (!cancelled) {
+        setEntryPaymentPending(false);
+        setPendingEntryTeamId(null);
+        setPendingEntryReference(null);
+        console.log('[TournamentDetail] Polling timed out after', maxAttempts, 'attempts');
+      }
+    };
+
+    poll();
+    return () => { cancelled = true; };
+  }, [entryPaymentPending, pendingEntryTeamId, pendingEntryReference, id, tournamentTeamsQuery, refetchTournaments]);
 
   const getErrorMessage = useCallback((e: unknown) => {
     const msg = (e as Error)?.message ?? '';
@@ -174,7 +269,7 @@ export default function TournamentDetailScreen() {
   const reservedSpots = useMemo(
     () => (
       tournamentTeamsQuery.isSuccess
-        ? tournamentTeams.filter((tt) => tt.status === 'confirmed' || tt.status === 'payment_submitted').length
+        ? tournamentTeams.filter((tt) => tt.status === 'confirmed').length
         : registeredTeamIds.length
     ),
     [tournamentTeamsQuery.isSuccess, tournamentTeams, registeredTeamIds.length]
@@ -198,7 +293,7 @@ export default function TournamentDetailScreen() {
     }
   }, [router]);
   const isFull = tournament ? reservedSpots >= tournament.maxTeams : false;
-  const userIsRegistered = !!(user && (myTeamInTournament || activeRegisteredTeamIds.some((tid) => getTeamById(tid)?.captainId === user.id)));
+  const userIsRegistered = !!(user && myTeamInTournament && myTeamInTournament.status === 'confirmed');
   const joinLabel = teamsEligibleToRegister.length === 1
     ? t('tournamentDetail.joinSingle', { team: teamsEligibleToRegister[0].name })
     : teamsEligibleToRegister.length > 1
@@ -302,6 +397,60 @@ export default function TournamentDetailScreen() {
     }
   };
 
+  const processEntryPayment = async (tournamentId: string, teamId: string, entryFee: number) => {
+    if (!user) return;
+    if (!isInAppPaymentAvailable()) {
+      Alert.alert(
+        'Paiement in-app indisponible',
+        'Aucun fournisseur de paiement n\'est configuré. L\'intégration GeniusPay est en attente.'
+      );
+      return;
+    }
+
+    const reference = `TOUR-${tournamentId}-${teamId}-${Date.now()}`;
+    const paymentResult = await paymentProvider.initiatePayment({
+      reference,
+      amount: entryFee,
+      currency: 'XOF',
+      contextType: 'tournament_entry',
+      contextId: `${tournamentId}:${teamId}`,
+      payerId: user.id,
+      successUrl: `https://versus-sport-connect.vercel.app/payment/success?tournament_id=${tournamentId}&team_id=${teamId}`,
+      errorUrl: `https://versus-sport-connect.vercel.app/payment/error?tournament_id=${tournamentId}&team_id=${teamId}`,
+    });
+
+    if (!paymentResult.success) {
+      Alert.alert(
+        'Paiement refusé',
+        paymentResult.error || 'Le paiement n\'a pas pu être traité. Votre équipe est inscrite mais en attente de paiement.'
+      );
+      return;
+    }
+
+    setSuccessMessage('Inscription en attente de paiement. Vous allez être redirigé vers la page de paiement GeniusPay pour confirmer votre inscription.');
+
+    setEntryPaymentPending(true);
+    setPendingEntryTeamId(teamId);
+    setPendingEntryReference(paymentResult.providerTransactionId || reference);
+
+    if (paymentResult.checkoutUrl) {
+      const supported = await Linking.canOpenURL(paymentResult.checkoutUrl);
+      if (supported) {
+        await Linking.openURL(paymentResult.checkoutUrl);
+      } else {
+        Alert.alert(
+          'Ouverture impossible',
+          'Impossible d\'ouvrir la page de paiement. Copiez ce lien et ouvrez-le dans votre navigateur :\n' + paymentResult.checkoutUrl
+        );
+      }
+    } else {
+      Alert.alert(
+        'Paiement en cours',
+        'Le paiement est en cours de traitement. Votre inscription sera confirmée automatiquement dès la confirmation du paiement.'
+      );
+    }
+  };
+
   const handleRegister = () => {
     if (tournament.status === 'venue_pending') {
       Alert.alert('⏳ En attente', 'Les inscriptions ouvriront après validation du terrain par le gestionnaire.');
@@ -322,6 +471,35 @@ export default function TournamentDetailScreen() {
     const teamToRegister = teamsEligibleToRegister.length === 1
       ? teamsEligibleToRegister[0]
       : null;
+
+    const paymentMode = (tournament.entryPaymentMode ?? 'in_app_immediate') as VenuePaymentMode;
+    const needsInAppPayment = (tournament.entryFee ?? 0) > 0 && paymentMode === 'in_app_immediate';
+
+    const registerAndPay = async (teamId: string, teamName: string) => {
+      try {
+        await registerTeam({ tournamentId: tournament.id, teamId });
+        await refetchTournaments();
+        if (id) {
+          const updated = await tournamentsApi.getById(id).catch(() => null);
+          if (updated) setFetchedTournament(updated);
+        }
+        await tournamentTeamsQuery.refetch();
+        if (needsInAppPayment) {
+          setSuccessMessage('Inscription en attente de paiement. Cliquez sur "Payer maintenant" pour confirmer votre inscription.');
+          await processEntryPayment(tournament.id, teamId, tournament.entryFee);
+        } else {
+          const modeMsg = paymentMode === 'cash_off_app'
+            ? 'Paiement en espèces à remettre à l\'organisateur.'
+            : paymentMode === 'in_app_on_site_qr'
+              ? 'Paiement à effectuer sur place via QR code.'
+              : '';
+          setSuccessMessage(t('tournamentDetail.registerSuccess', { team: teamName }) + (modeMsg ? `\n${modeMsg}` : ''));
+        }
+      } catch (e: unknown) {
+        Alert.alert(t('common.error'), getErrorMessage(e));
+      }
+    };
+
     if (teamToRegister) {
       Alert.alert(
         t('tournamentDetail.registerTitle'),
@@ -330,19 +508,7 @@ export default function TournamentDetailScreen() {
           { text: t('common.cancel'), style: 'cancel' },
           {
             text: t('common.confirm'),
-            onPress: async () => {
-              try {
-                await registerTeam({ tournamentId: tournament.id, teamId: teamToRegister.id });
-                await refetchTournaments();
-                if (id) {
-                  const updated = await tournamentsApi.getById(id).catch(() => null);
-                  if (updated) setFetchedTournament(updated);
-                }
-                setSuccessMessage(t('tournamentDetail.registerSuccess', { team: teamToRegister.name }));
-              } catch (e: unknown) {
-                Alert.alert(t('common.error'), getErrorMessage(e));
-              }
-            },
+            onPress: () => registerAndPay(teamToRegister.id, teamToRegister.name),
           },
         ]
       );
@@ -350,19 +516,7 @@ export default function TournamentDetailScreen() {
     }
     const buttons = teamsEligibleToRegister.slice(0, 4).map((teamOption) => ({
       text: teamOption.name,
-      onPress: async () => {
-        try {
-          await registerTeam({ tournamentId: tournament.id, teamId: teamOption.id });
-          await refetchTournaments();
-          if (id) {
-            const updated = await tournamentsApi.getById(id).catch(() => null);
-            if (updated) setFetchedTournament(updated);
-          }
-          setSuccessMessage(t('tournamentDetail.registerSuccess', { team: teamOption.name }));
-        } catch (e: unknown) {
-          Alert.alert(t('common.error'), getErrorMessage(e));
-        }
-      },
+      onPress: () => registerAndPay(teamOption.id, teamOption.name),
     }));
     Alert.alert(
       t('tournamentDetail.chooseTeamTitle'),
@@ -888,6 +1042,8 @@ export default function TournamentDetailScreen() {
                     <View style={styles.actionsTitleRow}><Zap size={16} color={Colors.primary.orange} /><Text style={styles.sectionTitle}>{t('tournamentDetail.registrationTitle')}</Text></View>
                     {userIsRegistered ? (
                       <View style={styles.dejaInscritBadge}><CheckCircle size={18} color={Colors.status.success} /><Text style={styles.dejaInscritText}>{t('tournamentDetail.teamRegistered')}</Text></View>
+                    ) : myTeamInTournament?.status === 'pending_payment' ? (
+                      <View style={[styles.dejaInscritBadge, { backgroundColor: Colors.status.warning + '20' }]}><Clock size={18} color={Colors.status.warning} /><Text style={[styles.dejaInscritText, { color: Colors.status.warning }]}>Inscription en attente de paiement</Text></View>
                     ) : isFull ? (
                       <View style={styles.fullBadge}><Text style={styles.fullBadgeText}>{t('tournamentDetail.fullWithCount', { reserved: reservedSpots, max: tournament.maxTeams })}</Text></View>
                     ) : !user ? (
@@ -1231,6 +1387,14 @@ export default function TournamentDetailScreen() {
 
                 {!!myTeamInTournament && (
                   <Card style={styles.paymentPanelCard}>
+                    {entryPaymentPending && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.status.warning + '15', padding: 12, borderRadius: 10, marginBottom: 4 }}>
+                        <ActivityIndicator size="small" color={Colors.status.warning} />
+                        <Text style={{ color: Colors.status.warning, fontSize: 13, flex: 1 }}>
+                          Paiement en cours de vérification. Votre inscription sera confirmée automatiquement.
+                        </Text>
+                      </View>
+                    )}
                     <View style={styles.paymentPanelHeader}>
                       <View style={styles.paymentPanelTitleRow}>
                         <CreditCard size={16} color={Colors.primary.orange} />
@@ -1241,28 +1405,53 @@ export default function TournamentDetailScreen() {
 
                     {myTeamInTournament.status === 'pending_payment' && (
                       <>
-                        {!showPaymentInstructions ? (
-                          <Button
-                            title={t('tournamentDetail.paymentViewInstructions')}
-                            onPress={() => setShowPaymentInstructions(true)}
-                            variant="outline"
-                          />
-                        ) : (
-                          <View style={styles.paymentInstructionsWrap}>
-                            <PaymentInstructions
-                              amount={tournament.entryFee}
-                              tournamentName={tournament.name}
-                              teamName={getTeamById(myTeamInTournament.teamId)?.name || t('tournamentDetail.myTeam')}
-                              onMethodSelect={setSelectedPaymentMethod}
-                            />
-                            <Button
-                              title={t('tournamentDetail.paymentDone')}
-                              onPress={() => setShowPaymentSubmission(true)}
-                              variant="orange"
-                              style={styles.paymentSubmitBtn}
-                            />
-                          </View>
-                        )}
+                        {(() => {
+                          const pm = (tournament.entryPaymentMode ?? 'in_app_immediate') as VenuePaymentMode;
+                          if (pm === 'in_app_immediate') {
+                            return (
+                              <View style={styles.paymentInstructionsWrap}>
+                                <Text style={styles.paymentInfoText}>
+                                  Frais d'inscription: {tournament.entryFee.toLocaleString()} FCFA
+                                </Text>
+                                <Text style={[styles.paymentInfoText, { marginBottom: 12 }]}>
+                                  Cliquez sur "Payer maintenant" pour régler les frais via GeniusPay et confirmer votre inscription.
+                                </Text>
+                                <Button
+                                  title="Payer maintenant"
+                                  onPress={() => processEntryPayment(tournament.id, myTeamInTournament.teamId, tournament.entryFee)}
+                                  variant="orange"
+                                  style={styles.paymentSubmitBtn}
+                                />
+                              </View>
+                            );
+                          }
+                          // Fallback: manual payment instructions for non-in-app modes
+                          if (!showPaymentInstructions) {
+                            return (
+                              <Button
+                                title={t('tournamentDetail.paymentViewInstructions')}
+                                onPress={() => setShowPaymentInstructions(true)}
+                                variant="outline"
+                              />
+                            );
+                          }
+                          return (
+                            <View style={styles.paymentInstructionsWrap}>
+                              <PaymentInstructions
+                                amount={tournament.entryFee}
+                                tournamentName={tournament.name}
+                                teamName={getTeamById(myTeamInTournament.teamId)?.name || t('tournamentDetail.myTeam')}
+                                onMethodSelect={setSelectedPaymentMethod}
+                              />
+                              <Button
+                                title={t('tournamentDetail.paymentDone')}
+                                onPress={() => setShowPaymentSubmission(true)}
+                                variant="orange"
+                                style={styles.paymentSubmitBtn}
+                              />
+                            </View>
+                          );
+                        })()}
                       </>
                     )}
 
@@ -1273,7 +1462,19 @@ export default function TournamentDetailScreen() {
                     )}
 
                     {myTeamInTournament.status === 'confirmed' && (
-                      <Text style={[styles.paymentInfoText, { color: Colors.status.success }]}>{t('tournamentDetail.paymentValidated')}</Text>
+                      <>
+                        <Text style={[styles.paymentInfoText, { color: Colors.status.success }]}>{t('tournamentDetail.paymentValidated')}</Text>
+                        {(() => {
+                          const pm = (tournament.entryPaymentMode ?? 'in_app_immediate') as VenuePaymentMode;
+                          if (pm === 'cash_off_app' && (tournament.entryFee ?? 0) > 0) {
+                            return <Text style={styles.paymentInfoText}>Paiement en espèces à remettre à l'organisateur le jour du tournoi.</Text>;
+                          }
+                          if (pm === 'in_app_on_site_qr' && (tournament.entryFee ?? 0) > 0) {
+                            return <Text style={styles.paymentInfoText}>Paiement à effectuer sur place via QR code le jour du tournoi.</Text>;
+                          }
+                          return null;
+                        })()}
+                      </>
                     )}
 
                     {(myTeamInTournament.status === 'rejected' || myTeamInTournament.status === 'cancelled') && (
@@ -1282,8 +1483,13 @@ export default function TournamentDetailScreen() {
                         <Button
                           title={t('tournamentDetail.paymentResubmit')}
                           onPress={() => {
-                            setShowPaymentInstructions(true);
-                            setShowPaymentSubmission(true);
+                            const pm = (tournament.entryPaymentMode ?? 'in_app_immediate') as VenuePaymentMode;
+                            if (pm === 'in_app_immediate') {
+                              processEntryPayment(tournament.id, myTeamInTournament.teamId, tournament.entryFee);
+                            } else {
+                              setShowPaymentInstructions(true);
+                              setShowPaymentSubmission(true);
+                            }
                           }}
                           variant="outline"
                         />
@@ -1308,7 +1514,17 @@ export default function TournamentDetailScreen() {
 
                 {(() => {
                   const myTeamIn = user && registeredTeamIds.some((tid: string) => getTeamById(tid)?.captainId === user.id);
-                  return myTeamIn ? <View style={styles.inscritBadge}><CheckCircle size={14} color={Colors.status.success} /><Text style={styles.inscritBadgeText}>{t('tournamentDetail.youAreRegistered')}</Text></View> : null;
+                  const myTeamStatus = myTeamInTournament?.status;
+                  if (!myTeamIn) return null;
+                  if (myTeamStatus === 'pending_payment') {
+                    return (
+                      <View style={[styles.inscritBadge, { backgroundColor: Colors.status.warning + '20' }]}>
+                        <Clock size={14} color={Colors.status.warning} />
+                        <Text style={[styles.inscritBadgeText, { color: Colors.status.warning }]}>Inscription en attente de paiement</Text>
+                      </View>
+                    );
+                  }
+                  return <View style={styles.inscritBadge}><CheckCircle size={14} color={Colors.status.success} /><Text style={styles.inscritBadgeText}>{t('tournamentDetail.youAreRegistered')}</Text></View>;
                 })()}
 
                 {filteredTeams.length > 0 ? (
@@ -1396,6 +1612,23 @@ export default function TournamentDetailScreen() {
                   <View style={styles.manageTournamentBtnContent}>
                     <Text style={styles.manageTournamentBtnText}>{t('tournamentDetail.requestAdvance')}</Text>
                     <Text style={styles.manageTournamentBtnSubtext}>{t('tournamentDetail.requestAdvanceSubtext')}</Text>
+                  </View>
+                  <ChevronRight size={20} color={Colors.text.muted} />
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+
+            {teamsWhereCaptain.some((tm) => activeRegisteredTeamIds.includes(tm.id)) && (
+              <TouchableOpacity
+                style={styles.manageTournamentBtn}
+                onPress={() => router.push(`/tournament/${tournament.id}/report-dispute` as any)}
+                activeOpacity={0.8}
+              >
+                <LinearGradient colors={[Colors.status.error + '22', Colors.status.error + '10']} style={styles.manageBtnGradient}>
+                  <AlertTriangle size={20} color={Colors.status.error} />
+                  <View style={styles.manageTournamentBtnContent}>
+                    <Text style={styles.manageTournamentBtnText}>Signaler un litige</Text>
+                    <Text style={styles.manageTournamentBtnSubtext}>En cas de problème avec ce tournoi</Text>
                   </View>
                   <ChevronRight size={20} color={Colors.text.muted} />
                 </LinearGradient>

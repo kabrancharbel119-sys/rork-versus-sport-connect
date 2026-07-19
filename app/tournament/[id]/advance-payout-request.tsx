@@ -11,6 +11,7 @@ import { Card } from '@/components/Card';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
 import { tournamentPayoutRequestsApi } from '@/lib/api/tournament-payments';
+import { tournamentFundsApi } from '@/lib/api/tournament-funds';
 
 export default function AdvancePayoutRequestScreen() {
   const router = useRouter();
@@ -28,11 +29,19 @@ export default function AdvancePayoutRequestScreen() {
 
   const tournament = getTournamentById(id || '');
 
+  const fundsSummaryQuery = useQuery({
+    queryKey: ['tournament-funds-summary', id],
+    queryFn: () => tournamentFundsApi.getFundsSummary(id!),
+    enabled: !!id,
+  });
+
   const [requestedAmount, setRequestedAmount] = useState('');
   const [reason, setReason] = useState('');
   const [useOfFunds, setUseOfFunds] = useState('');
   const [payoutPhone, setPayoutPhone] = useState('');
   const [urgency, setUrgency] = useState<'low' | 'medium' | 'high'>('medium');
+  const [purposeCategory, setPurposeCategory] = useState<'venue' | 'logistics' | 'other'>('logistics');
+  const [validationMessage, setValidationMessage] = useState<{ type: 'error' | 'warning' | 'info'; text: string } | null>(null);
 
   const requestsQuery = useQuery({
     queryKey: ['organizer-payout-requests', user?.id],
@@ -50,7 +59,7 @@ export default function AdvancePayoutRequestScreen() {
       tournamentId: id!,
       organizerId: user!.id,
       requestedAmount: parseInt(requestedAmount, 10),
-      purposeCategory: 'other',
+      purposeCategory,
       reason: reason.trim(),
       useOfFunds: useOfFunds.trim(),
       budgetBreakdown: useOfFunds.trim(),
@@ -71,6 +80,9 @@ export default function AdvancePayoutRequestScreen() {
 
   const canSubmit = useMemo(() => {
     const amount = parseInt(requestedAmount, 10);
+    const isVenueAdvance = purposeCategory === 'venue';
+    const isInAppPayment = tournament?.venue?.paymentMode !== 'cash_off_app';
+    const requiresPayoutPhone = purposeCategory !== 'other' || isInAppPayment;
     return !!(
       user
       && id
@@ -80,7 +92,7 @@ export default function AdvancePayoutRequestScreen() {
       && amount > 0
       && reason.trim().length >= 20
       && useOfFunds.trim().length >= 20
-      && payoutPhone.trim().length >= 8
+      && (!requiresPayoutPhone || payoutPhone.trim().length >= 8)
       && !requestForThisTournament
     );
   }, [
@@ -92,7 +104,33 @@ export default function AdvancePayoutRequestScreen() {
     useOfFunds,
     payoutPhone,
     requestForThisTournament,
+    purposeCategory,
   ]);
+
+  const validateRequest = async () => {
+    const amount = parseInt(requestedAmount, 10);
+    if (!amount || amount <= 0) {
+      setValidationMessage({ type: 'error', text: 'Saisissez un montant valide.' });
+      return false;
+    }
+    if (!tournament?.venue?.id) {
+      setValidationMessage({ type: 'error', text: 'Le tournoi n\'est pas lié à un terrain inscrit.' });
+      return false;
+    }
+    const validation = await tournamentFundsApi.validateAdvanceRequest({
+      tournamentId: id!,
+      purposeCategory,
+      requestedAmount: amount,
+      organizerId: user!.id,
+      venueId: tournament.venue.id,
+    });
+    if (!validation.allowed) {
+      setValidationMessage({ type: 'error', text: validation.reason || 'Demande non autorisée.' });
+      return false;
+    }
+    setValidationMessage({ type: 'info', text: 'Cette demande respecte les règles anti-fraude. Elle sera examinée par un administrateur.' });
+    return true;
+  };
 
   if (!user || !id || !tournament) {
     return (
@@ -165,6 +203,44 @@ export default function AdvancePayoutRequestScreen() {
 
             {!requestForThisTournament && (
               <>
+                <Text style={styles.label}>Catégorie de l’avance</Text>
+                <View style={styles.chipsRow}>
+                  {[
+                    { key: 'venue' as const, label: 'Avance terrain' },
+                    { key: 'logistics' as const, label: 'Logistique' },
+                    { key: 'other' as const, label: 'Autre' },
+                  ].map((chip) => (
+                    <TouchableOpacity
+                      key={chip.key}
+                      style={[styles.chip, purposeCategory === chip.key && styles.chipActive]}
+                      onPress={() => {
+                        setPurposeCategory(chip.key);
+                        setValidationMessage(null);
+                      }}
+                    >
+                      <Text style={[styles.chipText, purposeCategory === chip.key && styles.chipTextActive]}>{chip.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {purposeCategory === 'venue' && (
+                  <Card style={styles.infoCard}>
+                    <Text style={styles.infoText}>
+                      L’avance terrain est versée directement au gestionnaire du terrain. Disponible uniquement si le terrain accepte les paiements via l’application.
+                    </Text>
+                  </Card>
+                )}
+
+                {purposeCategory === 'logistics' && fundsSummaryQuery.data && (
+                  <Card style={[styles.infoCard, { borderColor: Colors.primary.blue + '35', backgroundColor: Colors.primary.blue + '10' }]}>
+                    <Text style={[styles.cardTitle, { color: Colors.primary.blue }]}>Règles avance logistique</Text>
+                    <Text style={styles.infoText}>
+                      Remplissage actuel : {fundsSummaryQuery.data.fillRatePercent}% (min. 50%){'\n'}
+                      Plafond logistique : {fundsSummaryQuery.data.availableForLogisticsAdvance.toLocaleString()} FCFA (30% des fonds encaissés)
+                    </Text>
+                  </Card>
+                )}
+
                 <Text style={styles.label}>Montant demandé (FCFA)</Text>
                 <View style={styles.inputWrap}>
                   <DollarSign size={16} color={Colors.text.muted} />
@@ -178,14 +254,18 @@ export default function AdvancePayoutRequestScreen() {
                   />
                 </View>
 
-                <Text style={styles.label}>Numéro de réception des fonds</Text>
-                <TextInput
-                  style={styles.inputSolo}
-                  placeholder="Ex: +225 07XXXXXXXX"
-                  placeholderTextColor={Colors.text.muted}
-                  value={payoutPhone}
-                  onChangeText={setPayoutPhone}
-                />
+                {purposeCategory !== 'other' && (
+                  <>
+                    <Text style={styles.label}>Numéro de réception des fonds</Text>
+                    <TextInput
+                      style={styles.inputSolo}
+                      placeholder="Ex: +225 07XXXXXXXX"
+                      placeholderTextColor={Colors.text.muted}
+                      value={payoutPhone}
+                      onChangeText={setPayoutPhone}
+                    />
+                  </>
+                )}
 
                 <Text style={styles.label}>Niveau d’urgence</Text>
                 <View style={styles.chipsRow}>
@@ -224,9 +304,21 @@ export default function AdvancePayoutRequestScreen() {
                   onChangeText={setUseOfFunds}
                 />
 
+                {validationMessage && (
+                  <Card style={[styles.infoCard, validationMessage.type === 'error' ? { borderColor: Colors.status.error + '50', backgroundColor: Colors.status.error + '10' } : { borderColor: Colors.status.success + '50', backgroundColor: Colors.status.success + '10' }]}>
+                    <Text style={[styles.infoText, validationMessage.type === 'error' ? { color: Colors.status.error } : { color: Colors.status.success }]}>
+                      {validationMessage.type === 'error' ? '⚠️ ' : '✓ '}
+                      {validationMessage.text}
+                    </Text>
+                  </Card>
+                )}
+
                 <Button
-                  title="Envoyer la demande"
-                  onPress={() => createMutation.mutate()}
+                  title="Vérifier et envoyer"
+                  onPress={async () => {
+                    const ok = await validateRequest();
+                    if (ok) createMutation.mutate();
+                  }}
                   disabled={!canSubmit || createMutation.isPending}
                   loading={createMutation.isPending}
                   variant="orange"

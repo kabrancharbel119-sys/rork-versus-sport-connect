@@ -25,6 +25,8 @@ export interface VenueRow {
   surface_type: string | null;
   rules: string | null;
   cancellation_hours: number | null;
+  payment_mode?: string | null;
+  payout_phone?: string | null;
   created_at: string;
 }
 
@@ -40,6 +42,9 @@ export interface BookingRow {
   match_id: string | null;
   tournament_id: string | null;
   notes: string | null;
+  payment_status?: string | null;
+  payment_transaction_id?: string | null;
+  paid_at?: string | null;
   created_at: string;
 }
 
@@ -68,6 +73,8 @@ export const mapVenueRowToVenue = (row: VenueRow): Venue => ({
   surfaceType: row.surface_type ?? undefined,
   rules: row.rules ?? undefined,
   cancellationHours: row.cancellation_hours ?? 24,
+  paymentMode: (row.payment_mode as Venue['paymentMode']) ?? 'cash_off_app',
+  payoutPhone: row.payout_phone ?? undefined,
 });
 
 export const mapBookingRowToBooking = (row: BookingRow): Booking => ({
@@ -87,6 +94,10 @@ export const mapBookingRowToBooking = (row: BookingRow): Booking => ({
   checkInToken: (row as any).check_in_token ?? undefined,
   validatedAt: (row as any).validated_at ? new Date((row as any).validated_at) : undefined,
   validatedBy: (row as any).validated_by ?? undefined,
+  // Paiement in-app
+  paymentStatus: (row.payment_status as Booking['paymentStatus']) ?? 'not_required',
+  paymentTransactionId: row.payment_transaction_id ?? undefined,
+  paidAt: row.paid_at ? new Date(row.paid_at) : undefined,
 });
 
 // Extract hour from a TIMESTAMPTZ string or a plain time string
@@ -268,6 +279,8 @@ export const venuesApi = {
     endTime: string;
     matchId?: string;
     tournamentId?: string;
+    paymentStatus?: 'not_required' | 'pending' | 'paid';
+    paymentTransactionId?: string;
   }) {
     console.log('[VenuesAPI] Creating booking:', booking);
     
@@ -342,7 +355,12 @@ export const venuesApi = {
     const startTimestamp = `${booking.date}T${String(startHour).padStart(2, '0')}:00:00`;
     const endTimestamp = `${booking.date}T${String(endHour).padStart(2, '0')}:00:00`;
 
-    const insertPayload = {
+    // Statut de paiement selon le mode configuré par le terrain
+    const venuePaymentMode = venue.paymentMode ?? 'cash_off_app';
+    const initialPaymentStatus = booking.paymentStatus
+      ?? (venuePaymentMode === 'cash_off_app' ? 'not_required' : 'pending');
+
+    const insertPayload: any = {
       venue_id: booking.venueId,
       user_id: userId,
       date: booking.date,
@@ -352,7 +370,12 @@ export const venuesApi = {
       match_id: booking.matchId || null,
       tournament_id: booking.tournamentId || null,
       status: venue.autoApprove === false ? 'pending' : 'confirmed',
+      payment_status: initialPaymentStatus,
     };
+    if (booking.paymentTransactionId) {
+      insertPayload.payment_transaction_id = booking.paymentTransactionId;
+      insertPayload.paid_at = new Date().toISOString();
+    }
     console.log('[VenuesAPI] Booking insert payload:', JSON.stringify(insertPayload));
 
     const { data, error } = await (supabase
@@ -479,6 +502,8 @@ export const venuesApi = {
     surfaceType?: string;
     rules?: string;
     cancellationHours?: number;
+    paymentMode?: string;
+    payoutPhone?: string;
   }) {
     console.log('[VenuesAPI] Creating venue for owner:', ownerId);
     // Filter out any local file URLs - only public http/https URLs allowed
@@ -510,6 +535,8 @@ export const venuesApi = {
         surface_type: venue.surfaceType || null,
         rules: venue.rules || null,
         cancellation_hours: venue.cancellationHours ?? 24,
+        payment_mode: venue.paymentMode ?? 'cash_off_app',
+        payout_phone: venue.payoutPhone || null,
       } as any)
       .select()
       .single() as any);
@@ -538,6 +565,8 @@ export const venuesApi = {
     surfaceType: string;
     rules: string;
     cancellationHours: number;
+    paymentMode: string;
+    payoutPhone: string;
   }>) {
     console.log('[VenuesAPI] Updating venue:', venueId);
     const payload: Record<string, unknown> = {};
@@ -566,6 +595,8 @@ export const venuesApi = {
     if (updates.surfaceType !== undefined) payload.surface_type = updates.surfaceType;
     if (updates.rules !== undefined) payload.rules = updates.rules;
     if (updates.cancellationHours !== undefined) payload.cancellation_hours = updates.cancellationHours;
+    if (updates.paymentMode !== undefined) payload.payment_mode = updates.paymentMode;
+    if (updates.payoutPhone !== undefined) payload.payout_phone = updates.payoutPhone || null;
 
     const { data, error } = await (supabase
       .from('venues')
@@ -897,6 +928,61 @@ export const venuesApi = {
 
   // ── QR Code Validation ──
 
+  async updateBookingPayment(bookingId: string, managerId: string, paymentTransactionId: string) {
+    console.log('[VenuesAPI] Updating booking payment:', { bookingId, managerId, paymentTransactionId });
+
+    const { data: bookingData, error: fetchError } = await (supabase
+      .from('bookings')
+      .select(`
+        *,
+        venue:venues!bookings_venue_id_fkey(owner_id)
+      `)
+      .eq('id', bookingId)
+      .single() as any);
+
+    if (fetchError || !bookingData) {
+      throw new Error('Réservation introuvable.');
+    }
+
+    const venueOwnerId = (bookingData as any).venue?.owner_id;
+    if (venueOwnerId !== managerId) {
+      throw new Error('Vous n\'êtes pas autorisé à encaisser cette réservation.');
+    }
+
+    const now = new Date().toISOString();
+    const { data, error } = await (supabase
+      .from('bookings')
+      .update({
+        payment_status: 'paid',
+        payment_transaction_id: paymentTransactionId,
+        paid_at: now,
+      } as any)
+      .eq('id', bookingId)
+      .select()
+      .single() as any);
+
+    if (error) {
+      throw new Error('Impossible de mettre à jour le paiement : ' + error.message);
+    }
+
+    return mapBookingRowToBooking(data as BookingRow);
+  },
+
+  async updateBookingPaymentStatus(bookingId: string, status: 'pending' | 'paid' | 'failed') {
+    console.log('[VenuesAPI] Updating booking payment status:', { bookingId, status });
+    const updatePayload: any = { payment_status: status };
+    if (status === 'paid') {
+      updatePayload.paid_at = new Date().toISOString();
+    }
+    const { error } = await (supabase
+      .from('bookings')
+      .update(updatePayload)
+      .eq('id', bookingId) as any);
+    if (error) {
+      throw new Error('Impossible de mettre à jour le statut de paiement : ' + error.message);
+    }
+  },
+
   async validateCheckIn(bookingId: string, token: string, managerId: string) {
     console.log('[VenuesAPI] Validating check-in:', { bookingId, token, managerId });
     
@@ -957,6 +1043,10 @@ export const venuesApi = {
       rawUser.total_bookings_count = reliability.total;
     }
     (booking as any).user = rawUser;
+    const rawVenue = data.venue ?? null;
+    if (rawVenue) {
+      (booking as any).venue = mapVenueRowToVenue(rawVenue);
+    }
     return booking;
   },
 };

@@ -234,6 +234,7 @@ export default function SettingsScreen() {
             <Text style={styles.sectionTitle}>{t('settings.account')}</Text>
             <Card style={styles.section}>
               <SettingRow icon={<Users size={20} color={Colors.text.secondary} />} title={t('settings.editProfile')} onPress={() => router.push('/edit-profile')} />
+              <SettingRow icon={<FileText size={20} color={Colors.text.secondary} />} title="Mes factures" value="Historique de paiement" onPress={() => router.push('/settings/invoices')} />
               <SettingRow icon={<CheckCircle size={20} color={user?.isVerified || isAdmin ? Colors.primary.blue : Colors.text.secondary} />} title={t('settings.verification')} value={isAdmin ? t('settings.adminAccount') : user?.isVerified ? t('settings.verifiedAccount') : t('settings.requestVerification')} onPress={() => router.push('/verification')} />
               <SettingRow icon={<Trophy size={20} color={Colors.primary.orange} />} title={t('settings.trophiesRewards')} value={t('settings.unlockedXp', { unlocked: unlockedTrophies, xp: totalXP })} onPress={() => router.push('/trophies')} />
               <SettingRow icon={<RefreshCw size={20} color={Colors.text.secondary} />} title={t('settings.refreshTrophies')} onPress={handleRefreshTrophies} />

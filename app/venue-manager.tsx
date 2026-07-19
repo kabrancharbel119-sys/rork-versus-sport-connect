@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft, Plus, MapPin, Calendar, DollarSign, BarChart3, Clock,
   Check, X, Eye, EyeOff, Trash2, Edit3, ChevronRight, TrendingUp,
-  Users, AlertCircle, Zap, Home, Settings, Star, Activity,
+  Users, AlertCircle, Zap, Home, Settings, Star, Activity, Wallet,
 } from 'lucide-react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
@@ -35,6 +35,12 @@ const sportLabels: Record<string, string> = {
   tennis: 'Tennis', handball: 'Handball', rugby: 'Rugby', badminton: 'Badminton',
   tabletennis: 'Tennis de table', padel: 'Padel', squash: 'Squash',
   futsal: 'Futsal', beachvolleyball: 'Beach-volley',
+};
+
+const paymentModeLabels: Record<string, string> = {
+  in_app_immediate: 'Paiement au moment de la réservation',
+  in_app_on_site_qr: 'Paiement In-App sur place',
+  cash_off_app: 'Paiement cash',
 };
 
 export default function VenueManagerScreen() {
@@ -459,6 +465,14 @@ export default function VenueManagerScreen() {
                   {venue.autoApprove !== false ? 'Auto-approbation' : 'Approbation manuelle'}
                 </Text>
               </View>
+              {venue.paymentMode && (
+                <View style={[styles.sportTag, { backgroundColor: Colors.primary.blue + '20' }]}>
+                  <Wallet size={10} color={Colors.primary.blue} />
+                  <Text style={[styles.sportTagText, { color: Colors.primary.blue }]}>
+                    {paymentModeLabels[venue.paymentMode] || venue.paymentMode}
+                  </Text>
+                </View>
+              )}
             </View>
 
             <View style={styles.venueActions}>
@@ -823,7 +837,7 @@ const styles = StyleSheet.create({
   venueStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   venueStatText: { color: Colors.text.secondary, fontSize: 12 },
   venueSports: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
-  sportTag: { backgroundColor: Colors.background.cardLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  sportTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.background.cardLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   sportTagText: { color: Colors.text.secondary, fontSize: 11 },
   venueActions: { flexDirection: 'row', gap: 16, marginTop: 12, borderTopWidth: 1, borderTopColor: Colors.border.light, paddingTop: 12 },
   venueActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },

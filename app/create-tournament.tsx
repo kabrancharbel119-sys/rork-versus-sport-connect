@@ -5,7 +5,7 @@ import { useRouter, Stack } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X, Trophy, MapPin, Check, ChevronDown, Search, Calendar, Users, DollarSign } from 'lucide-react-native';
+import { X, Trophy, MapPin, Check, ChevronDown, Search, Calendar, Users, DollarSign, Wallet } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
@@ -15,10 +15,28 @@ import { venuesApi } from '@/lib/api/venues';
 import { useQuery } from '@tanstack/react-query';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
-import { Sport, SkillLevel, Venue } from '@/types';
+import { Sport, SkillLevel, Venue, VenuePaymentMode } from '@/types';
 import { ALL_SPORTS, sportLabels, levelLabels } from '@/mocks/data';
 
 const levels: SkillLevel[] = ['beginner', 'intermediate', 'advanced', 'expert'];
+
+const ENTRY_PAYMENT_MODES: { value: VenuePaymentMode; label: string; description: string }[] = [
+  {
+    value: 'in_app_immediate',
+    label: 'Paiement en ligne à l\'inscription',
+    description: 'Les équipes paient les frais d\'inscription via l\'app pour confirmer leur participation.',
+  },
+  {
+    value: 'in_app_on_site_qr',
+    label: 'Paiement sur place (QR)',
+    description: 'Les équipes paient les frais au scan du QR le jour du tournoi.',
+  },
+  {
+    value: 'cash_off_app',
+    label: 'Paiement cash / hors app',
+    description: 'Les équipes paient en espèces directement à l\'organisateur.',
+  },
+];
 const tournamentTypes = [
   { id: 'knockout', label: 'Élimination directe', icon: '🏆' },
   { id: 'league', label: 'Championnat', icon: '📊' },
@@ -94,7 +112,7 @@ export default function CreateTournamentScreen() {
     enabled: !!user?.id && isVenueManager,
   });
 
-  // Utiliser les terrains du gestionnaire ou tous les terrains selon le rôle
+  // Les tournois doivent se tenir sur un terrain inscrit. Un gestionnaire de terrain ne peut choisir que ses propres terrains.
   const venues = isVenueManager ? (myVenuesQuery.data || []) : allVenues;
 
   const canCreateTournament = (() => {
@@ -108,15 +126,14 @@ export default function CreateTournamentScreen() {
   const [step, setStep] = useState(1);
   const [showSportModal, setShowSportModal] = useState(false);
   const [showVenueModal, setShowVenueModal] = useState(false);
-  const [showManualVenue, setShowManualVenue] = useState(false);
   const [sportSearch, setSportSearch] = useState('');
   const [venueSearch, setVenueSearch] = useState('');
-  const [manualVenueName, setManualVenueName] = useState('');
-  const [manualVenueCity, setManualVenueCity] = useState('');
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [selectedSlots, setSelectedSlots] = useState<Record<string, number[]>>({});
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successInfo, setSuccessInfo] = useState({ title: '', message: '' });
   const scrollViewRef = useRef<ScrollView>(null);
 
   const defaultStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -135,6 +152,7 @@ export default function CreateTournamentScreen() {
     startDateStr: toLocalDateString(defaultStart),
     endDateStr: toLocalDateString(defaultEnd),
     sponsorName: '',
+    entryPaymentMode: 'in_app_immediate' as VenuePaymentMode,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -236,6 +254,8 @@ export default function CreateTournamentScreen() {
     const entryFee = parseInt(formData.entryFee, 10);
     if (isNaN(entryFee) || entryFee < 0) {
       newErrors.entryFee = 'Les frais d\'inscription doivent être un nombre positif ou zéro (en FCFA).';
+    } else if (entryFee > 0 && entryFee < 500) {
+      newErrors.entryFee = 'Les frais d\'inscription minimum sont de 500 FCFA (ou équivalent dans la monnaie du pays).';
     }
     const prizePool = parseInt(formData.prizePool, 10);
     if (isNaN(prizePool) || prizePool < 0) {
@@ -276,9 +296,9 @@ export default function CreateTournamentScreen() {
       Alert.alert('Corriger le formulaire', validation.firstError ?? 'Vérifiez les champs marqués puis réessayez.');
       return;
     }
-    const hasVenue = formData.venue?.name && formData.venue.name !== emptyVenue.name && formData.venue.city;
+    const hasVenue = formData.venue?.id && formData.venue.id !== '' && !formData.venue.id.startsWith('manual-');
     if (!hasVenue) {
-      Alert.alert('Lieu manquant', 'Choisissez un lieu dans la liste (étape 2) ou utilisez « Saisir un lieu personnalisé » pour indiquer le nom et la ville du terrain.');
+      Alert.alert('Lieu manquant', 'Choisissez un terrain inscrit dans l’application (étape 2). Les tournois doivent se tenir sur un terrain enregistré.');
       return;
     }
     const prizePool = parseInt(formData.prizePool, 10);
@@ -307,21 +327,21 @@ export default function CreateTournamentScreen() {
         createdBy: user.id,
         sponsorName: formData.sponsorName || undefined,
         selectedSlots,
+        entryPaymentMode: formData.entryPaymentMode,
       });
       const isVenuePending = (result as any)?.status === 'venue_pending';
-      Alert.alert(
-        isVenuePending ? '⏳ Tournoi en attente' : '🏆 Tournoi créé !',
-        isVenuePending
-          ? `Votre tournoi "${formData.name}" a été créé mais les inscriptions s'ouvriront seulement après validation du terrain par le gestionnaire.`
-          : `Votre tournoi "${formData.name}" a été créé avec succès. Les inscriptions sont maintenant ouvertes.`,
-        [{
-          text: 'OK',
-          onPress: () => {
-            refetchTournaments();
-            safeBack(router, '/tournaments');
-          },
-        }]
-      );
+      const isOwnVenue = isVenueManager && myVenuesQuery.data?.some(v => v.id === formData.venue?.id);
+      let title = '🏆 Tournoi créé !';
+      let message = `Votre tournoi "${formData.name}" a été créé avec succès. Les inscriptions sont maintenant ouvertes.`;
+      if (isVenuePending) {
+        title = '⏳ Tournoi en attente';
+        message = `Votre tournoi "${formData.name}" a été créé mais les inscriptions s'ouvriront seulement après validation du terrain par le gestionnaire.`;
+      } else if (isOwnVenue) {
+        title = '🏆 Tournoi créé avec succès !';
+        message = `Votre tournoi "${formData.name}" a été créé avec succès sur votre terrain "${formData.venue?.name}". La réservation est automatiquement confirmée. Les inscriptions sont maintenant ouvertes.`;
+      }
+      setSuccessInfo({ title, message });
+      setShowSuccessModal(true);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Impossible de créer le tournoi';
       Alert.alert('Erreur', message);
@@ -442,18 +462,60 @@ export default function CreateTournamentScreen() {
           />
         </View>
         <View style={styles.halfInput}>
-          <Input
-            scrollViewRef={scrollViewRef}
-            label="Frais d'inscription (FCFA)"
-            placeholder="25000"
-            value={formData.entryFee}
-            onChangeText={(v) => updateField('entryFee', v.replace(/[^0-9]/g, ''))}
-            error={errors.entryFee}
-            keyboardType="numeric"
-            icon={<DollarSign size={18} color={Colors.text.muted} />}
-          />
+          <Text style={styles.fieldLabel}>Frais d'inscription</Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+            <TouchableOpacity
+              style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: !isPaidTournament ? Colors.primary.orange : Colors.border.light, backgroundColor: !isPaidTournament ? Colors.primary.orange + '15' : 'transparent' }}
+              onPress={() => updateField('entryFee', '0')}
+            >
+              <Text style={{ textAlign: 'center', fontSize: 13, fontWeight: '600', color: !isPaidTournament ? Colors.primary.orange : Colors.text.muted }}>Gratuit</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: isPaidTournament ? Colors.primary.orange : Colors.border.light, backgroundColor: isPaidTournament ? Colors.primary.orange + '15' : 'transparent' }}
+              onPress={() => { if (!isPaidTournament) updateField('entryFee', '500'); }}
+            >
+              <Text style={{ textAlign: 'center', fontSize: 13, fontWeight: '600', color: isPaidTournament ? Colors.primary.orange : Colors.text.muted }}>Payant (min 500)</Text>
+            </TouchableOpacity>
+          </View>
+          {isPaidTournament && (
+            <Input
+              scrollViewRef={scrollViewRef}
+              label="Montant (FCFA)"
+              placeholder="500"
+              value={formData.entryFee}
+              onChangeText={(v) => updateField('entryFee', v.replace(/[^0-9]/g, ''))}
+              error={errors.entryFee}
+              keyboardType="numeric"
+              icon={<DollarSign size={18} color={Colors.text.muted} />}
+            />
+          )}
         </View>
       </View>
+
+      {isPaidTournament && (
+        <View style={styles.paymentModeSection}>
+          <Text style={styles.fieldLabel}>Mode de paiement des inscriptions *</Text>
+          {ENTRY_PAYMENT_MODES.map((mode) => {
+            const selected = formData.entryPaymentMode === mode.value;
+            return (
+              <TouchableOpacity
+                key={mode.value}
+                style={[styles.paymentModeCard, selected && styles.paymentModeCardSelected]}
+                onPress={() => updateField('entryPaymentMode', mode.value)}
+              >
+                <View style={styles.paymentModeHeader}>
+                  <Wallet size={18} color={selected ? Colors.primary.orange : Colors.text.muted} />
+                  <Text style={[styles.paymentModeTitle, selected && styles.paymentModeTitleSelected]}>
+                    {mode.label}
+                  </Text>
+                  {selected && <Check size={16} color={Colors.primary.orange} />}
+                </View>
+                <Text style={styles.paymentModeDescription}>{mode.description}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
 
       {isPaidTournament && (
         <View style={styles.paymentDisclaimerBox}>
@@ -498,7 +560,7 @@ export default function CreateTournamentScreen() {
         <Text style={styles.fieldLabel}>Lieu *</Text>
         <TouchableOpacity
           style={styles.selector}
-          onPress={() => { Keyboard.dismiss(); setShowVenueModal(true); setShowManualVenue(false); }}
+          onPress={() => { Keyboard.dismiss(); setShowVenueModal(true); }}
           activeOpacity={0.7}
         >
           <MapPin size={20} color={Colors.primary.blue} />
@@ -508,6 +570,11 @@ export default function CreateTournamentScreen() {
           </View>
           <ChevronDown size={20} color={Colors.text.muted} />
         </TouchableOpacity>
+        <Text style={styles.venueHint}>
+          {isVenueManager
+            ? 'Un tournoi doit être organisé sur un terrain que vous gérez.'
+            : 'Le tournoi doit se tenir sur un terrain inscrit dans l\'application.'}
+        </Text>
       </View>
 
       <View style={styles.dateSection}>
@@ -818,6 +885,12 @@ export default function CreateTournamentScreen() {
           <Text style={styles.summaryValue}>{parseInt(formData.entryFee || '0').toLocaleString()} FCFA</Text>
         </View>
         {isPaidTournament && (
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Paiement:</Text>
+            <Text style={styles.summaryValue}>{ENTRY_PAYMENT_MODES.find(m => m.value === formData.entryPaymentMode)?.label ?? formData.entryPaymentMode}</Text>
+          </View>
+        )}
+        {isPaidTournament && (
           <View style={styles.summaryDisclaimerWrap}>
             <Text style={styles.summaryDisclaimerText}>
               Reversement organisateur: non automatique. Les avances sont traitées uniquement après approbation admin.
@@ -989,124 +1062,82 @@ export default function CreateTournamentScreen() {
                 <Text style={styles.modalTitle}>Choisir un lieu</Text>
                 <TouchableOpacity
                   style={styles.modalClose}
-                  onPress={() => { Keyboard.dismiss(); setShowVenueModal(false); setVenueSearch(''); setShowManualVenue(false); }}
+                  onPress={() => { Keyboard.dismiss(); setShowVenueModal(false); setVenueSearch(''); }}
                 >
                   <X size={24} color={Colors.text.primary} />
                 </TouchableOpacity>
               </View>
-              {!showManualVenue ? (
-                <>
-                  <View style={styles.searchContainer}>
-                    <Search size={20} color={Colors.text.muted} />
-                    <TextInput
-                      style={styles.searchInput}
-                      placeholder="Rechercher un lieu..."
-                      placeholderTextColor={Colors.text.muted}
-                      value={venueSearch}
-                      onChangeText={setVenueSearch}
-                    />
+              <View style={styles.searchContainer}>
+                <Search size={20} color={Colors.text.muted} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Rechercher un lieu..."
+                  placeholderTextColor={Colors.text.muted}
+                  value={venueSearch}
+                  onChangeText={setVenueSearch}
+                />
+              </View>
+              <ScrollView
+                style={styles.venuesList}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                contentContainerStyle={{ paddingBottom: 320 }}
+              >
+                {filteredVenues.length > 0 && (
+                  <Text style={styles.venueSectionLabel}>Terrains disponibles</Text>
+                )}
+                {filteredVenues.length === 0 ? (
+                  <View style={styles.emptyVenueState}>
+                    <MapPin size={40} color={Colors.text.muted} />
+                    <Text style={styles.emptyVenueTitle}>
+                      {isVenueManager ? 'Aucun terrain enregistré' : 'Aucun terrain trouvé'}
+                    </Text>
+                    <Text style={styles.emptyVenueText}>
+                      {isVenueManager
+                        ? 'Un tournoi doit être organisé sur un terrain que vous gérez. Créez d\'abord votre terrain dans l\'app.'
+                        : 'Aucun terrain inscrit ne correspond à votre recherche. Les tournois doivent se tenir sur un terrain inscrit dans l\'application.'}
+                    </Text>
                   </View>
-                  <ScrollView
-                    style={styles.venuesList}
-                    keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="on-drag"
-                    contentContainerStyle={{ paddingBottom: 320 }}
-                  >
-                    {filteredVenues.length > 0 && (
-                      <Text style={styles.venueSectionLabel}>Terrains disponibles</Text>
-                    )}
-                    {filteredVenues.length === 0 ? (
-                      <View style={styles.emptyVenueState}>
-                        <MapPin size={40} color={Colors.text.muted} />
-                        <Text style={styles.emptyVenueTitle}>Aucun terrain trouvé</Text>
-                        <Text style={styles.emptyVenueText}>
-                          Aucun terrain inscrit ne correspond à votre recherche. Saisissez un lieu personnalisé ci-dessous.
-                        </Text>
-                      </View>
-                    ) : (
-                      filteredVenues.map((venue) => (
-                        <TouchableOpacity
-                          key={venue.id}
-                          style={[styles.venueItem, formData.venue?.id === venue.id && styles.venueItemActive]}
-                          onPress={() => { updateField('venue', venue); setShowVenueModal(false); setVenueSearch(''); }}
-                          activeOpacity={0.7}
-                        >
-                          <View style={styles.venueItemInfo}>
-                            <Text style={[styles.venueItemName, formData.venue?.id === venue.id && styles.venueItemNameActive]}>
-                              {venue.name}
-                            </Text>
-                            <Text style={styles.venueItemCity}>{venue.city}{venue.pricePerHour > 0 ? ` • ${venue.pricePerHour.toLocaleString()} FCFA/h` : ''}</Text>
-                          </View>
-                          {formData.venue?.id === venue.id && <Check size={20} color={Colors.primary.blue} />}
-                        </TouchableOpacity>
-                      ))
-                    )}
+                ) : (
+                  filteredVenues.map((venue) => (
                     <TouchableOpacity
-                      style={styles.manualVenueCta}
-                      onPress={() => setShowManualVenue(true)}
+                      key={venue.id}
+                      style={[styles.venueItem, formData.venue?.id === venue.id && styles.venueItemActive]}
+                      onPress={() => { updateField('venue', venue); setShowVenueModal(false); setVenueSearch(''); }}
+                      activeOpacity={0.7}
                     >
-                      <Text style={styles.manualVenueCtaText}>+ Saisir un lieu personnalisé</Text>
+                      <View style={styles.venueItemInfo}>
+                        <Text style={[styles.venueItemName, formData.venue?.id === venue.id && styles.venueItemNameActive]}>
+                          {venue.name}
+                        </Text>
+                        <Text style={styles.venueItemCity}>{venue.city}{venue.pricePerHour > 0 ? ` • ${venue.pricePerHour.toLocaleString()} FCFA/h` : ''}</Text>
+                      </View>
+                      {formData.venue?.id === venue.id && <Check size={20} color={Colors.primary.blue} />}
                     </TouchableOpacity>
-                  </ScrollView>
-                </>
-              ) : (
-                <ScrollView
-                  style={styles.manualVenueFormScroll}
-                  contentContainerStyle={styles.manualVenueForm}
-                  keyboardShouldPersistTaps="handled"
-                  keyboardDismissMode="on-drag"
-                  showsVerticalScrollIndicator={false}
-                >
-                  <Text style={styles.fieldLabel}>Nom du lieu</Text>
-                  <TextInput
-                    style={styles.manualInput}
-                    placeholder="Ex: Stade de Cocody"
-                    placeholderTextColor={Colors.text.muted}
-                    value={manualVenueName}
-                    onChangeText={setManualVenueName}
-                  />
-                  <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Ville</Text>
-                  <TextInput
-                    style={styles.manualInput}
-                    placeholder="Ex: Abidjan"
-                    placeholderTextColor={Colors.text.muted}
-                    value={manualVenueCity}
-                    onChangeText={setManualVenueCity}
-                  />
-                  <View style={[styles.manualVenueActions, { marginBottom: 320 }]}>
-                    <TouchableOpacity style={styles.manualVenueBack} onPress={() => setShowManualVenue(false)}>
-                      <Text style={styles.manualVenueBackText}>Retour</Text>
-                    </TouchableOpacity>
-                    <Button
-                      title="Valider"
-                      onPress={() => {
-                        const name = manualVenueName.trim() || 'Lieu personnalisé';
-                        const city = manualVenueCity.trim() || 'Non précisé';
-                        const manualVenue: Venue = {
-                          id: `manual-${Date.now()}`,
-                          name,
-                          address: city,
-                          city,
-                          sport: [formData.sport],
-                          pricePerHour: 0,
-                          rating: 0,
-                          amenities: [],
-                        };
-                        updateField('venue', manualVenue);
-                        setShowVenueModal(false);
-                        setVenueSearch('');
-                        setShowManualVenue(false);
-                        setManualVenueName('');
-                        setManualVenueCity('');
-                      }}
-                      variant="orange"
-                      size="medium"
-                    />
-                  </View>
-                </ScrollView>
-              )}
+                  ))
+                )}
+              </ScrollView>
             </View>
           </KeyboardAvoidingView>
+        </Modal>
+
+        <Modal visible={showSuccessModal} animationType="fade" transparent>
+          <View style={styles.successOverlay}>
+            <View style={styles.successCard}>
+              <Text style={styles.successTitle}>{successInfo.title}</Text>
+              <Text style={styles.successMessage}>{successInfo.message}</Text>
+              <TouchableOpacity
+                style={styles.successButton}
+                onPress={() => {
+                  setShowSuccessModal(false);
+                  refetchTournaments();
+                  safeBack(router, '/tournaments');
+                }}
+              >
+                <Text style={styles.successButtonText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </Modal>
       </View>
     </>
@@ -1136,6 +1167,7 @@ const styles = StyleSheet.create({
   selectorText: { flex: 1, color: Colors.text.primary, fontSize: 15 },
   venueInfo: { flex: 1 },
   venueCity: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
+  venueHint: { color: Colors.text.muted, fontSize: 12, marginTop: 8, fontStyle: 'italic' as const },
   optionRow: { flexDirection: 'row', gap: 8 },
   optionChip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, backgroundColor: Colors.background.card, borderWidth: 1, borderColor: Colors.border.light },
   optionChipActive: { backgroundColor: Colors.primary.blue, borderColor: Colors.primary.blue },
@@ -1227,14 +1259,6 @@ const styles = StyleSheet.create({
   emptyVenueState: { alignItems: 'center', paddingVertical: 32, paddingHorizontal: 20 },
   emptyVenueTitle: { color: Colors.text.primary, fontSize: 16, fontWeight: '600' as const, marginTop: 12 },
   emptyVenueText: { color: Colors.text.muted, fontSize: 14, marginTop: 8, textAlign: 'center' as const },
-  manualVenueCta: { paddingVertical: 16, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: Colors.border.light },
-  manualVenueCtaText: { color: Colors.primary.orange, fontSize: 15, fontWeight: '600' as const },
-  manualVenueFormScroll: { flexGrow: 1 },
-  manualVenueForm: { padding: 20 },
-  manualInput: { backgroundColor: Colors.background.card, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, color: Colors.text.primary, fontSize: 15, borderWidth: 1, borderColor: Colors.border.light },
-  manualVenueActions: { flexDirection: 'row', gap: 12, marginTop: 24 },
-  manualVenueBack: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  manualVenueBackText: { color: Colors.text.secondary, fontSize: 15 },
   availabilitySection: { marginTop: 20, marginBottom: 4 },
   availabilitySectionTitle: { color: Colors.text.primary, fontSize: 14, fontWeight: '700' as const, marginBottom: 4 },
   availabilityHint: { color: Colors.text.muted, fontSize: 12, marginBottom: 12 },
@@ -1259,4 +1283,42 @@ const styles = StyleSheet.create({
   scheduleSlotBooked: { backgroundColor: Colors.background.card, borderColor: Colors.text.muted + '30', opacity: 0.5 },
   scheduleSlotSelected: { backgroundColor: Colors.primary.blue, borderColor: Colors.primary.blue },
   scheduleSlotText: { color: Colors.text.primary, fontSize: 13, fontWeight: '500' as const },
+  successOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  successCard: { backgroundColor: Colors.background.card, borderRadius: 20, padding: 28, width: '100%', maxWidth: 360, alignItems: 'center' },
+  successTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '700' as const, textAlign: 'center' as const, marginBottom: 12 },
+  successMessage: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' as const, marginBottom: 24, lineHeight: 20 },
+  successButton: { backgroundColor: Colors.primary.blue, paddingVertical: 12, paddingHorizontal: 40, borderRadius: 12 },
+  successButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' as const },
+  paymentModeSection: { marginBottom: 16 },
+  paymentModeCard: {
+    backgroundColor: Colors.background.card,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  paymentModeCardSelected: {
+    borderColor: Colors.primary.orange,
+    backgroundColor: Colors.primary.orange + '10',
+  },
+  paymentModeHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 10,
+  },
+  paymentModeTitle: {
+    flex: 1,
+    color: Colors.text.primary,
+    fontSize: 15,
+    fontWeight: '600' as const,
+  },
+  paymentModeTitleSelected: {
+    color: Colors.primary.orange,
+  },
+  paymentModeDescription: {
+    color: Colors.text.muted,
+    fontSize: 12,
+    marginTop: 6,
+  },
 });

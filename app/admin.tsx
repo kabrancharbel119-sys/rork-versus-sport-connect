@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, RefreshControl, Switch, Share, Platform, Modal, KeyboardAvoidingView, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,8 +6,8 @@ import { useRouter, Stack } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Users, Swords, Shield, Ban, Search, ChevronRight, TrendingUp, Settings, BarChart3, Calendar, MapPin, Star, CheckCircle, XCircle, Eye, RefreshCw, Globe, Database, DollarSign, Ticket, UserCheck, Activity, Clock, AlertTriangle, Zap, Server, HardDrive, Send, Lock, Trash2, FileText, Download, MessageSquare, Award, Target, PieChart, Bell, X, Plus, Filter, ArrowUpDown, CheckSquare, Square, TrendingDown } from 'lucide-react-native';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, Users, Swords, Shield, ShieldAlert, Ban, Search, ChevronRight, TrendingUp, Settings, BarChart3, Calendar, MapPin, Star, CheckCircle, XCircle, Eye, RefreshCw, Globe, Database, DollarSign, Ticket, UserCheck, Activity, Clock, AlertTriangle, Zap, Server, HardDrive, Send, Lock, Trash2, FileText, Download, MessageSquare, Award, Target, PieChart, Bell, X, Plus, Filter, ArrowUpDown, CheckSquare, Square, TrendingDown, Receipt } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
@@ -23,12 +23,16 @@ import { Button } from '@/components/Button';
 import { sportLabels } from '@/mocks/data';
 import { notificationsApi } from '@/lib/api/notifications';
 import { tournamentPayoutRequestsApi, tournamentPaymentsApi } from '@/lib/api/tournament-payments';
+import { tournamentDisputesApi } from '@/lib/api/tournament-funds';
+import { tournamentCancellationApi, type CancellationRequestWithDetails } from '@/lib/api/tournament-cancellations';
+import { invoicesApi } from '@/lib/api/invoices';
 import { offlineManager } from '@/lib/offline';
 import { testEngine, testLogStore, reportRunner, type QaDomain, type QaRunResult, type QaRuntimeEvent, type ProductionReadinessResult } from '@/qa';
+import type { TournamentDispute, TournamentCancellationRequest, Invoice } from '@/types';
 
 const CACHE_KEYS_TO_PURGE = ['vs_tournaments', 'vs_teams', 'vs_matches', 'vs_all_users', 'vs_follows', 'vs_notifications', 'vs_offline_queue', 'vs_last_sync'];
 
-type AdminTab = 'overview' | 'users' | 'banned' | 'teams' | 'matches' | 'tournaments' | 'tickets' | 'verifications' | 'payments' | 'payouts' | 'analytics' | 'activity' | 'qa' | 'prod_report' | 'settings';
+type AdminTab = 'overview' | 'users' | 'banned' | 'teams' | 'matches' | 'tournaments' | 'tickets' | 'verifications' | 'payments' | 'payouts' | 'invoices' | 'analytics' | 'activity' | 'qa' | 'prod_report' | 'settings';
 
 interface ActivityLog {
   id: string;
@@ -40,19 +44,168 @@ interface ActivityLog {
   severity: 'info' | 'warning' | 'success' | 'error';
 }
 
+interface CancellationCardProps {
+  req: CancellationRequestWithDetails;
+  organizerResponse: string;
+  internalComment: string;
+  onOpenNoteModal: (reqId: string, currentNote: string) => void;
+  onApprove: (req: CancellationRequestWithDetails, note: string) => void;
+  onReject: (req: CancellationRequestWithDetails, note: string) => void;
+  formatDate: (date: Date | string | undefined) => string;
+}
+
+const CancellationRequestCard = React.memo(function CancellationRequestCard({
+  req, organizerResponse, internalComment, onOpenNoteModal, onApprove, onReject, formatDate,
+}: CancellationCardProps) {
+  const entryFee = req.tournamentEntryFee ?? 0;
+  const confirmedCount = req.confirmedTeamCount ?? 0;
+  const registeredCount = req.registeredTeamCount ?? 0;
+  const totalRefund = entryFee * confirmedCount;
+  const sportLabel = req.tournamentSport ? ((sportLabels as Record<string, string>)[req.tournamentSport] ?? req.tournamentSport) : '-';
+
+  return (
+    <View style={{
+      backgroundColor: 'rgba(255, 165, 0, 0.06)',
+      borderRadius: 10,
+      padding: 14,
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 165, 0, 0.2)',
+    }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.status.warning, marginRight: 8 }} />
+        <Text style={{ flex: 1, color: Colors.text.primary, fontSize: 16, fontWeight: '700' }}>
+          {req.tournamentName ?? 'Tournoi inconnu'}
+        </Text>
+      </View>
+
+      <View style={{ gap: 4, marginBottom: 10 }}>
+        <Text style={{ color: Colors.text.secondary, fontSize: 13 }}>
+          Sport: {sportLabel} • Format: {req.tournamentFormat ?? '-'}
+        </Text>
+        <Text style={{ color: Colors.text.secondary, fontSize: 13 }}>
+          Terrain: {req.venueName ?? '-'} • Début: {req.startDate ? formatDate(req.startDate) : '-'}
+        </Text>
+        <Text style={{ color: Colors.text.secondary, fontSize: 13 }}>
+          Statut actuel: <Text style={{ color: req.tournamentStatus === 'registration' ? Colors.status.success : Colors.text.primary, fontWeight: '600' }}>{req.tournamentStatus ?? '-'}</Text>
+        </Text>
+      </View>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+        <Text style={{ color: Colors.text.secondary, fontSize: 13 }}>
+          Organisateur: <Text style={{ color: Colors.text.primary, fontWeight: '600' }}>{req.organizerName ?? 'Inconnu'}</Text>
+          {req.organizerUsername ? ` (@${req.organizerUsername})` : ''}
+        </Text>
+      </View>
+
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+        <View style={{ backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
+          <Text style={{ color: Colors.text.secondary, fontSize: 12 }}>Inscrites: <Text style={{ color: Colors.text.primary, fontWeight: '600' }}>{registeredCount}</Text></Text>
+        </View>
+        <View style={{ backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
+          <Text style={{ color: Colors.text.secondary, fontSize: 12 }}>Confirmées: <Text style={{ color: Colors.status.warning, fontWeight: '600' }}>{confirmedCount}</Text></Text>
+        </View>
+        <View style={{ backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
+          <Text style={{ color: Colors.text.secondary, fontSize: 12 }}>Frais: <Text style={{ color: Colors.text.primary, fontWeight: '600' }}>{entryFee > 0 ? entryFee.toLocaleString('fr-FR') + ' FCFA' : 'Gratuit'}</Text></Text>
+        </View>
+        {totalRefund > 0 && (
+          <View style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
+            <Text style={{ color: Colors.status.error, fontSize: 12, fontWeight: '600' }}>Remboursement: {totalRefund.toLocaleString('fr-FR')} FCFA</Text>
+          </View>
+        )}
+      </View>
+
+      <View style={{
+        backgroundColor: 'rgba(255,255,255,0.04)',
+        borderRadius: 8,
+        padding: 10,
+        marginBottom: 10,
+        borderLeftWidth: 3,
+        borderLeftColor: Colors.status.warning,
+      }}>
+        <Text style={{ color: Colors.text.muted, fontSize: 12, marginBottom: 4 }}>RAISON DE L&apos;ANNULATION</Text>
+        <Text style={{ color: Colors.text.primary, fontSize: 14, fontStyle: 'italic' }}>{req.reason}</Text>
+      </View>
+
+      <Text style={{ color: Colors.text.muted, fontSize: 12, marginBottom: 10 }}>
+        Demande soumise le {formatDate(req.createdAt)}
+      </Text>
+
+      {/* Bouton pour ouvrir le modal de réponse */}
+      <TouchableOpacity
+        onPress={() => onOpenNoteModal(req.id, organizerResponse)}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          backgroundColor: 'rgba(255,255,255,0.06)',
+          borderRadius: 8,
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+          marginBottom: 10,
+          borderWidth: 1,
+          borderColor: Colors.border.light,
+        }}
+      >
+        <MessageSquare size={16} color={Colors.text.secondary} />
+        <Text style={{ color: Colors.text.secondary, fontSize: 13, flex: 1 }}>
+          {organizerResponse ? `"${organizerResponse.slice(0, 40)}${organizerResponse.length > 40 ? '...' : ''}"` : 'Réponse à l\'organisateur (optionnel)...'}
+        </Text>
+        {internalComment ? (
+          <View style={{ backgroundColor: 'rgba(239,68,68,0.15)', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+            <Text style={{ color: Colors.status.error, fontSize: 10, fontWeight: '600' }}>Note interne</Text>
+          </View>
+        ) : null}
+      </TouchableOpacity>
+
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <TouchableOpacity
+          style={{
+            flex: 1,
+            flexDirection: 'row',
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingVertical: 10,
+            borderRadius: 8,
+            backgroundColor: 'rgba(255,255,255,0.08)',
+          }}
+          onPress={() => onReject(req, organizerResponse)}
+        >
+          <Text style={{ color: Colors.text.secondary, fontSize: 14, fontWeight: '600' }}>Rejeter</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={{
+            flex: 1,
+            flexDirection: 'row',
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingVertical: 10,
+            borderRadius: 8,
+            backgroundColor: Colors.status.error,
+          }}
+          onPress={() => onApprove(req, organizerResponse)}
+        >
+          <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700' }}>Approuver l&apos;annulation</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+});
+
 export default function AdminScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isAdmin } = useAuth();
   const { teams = [], refetchTeams, deleteTeam } = useTeams();
   const { matches = [], refetchMatches, deleteMatch } = useMatches();
-  const { users = [], banUser, unbanUser, verifyUser, unverifyUser } = useUsers();
+  const { users = [], banUser, unbanUser, verifyUser, unverifyUser, getUserByIdSync } = useUsers();
   const { addNotification } = useNotifications();
   const { tickets = [], verificationRequests = [], updateTicketStatus, handleVerification, getPendingTickets, getPendingVerifications, respondToTicket } = useSupport();
-  const { tournaments = [], refetchTournaments } = useTournaments();
+  const { tournaments = [], refetchTournaments, getTournamentById } = useTournaments();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'banned' | 'verified'>('all');
+  const [tournamentFilter, setTournamentFilter] = useState<'all' | 'registration' | 'in_progress' | 'completed' | 'cancelled'>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState('');
@@ -68,6 +221,7 @@ export default function AdminScreen() {
   const [qaLogs, setQaLogs] = useState<any[]>([]);
   const [qaSelectedDomain, setQaSelectedDomain] = useState<QaDomain>('cross_domain');
   const [qaLiveEvents, setQaLiveEvents] = useState<QaRuntimeEvent[]>([]);
+  const [cancellationNoteModal, setCancellationNoteModal] = useState<{ reqId: string; organizerResponse: string; internalComment: string } | null>(null);
 
   const qaDomains: QaDomain[] = [
     'auth',
@@ -125,6 +279,144 @@ export default function AdminScreen() {
   });
   const pendingPayments = pendingPaymentsQuery.data ?? [];
 
+  const openDisputesQuery = useQuery({
+    queryKey: ['open-disputes'],
+    queryFn: () => tournamentDisputesApi.getOpenDisputes(),
+    enabled: !!isAdmin,
+  });
+  const openDisputes = openDisputesQuery.data ?? [];
+  const [disputeNoteById, setDisputeNoteById] = useState<Record<string, string>>({});
+
+  const investigateDisputeMutation = useMutation({
+    mutationFn: ({ disputeId, adminId }: { disputeId: string; adminId: string }) =>
+      tournamentDisputesApi.updateDisputeStatus(disputeId, adminId, 'investigating'),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['open-disputes'] });
+    },
+    onError: (e) => Alert.alert('Erreur', (e as Error).message || 'Impossible de mettre à jour le litige.'),
+  });
+
+  const resolveDisputeMutation = useMutation({
+    mutationFn: ({ disputeId, adminId, note }: { disputeId: string; adminId: string; note?: string }) =>
+      tournamentDisputesApi.updateDisputeStatus(disputeId, adminId, 'resolved', note),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['open-disputes'] });
+      Alert.alert('Succès', 'Litige résolu.');
+    },
+    onError: (e) => Alert.alert('Erreur', (e as Error).message || 'Impossible de résoudre le litige.'),
+  });
+
+  const pendingCancellationsQuery = useQuery({
+    queryKey: ['pending-cancellation-requests'],
+    queryFn: () => tournamentCancellationApi.getPendingRequests(),
+    enabled: !!isAdmin,
+  });
+  const pendingCancellations = pendingCancellationsQuery.data ?? [];
+
+  const allCancellationsQuery = useQuery({
+    queryKey: ['all-cancellation-requests'],
+    queryFn: () => tournamentCancellationApi.getAllRequests(),
+    enabled: !!isAdmin,
+  });
+  const allCancellations = allCancellationsQuery.data ?? [];
+  const processedCancellations = allCancellations.filter(r => r.status === 'approved' || r.status === 'rejected');
+  const [cancellationNotes, setCancellationNotes] = useState<Record<string, { organizerResponse: string; internalComment: string }>>({});
+
+  const handleOpenNoteModal = useCallback((reqId: string, currentNote: string) => {
+    const existing = cancellationNotes[reqId] || { organizerResponse: '', internalComment: '' };
+    setCancellationNoteModal({ reqId, organizerResponse: existing.organizerResponse, internalComment: existing.internalComment });
+  }, [cancellationNotes]);
+
+  const approveCancellationMutation = useMutation({
+    mutationFn: ({ requestId, adminId, refundAmount, organizerResponse, internalComment }: { requestId: string; adminId: string; refundAmount?: number; organizerResponse?: string; internalComment?: string }) =>
+      tournamentCancellationApi.approveRequest({ requestId, adminId, refundAmount, organizerResponse, internalComment }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['pending-cancellation-requests'] }),
+        queryClient.invalidateQueries({ queryKey: ['all-cancellation-requests'] }),
+        queryClient.invalidateQueries({ queryKey: ['tournaments'] }),
+      ]);
+      Alert.alert('Succès', 'Tournoi annulé. Les équipes ont été notifiées.');
+    },
+    onError: (e) => Alert.alert('Erreur', (e as Error).message || 'Impossible d\'approuver l\'annulation.'),
+  });
+
+  const rejectCancellationMutation = useMutation({
+    mutationFn: ({ requestId, adminId, organizerResponse, internalComment }: { requestId: string; adminId: string; organizerResponse?: string; internalComment?: string }) =>
+      tournamentCancellationApi.rejectRequest({ requestId, adminId, organizerResponse, internalComment }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['pending-cancellation-requests'] }),
+        queryClient.invalidateQueries({ queryKey: ['all-cancellation-requests'] }),
+      ]);
+      Alert.alert('Demande rejetée', 'L\'organisateur a été notifié.');
+    },
+    onError: (e) => Alert.alert('Erreur', (e as Error).message || 'Impossible de rejeter la demande.'),
+  });
+
+  const handleApproveCancellation = useCallback((req: CancellationRequestWithDetails, note: string) => {
+    if (!user) return;
+    const entryFee = req.tournamentEntryFee ?? 0;
+    const confirmedCount = req.confirmedTeamCount ?? 0;
+    const totalRefund = entryFee * confirmedCount;
+    const stored = cancellationNotes[req.id] || { organizerResponse: '', internalComment: '' };
+    const trimmedResponse = stored.organizerResponse.trim() || undefined;
+    const trimmedComment = stored.internalComment.trim() || undefined;
+    Alert.alert(
+      'Approuver l\'annulation',
+      `Le tournoi "${req.tournamentName ?? 'Inconnu'}" sera annulé.\n\nÉquipes confirmées: ${confirmedCount}\nFrais d'inscription: ${entryFee > 0 ? entryFee.toLocaleString('fr-FR') + ' FCFA' : 'Gratuit'}${totalRefund > 0 ? '\nRemboursement total: ' + totalRefund.toLocaleString('fr-FR') + ' FCFA' : ''}${trimmedResponse ? '\n\nRéponse à l\'organisateur: "' + trimmedResponse + '"' : ''}${trimmedComment ? '\n\nNote interne: "' + trimmedComment + '"' : ''}`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Approuver',
+          style: 'destructive',
+          onPress: () => approveCancellationMutation.mutate({
+            requestId: req.id,
+            adminId: user.id,
+            refundAmount: entryFee,
+            organizerResponse: trimmedResponse,
+            internalComment: trimmedComment,
+          }),
+        },
+      ]
+    );
+  }, [user, cancellationNotes]);
+
+  const handleRejectCancellation = useCallback((req: CancellationRequestWithDetails, note: string) => {
+    if (!user) return;
+    const stored = cancellationNotes[req.id] || { organizerResponse: '', internalComment: '' };
+    const trimmedResponse = stored.organizerResponse.trim() || undefined;
+    const trimmedComment = stored.internalComment.trim() || undefined;
+    Alert.alert(
+      'Rejeter la demande',
+      `L'organisateur sera notifié du rejet.${trimmedResponse ? '\n\nRéponse à l\'organisateur: "' + trimmedResponse + '"' : ''}${trimmedComment ? '\n\nNote interne: "' + trimmedComment + '"' : ''}`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Rejeter', style: 'destructive', onPress: () => rejectCancellationMutation.mutate({ requestId: req.id, adminId: user.id, organizerResponse: trimmedResponse, internalComment: trimmedComment }) },
+      ]
+    );
+  }, [user, cancellationNotes]);
+
+  const handleInvestigateDispute = (dispute: TournamentDispute) => {
+    if (!user) return;
+    investigateDisputeMutation.mutate({ disputeId: dispute.id, adminId: user.id });
+  };
+
+  const handleResolveDispute = (dispute: TournamentDispute) => {
+    if (!user) return;
+    Alert.alert('Résoudre le litige', 'Confirmer la résolution de ce litige ? Les fonds du tournoi pourront être libérés si aucun autre litige majeur n\'est ouvert.', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Résoudre',
+        onPress: () => resolveDisputeMutation.mutate({
+          disputeId: dispute.id,
+          adminId: user.id,
+          note: disputeNoteById[dispute.id]?.trim() || undefined,
+        }),
+      },
+    ]);
+  };
+
   const doRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -135,8 +427,11 @@ export default function AdminScreen() {
         queryClient.invalidateQueries({ queryKey: ['allUsers'] }),
         queryClient.invalidateQueries({ queryKey: ['support'] }),
         queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+        queryClient.invalidateQueries({ queryKey: ['pending-cancellation-requests'] }),
+        queryClient.invalidateQueries({ queryKey: ['all-cancellation-requests'] }),
         queryClient.invalidateQueries({ queryKey: ['pending-payout-requests'] }),
         queryClient.invalidateQueries({ queryKey: ['pendingPayments'] }),
+        queryClient.invalidateQueries({ queryKey: ['open-disputes'] }),
       ]);
       setLastRefresh(new Date());
     } catch (e) {
@@ -462,10 +757,14 @@ export default function AdminScreen() {
 
   const filteredTournaments = useMemo(() => {
     const safeTournaments = tournaments ?? [];
-    if (!searchQuery) return safeTournaments;
+    let result = safeTournaments;
+    if (tournamentFilter !== 'all') {
+      result = result.filter(t => t?.status === tournamentFilter);
+    }
+    if (!searchQuery) return result;
     const q = searchQuery.toLowerCase();
-    return safeTournaments.filter(t => t?.name?.toLowerCase().includes(q) || (t?.sport ?? '').toLowerCase().includes(q) || (t?.venue?.name ?? '').toLowerCase().includes(q));
-  }, [tournaments, searchQuery]);
+    return result.filter(t => t?.name?.toLowerCase().includes(q) || (t?.sport ?? '').toLowerCase().includes(q) || (t?.venue?.name ?? '').toLowerCase().includes(q));
+  }, [tournaments, searchQuery, tournamentFilter]);
 
   const getBanEndDate = (duration: '24h' | '7d' | '30d' | 'permanent'): Date | null => {
     const now = new Date();
@@ -935,14 +1234,14 @@ export default function AdminScreen() {
     ]);
   };
 
-  const formatDate = (date: Date | string | undefined) => {
+  const formatDate = useCallback((date: Date | string | undefined) => {
     if (!date) return '-';
     try {
       return new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
     } catch {
       return '-';
     }
-  };
+  }, []);
   const formatTime = (date: Date | string | undefined) => {
     if (!date) return '-';
     try {
@@ -972,17 +1271,18 @@ export default function AdminScreen() {
     { key: 'banned', label: 'Bannis', icon: <Ban size={16} color={activeTab === 'banned' ? '#FFF' : Colors.text.secondary} />, badge: stats.bannedUsers },
     { key: 'teams', label: 'Équipes', icon: <Shield size={16} color={activeTab === 'teams' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'matches', label: 'Matchs', icon: <Swords size={16} color={activeTab === 'matches' ? '#FFF' : Colors.text.secondary} /> },
-    { key: 'tournaments', label: 'Tournois', icon: <Award size={16} color={activeTab === 'tournaments' ? '#FFF' : Colors.text.secondary} /> },
-    { key: 'tickets', label: 'Tickets', icon: <Ticket size={16} color={activeTab === 'tickets' ? '#FFF' : Colors.text.secondary} />, badge: (pendingTickets ?? []).length },
+    { key: 'tournaments', label: 'Tournois', icon: <Award size={16} color={activeTab === 'tournaments' ? '#FFF' : Colors.text.secondary} />, badge: pendingCancellations.length },
+    { key: 'tickets', label: 'Tickets', icon: <Ticket size={16} color={activeTab === 'tickets' ? '#FFF' : Colors.text.secondary} />, badge: (pendingTickets ?? []).length + openDisputes.length },
     { key: 'verifications', label: 'Vérifications', icon: <UserCheck size={16} color={activeTab === 'verifications' ? '#FFF' : Colors.text.secondary} />, badge: (pendingVerifications ?? []).length },
     { key: 'payments', label: 'Paiements', icon: <DollarSign size={16} color={activeTab === 'payments' ? '#FFF' : Colors.text.secondary} />, badge: pendingPayments.length },
     { key: 'payouts', label: 'Avances', icon: <FileText size={16} color={activeTab === 'payouts' ? '#FFF' : Colors.text.secondary} />, badge: pendingPayoutRequests.length },
+    { key: 'invoices', label: 'Factures', icon: <Receipt size={16} color={activeTab === 'invoices' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'activity', label: 'Activité', icon: <Activity size={16} color={activeTab === 'activity' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'qa', label: 'QA', icon: <Server size={16} color={activeTab === 'qa' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'prod_report', label: 'Rapport Prod', icon: <CheckCircle size={16} color={activeTab === 'prod_report' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'analytics', label: 'Analytiques', icon: <TrendingUp size={16} color={activeTab === 'analytics' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'settings', label: 'Paramètres', icon: <Settings size={16} color={activeTab === 'settings' ? '#FFF' : Colors.text.secondary} /> },
-  ], [activeTab, pendingTickets, pendingVerifications, pendingPayments.length, pendingPayoutRequests.length]);
+  ], [activeTab, pendingTickets, pendingVerifications, pendingPayments.length, pendingPayoutRequests.length, openDisputes.length]);
 
   const renderQa = () => (
     <>
@@ -1208,6 +1508,316 @@ export default function AdminScreen() {
         style={{ marginTop: 12 }}
       />
     </Card>
+  );
+
+  const [invoiceSearch, setInvoiceSearch] = useState('');
+  const [invoiceFilter, setInvoiceFilter] = useState<'all' | 'booking' | 'tournament_registration'>('all');
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+
+  const invoicesQuery = useQuery({
+    queryKey: ['admin-invoices'],
+    queryFn: () => invoicesApi.getAll(200),
+    enabled: activeTab === 'invoices',
+  });
+
+  const filteredInvoices = useMemo(() => {
+    const list = invoicesQuery.data || [];
+    return list.filter(inv => {
+      if (invoiceFilter !== 'all' && inv.contextType !== invoiceFilter) return false;
+      if (invoiceSearch.trim()) {
+        const q = invoiceSearch.toLowerCase();
+        return (
+          inv.invoiceNumber.toLowerCase().includes(q) ||
+          (inv.description || '').toLowerCase().includes(q) ||
+          (inv.metadata?.reason || '').toLowerCase().includes(q) ||
+          (inv.metadata?.payer_name || '').toLowerCase().includes(q) ||
+          (inv.metadata?.payee_name || '').toLowerCase().includes(q) ||
+          (inv.metadata?.event_name || '').toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [invoicesQuery.data, invoiceSearch, invoiceFilter]);
+
+  const renderInvoicesTab = () => (
+    <>
+      <Card style={styles.listCard}>
+        <Text style={styles.cardTitle}>Hub des Factures</Text>
+        <Text style={styles.cardDesc}>Toutes les factures generees automatiquement lors des paiements (inscriptions tournois, reservations de terrain, etc.)</Text>
+
+        <View style={[styles.summaryGrid, { marginTop: 12 }]}>
+          <View style={styles.summaryItem}>
+            <Receipt size={20} color={Colors.primary.orange} />
+            <Text style={styles.summaryValue}>{invoicesQuery.data?.length ?? 0}</Text>
+            <Text style={styles.summaryLabel}>Total</Text>
+          </View>
+          <View style={styles.summaryItem}>
+            <DollarSign size={20} color={Colors.status.success} />
+            <Text style={styles.summaryValue}>{invoicesQuery.data?.filter(i => i.status === 'paid').length ?? 0}</Text>
+            <Text style={styles.summaryLabel}>Payees</Text>
+          </View>
+          <View style={styles.summaryItem}>
+            <FileText size={20} color={Colors.status.warning} />
+            <Text style={styles.summaryValue}>{invoicesQuery.data?.filter(i => i.status === 'issued').length ?? 0}</Text>
+            <Text style={styles.summaryLabel}>En attente</Text>
+          </View>
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 8 }}>
+          {(['all', 'booking', 'tournament_registration'] as const).map(f => (
+            <TouchableOpacity
+              key={f}
+              style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: invoiceFilter === f ? Colors.primary.orange : Colors.border.light, backgroundColor: invoiceFilter === f ? Colors.primary.orange + '15' : 'transparent' }}
+              onPress={() => setInvoiceFilter(f)}
+            >
+              <Text style={{ textAlign: 'center', fontSize: 12, fontWeight: '600', color: invoiceFilter === f ? Colors.primary.orange : Colors.text.muted }}>
+                {f === 'all' ? 'Toutes' : f === 'booking' ? 'Reservations' : 'Tournois'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <Search size={16} color={Colors.text.muted} />
+          <TextInput
+            style={{ flex: 1, backgroundColor: Colors.background.card, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, color: Colors.text.primary, fontSize: 14 }}
+            placeholder="Rechercher (numero, nom, evenement...)"
+            placeholderTextColor={Colors.text.muted}
+            value={invoiceSearch}
+            onChangeText={setInvoiceSearch}
+          />
+        </View>
+      </Card>
+
+      {invoicesQuery.isLoading && <Text style={{ color: Colors.text.muted, textAlign: 'center', padding: 20 }}>Chargement...</Text>}
+      {invoicesQuery.error && <Text style={{ color: Colors.status.error, textAlign: 'center', padding: 20 }}>Erreur: {(invoicesQuery.error as Error).message}</Text>}
+
+      {filteredInvoices.map((inv) => {
+        const meta = inv.metadata || {};
+        const reason = meta.reason || inv.description;
+        const payerName = meta.payer_name || '—';
+        const payeeName = meta.payee_name || '—';
+        const eventName = meta.event_name || '—';
+        const contextLabel = inv.contextType === 'booking' ? 'Reservation' : inv.contextType === 'tournament_registration' ? 'Tournoi' : inv.contextType;
+        const statusColor = inv.status === 'paid' ? Colors.status.success : inv.status === 'issued' ? Colors.status.warning : inv.status === 'refunded' ? Colors.status.error : Colors.text.muted;
+        const statusLabel = inv.status === 'paid' ? 'Payee' : inv.status === 'issued' ? 'Emise' : inv.status === 'refunded' ? 'Remboursee' : inv.status;
+
+        return (
+          <TouchableOpacity key={inv.id} activeOpacity={0.7} onPress={() => setSelectedInvoice(inv)}>
+            <Card style={[styles.listCard, { borderLeftWidth: 3, borderLeftColor: statusColor }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: Colors.text.primary, fontSize: 14, fontWeight: '700' }}>{inv.invoiceNumber}</Text>
+                  <Text style={{ color: Colors.text.muted, fontSize: 12, marginTop: 2 }}>{reason}</Text>
+                </View>
+                <View style={{ backgroundColor: statusColor + '20', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                  <Text style={{ color: statusColor, fontSize: 11, fontWeight: '600' }}>{statusLabel}</Text>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 16, marginTop: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Payeur</Text>
+                  <Text style={{ color: Colors.text.secondary, fontSize: 13, fontWeight: '500' }}>{payerName}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Beneficiaire</Text>
+                  <Text style={{ color: Colors.text.secondary, fontSize: 13, fontWeight: '500' }}>{payeeName}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Evenement</Text>
+                  <Text style={{ color: Colors.text.secondary, fontSize: 13, fontWeight: '500' }} numberOfLines={1}>{eventName}</Text>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <View style={{ backgroundColor: Colors.primary.orange + '20', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                    <Text style={{ color: Colors.primary.orange, fontSize: 11, fontWeight: '600' }}>{contextLabel}</Text>
+                  </View>
+                  <Text style={{ color: Colors.text.muted, fontSize: 11 }}>{inv.paidAt ? new Date(inv.paidAt).toLocaleDateString('fr-FR') : new Date(inv.issuedAt).toLocaleDateString('fr-FR')}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ color: Colors.status.success, fontSize: 16, fontWeight: '700' }}>{inv.amount.toLocaleString('fr-FR')} {inv.currency}</Text>
+                  <Eye size={15} color={Colors.primary.blue} />
+                </View>
+              </View>
+            </Card>
+          </TouchableOpacity>
+        );
+      })}
+
+      {filteredInvoices.length === 0 && !invoicesQuery.isLoading && (
+        <Card style={styles.listCard}>
+          <Text style={{ color: Colors.text.muted, textAlign: 'center', padding: 20 }}>Aucune facture trouvee.</Text>
+        </Card>
+      )}
+
+      {/* Modal detail facture */}
+      <Modal
+        visible={selectedInvoice !== null}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setSelectedInvoice(null)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}
+        >
+          <View style={{
+            backgroundColor: Colors.background.card,
+            borderRadius: 16,
+            padding: 20,
+            width: '100%',
+            maxWidth: 500,
+            maxHeight: '85%',
+          }}>
+            {selectedInvoice && (() => {
+              const inv = selectedInvoice;
+              const meta = inv.metadata || {};
+              const statusColor = inv.status === 'paid' ? Colors.status.success : inv.status === 'issued' ? Colors.status.warning : inv.status === 'refunded' ? Colors.status.error : Colors.text.muted;
+              const statusLabel = inv.status === 'paid' ? 'Payee' : inv.status === 'issued' ? 'Emise' : inv.status === 'refunded' ? 'Remboursee' : inv.status;
+              const contextLabel = inv.contextType === 'booking' ? 'Reservation' : inv.contextType === 'tournament_registration' ? 'Tournoi' : inv.contextType;
+              const docLabel = inv.documentType === 'credit_note' ? 'Avoir' : inv.documentType === 'payout_receipt' ? 'Recu' : 'Facture';
+
+              return (
+                <>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary.orange + '20', justifyContent: 'center', alignItems: 'center' }}>
+                        <Receipt size={18} color={Colors.primary.orange} />
+                      </View>
+                      <View>
+                        <Text style={{ color: Colors.text.primary, fontSize: 17, fontWeight: '800' }}>{inv.invoiceNumber}</Text>
+                        <Text style={{ color: Colors.text.muted, fontSize: 12 }}>{docLabel} • {contextLabel}</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity onPress={() => setSelectedInvoice(null)} style={{ padding: 4 }}>
+                      <X size={22} color={Colors.text.muted} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <ScrollView showsVerticalScrollIndicator={false} style={{ marginBottom: 16 }}>
+                    {/* Statut + Montant */}
+                    <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
+                      <View style={{ flex: 1, backgroundColor: statusColor + '15', borderRadius: 12, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: statusColor + '30' }}>
+                        <Text style={{ color: Colors.text.muted, fontSize: 10, fontWeight: '700' }}>STATUT</Text>
+                        <Text style={{ color: statusColor, fontSize: 16, fontWeight: '800', marginTop: 4 }}>{statusLabel}</Text>
+                      </View>
+                      <View style={{ flex: 1, backgroundColor: Colors.status.success + '12', borderRadius: 12, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: Colors.status.success + '25' }}>
+                        <Text style={{ color: Colors.text.muted, fontSize: 10, fontWeight: '700' }}>MONTANT</Text>
+                        <Text style={{ color: Colors.status.success, fontSize: 16, fontWeight: '800', marginTop: 4 }}>{inv.amount.toLocaleString('fr-FR')} {inv.currency}</Text>
+                      </View>
+                    </View>
+
+                    {/* Details */}
+                    <View style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: 14, marginBottom: 12 }}>
+                      <Text style={{ color: Colors.text.muted, fontSize: 10, fontWeight: '700', marginBottom: 8 }}>DETAILS</Text>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <Text style={{ color: Colors.text.muted, fontSize: 13 }}>Description</Text>
+                        <Text style={{ color: Colors.text.primary, fontSize: 13, fontWeight: '500', flex: 1, textAlign: 'right' }}>{meta.reason || inv.description || '—'}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <Text style={{ color: Colors.text.muted, fontSize: 13 }}>Payeur</Text>
+                        <Text style={{ color: Colors.text.primary, fontSize: 13, fontWeight: '500' }}>{meta.payer_name || '—'}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <Text style={{ color: Colors.text.muted, fontSize: 13 }}>Beneficiaire</Text>
+                        <Text style={{ color: Colors.text.primary, fontSize: 13, fontWeight: '500' }}>{meta.payee_name || '—'}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <Text style={{ color: Colors.text.muted, fontSize: 13 }}>Evenement</Text>
+                        <Text style={{ color: Colors.text.primary, fontSize: 13, fontWeight: '500' }}>{meta.event_name || '—'}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <Text style={{ color: Colors.text.muted, fontSize: 13 }}>Methode de paiement</Text>
+                        <Text style={{ color: Colors.text.primary, fontSize: 13, fontWeight: '500' }}>{inv.paymentMethod || '—'}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <Text style={{ color: Colors.text.muted, fontSize: 13 }}>Transaction</Text>
+                        <Text style={{ color: Colors.text.primary, fontSize: 13, fontWeight: '500' }} numberOfLines={1}>{inv.paymentTransactionId || '—'}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <Text style={{ color: Colors.text.muted, fontSize: 13 }}>Date d'emission</Text>
+                        <Text style={{ color: Colors.text.primary, fontSize: 13, fontWeight: '500' }}>{new Date(inv.issuedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</Text>
+                      </View>
+                      {inv.paidAt && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <Text style={{ color: Colors.text.muted, fontSize: 13 }}>Date de paiement</Text>
+                          <Text style={{ color: Colors.text.primary, fontSize: 13, fontWeight: '500' }}>{new Date(inv.paidAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* ID technique */}
+                    <Text style={{ color: Colors.text.muted, fontSize: 10, textAlign: 'center' }}>ID: {inv.id}</Text>
+                  </ScrollView>
+
+                  {/* Actions */}
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity
+                      style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+                      onPress={() => {
+                        const shareText = `${docLabel} ${inv.invoiceNumber}\nMontant: ${inv.amount.toLocaleString('fr-FR')} ${inv.currency}\nStatut: ${statusLabel}\n${meta.reason || inv.description || ''}`;
+                        Share.share({ message: shareText });
+                      }}
+                    >
+                      <Send size={15} color={Colors.text.secondary} />
+                      <Text style={{ color: Colors.text.secondary, fontSize: 14, fontWeight: '600' }}>Partager</Text>
+                    </TouchableOpacity>
+                    {inv.status === 'issued' && (
+                      <TouchableOpacity
+                        style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: Colors.status.success, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+                        onPress={async () => {
+                          try {
+                            await invoicesApi.markPaid(inv.id);
+                            await queryClient.invalidateQueries({ queryKey: ['admin-invoices'] });
+                            setSelectedInvoice(null);
+                            Alert.alert('Succès', 'Facture marquée comme payée.');
+                          } catch (e) {
+                            Alert.alert('Erreur', (e as Error).message);
+                          }
+                        }}
+                      >
+                        <CheckCircle size={15} color="#FFF" />
+                        <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700' }}>Marquer payée</Text>
+                      </TouchableOpacity>
+                    )}
+                    {inv.status === 'paid' && user && (
+                      <TouchableOpacity
+                        style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: Colors.status.error, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+                        onPress={async () => {
+                          Alert.alert(
+                            'Créer un avoir',
+                            `Un avoir de ${inv.amount.toLocaleString('fr-FR')} ${inv.currency} sera créé pour cette facture.`,
+                            [
+                              { text: 'Annuler', style: 'cancel' },
+                              { text: 'Confirmer', style: 'destructive', onPress: async () => {
+                                try {
+                                  await invoicesApi.createCreditNote(inv.id, user.id, 'Avoir administrateur');
+                                  await queryClient.invalidateQueries({ queryKey: ['admin-invoices'] });
+                                  setSelectedInvoice(null);
+                                  Alert.alert('Succès', 'Avoir créé.');
+                                } catch (e) {
+                                  Alert.alert('Erreur', (e as Error).message);
+                                }
+                              }},
+                            ]
+                          );
+                        }}
+                      >
+                        <FileText size={15} color="#FFF" />
+                        <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700' }}>Avoir</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </>
+              );
+            })()}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </>
   );
 
   const renderOverview = () => (
@@ -1541,35 +2151,292 @@ export default function AdminScreen() {
     </Card>
   );
 
-  const renderTournaments = () => (
-    <Card style={styles.listCard}>
-      <View style={styles.cardTitleRow}>
-        <Text style={styles.cardTitle}>Tournois ({filteredTournaments.length})</Text>
-        <TouchableOpacity style={styles.adminCreateBtn} onPress={() => router.navigate('/create-tournament' as any)}>
-          <Plus size={18} color="#FFFFFF" />
-          <Text style={styles.adminCreateBtnText}>Créer</Text>
-        </TouchableOpacity>
+  const tournamentStatusFilters: { key: typeof tournamentFilter; label: string; color: string; icon: React.ReactNode }[] = [
+    { key: 'all', label: 'Tous', color: '#A1A1AA', icon: <BarChart3 size={13} color="#A1A1AA" /> },
+    { key: 'registration', label: 'Inscriptions', color: Colors.status.success, icon: <Users size={13} color={Colors.status.success} /> },
+    { key: 'in_progress', label: 'En cours', color: Colors.status.warning, icon: <Zap size={13} color={Colors.status.warning} /> },
+    { key: 'completed', label: 'Terminés', color: Colors.primary.blue, icon: <CheckCircle size={13} color={Colors.primary.blue} /> },
+    { key: 'cancelled', label: 'Annulés', color: Colors.status.error, icon: <XCircle size={13} color={Colors.status.error} /> },
+  ];
+
+  const tournamentCounts = useMemo(() => {
+    const safe = tournaments ?? [];
+    return {
+      total: safe.length,
+      registration: safe.filter(t => t?.status === 'registration').length,
+      in_progress: safe.filter(t => t?.status === 'in_progress').length,
+      completed: safe.filter(t => t?.status === 'completed').length,
+      cancelled: safe.filter(t => t?.status === 'cancelled').length,
+    };
+  }, [tournaments]);
+
+  const [showProcessedCancellations, setShowProcessedCancellations] = useState(false);
+
+  const renderTournamentStatCard = (label: string, count: number, color: string, icon: React.ReactNode) => (
+    <View style={{
+      backgroundColor: color + '12',
+      borderRadius: 14,
+      padding: 14,
+      alignItems: 'center',
+      flex: 1,
+      minWidth: 70,
+      borderWidth: 1,
+      borderColor: color + '25',
+    }}>
+      <View style={{
+        width: 32, height: 32, borderRadius: 16,
+        backgroundColor: color + '20',
+        justifyContent: 'center', alignItems: 'center',
+        marginBottom: 6,
+      }}>
+        {icon}
       </View>
-      {filteredTournaments.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Award size={40} color={Colors.text.muted} />
-          <Text style={styles.emptyText}>Aucun tournoi</Text>
-          <Button title="Créer un tournoi" onPress={() => router.navigate('/create-tournament' as any)} variant="orange" size="medium" style={{ marginTop: 12 }} />
+      <Text style={{ color: Colors.text.primary, fontSize: 20, fontWeight: '800' }}>{count}</Text>
+      <Text style={{ color, fontSize: 9, fontWeight: '700', marginTop: 2, textAlign: 'center' }}>{label}</Text>
+    </View>
+  );
+
+  const renderTournaments = () => (
+    <View>
+      {/* Bandeau de statistiques */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+        <View style={{ flexDirection: 'row', gap: 8, paddingRight: 16 }}>
+          {renderTournamentStatCard('TOTAL', tournamentCounts.total, '#A1A1AA', <Award size={16} color="#A1A1AA" />)}
+          {renderTournamentStatCard('INSCRIPTIONS', tournamentCounts.registration, Colors.status.success, <Users size={16} color={Colors.status.success} />)}
+          {renderTournamentStatCard('EN COURS', tournamentCounts.in_progress, Colors.status.warning, <Zap size={16} color={Colors.status.warning} />)}
+          {renderTournamentStatCard('TERMINÉS', tournamentCounts.completed, Colors.primary.blue, <CheckCircle size={16} color={Colors.primary.blue} />)}
+          {renderTournamentStatCard('ANNULÉS', tournamentCounts.cancelled, Colors.status.error, <XCircle size={16} color={Colors.status.error} />)}
         </View>
-      ) : (
-        filteredTournaments.map((t) => (
-          <TouchableOpacity key={t.id} style={styles.teamItem} onPress={() => router.push(`/tournament/${t.id}`)}>
-            <View style={[styles.matchStatus, t.status === 'registration' ? styles.statusOpen : t.status === 'in_progress' ? styles.statusConfirmed : styles.statusCompleted]} />
-            <View style={styles.teamInfo}>
-              <Text style={styles.teamName}>{t.name}</Text>
-              <Text style={styles.teamMeta}>{(sportLabels as Record<string, string>)[t.sport] ?? t.sport} • {t.format} • {(t.registeredTeams?.length ?? 0)}/{t.maxTeams} équipes</Text>
-              <Text style={styles.teamStatText}>{t.venue?.name ?? '-'} • {formatDate(t.startDate)}</Text>
+      </ScrollView>
+
+      {/* Demandes d'annulation en attente */}
+      {pendingCancellations.length > 0 && (
+        <Card style={[styles.listCard, { marginBottom: 12, borderColor: Colors.status.warning + '60', borderWidth: 1.5 }]}>
+          <View style={[styles.cardTitleRow, { marginBottom: 4 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.status.warning + '20', justifyContent: 'center', alignItems: 'center' }}>
+                <AlertTriangle size={15} color={Colors.status.warning} />
+              </View>
+              <Text style={[styles.cardTitle, { color: Colors.status.warning }]}>En attente ({pendingCancellations.length})</Text>
             </View>
-            <TouchableOpacity style={styles.actionBtnBlue} onPress={(e) => { e.stopPropagation(); router.push(`/tournament/${t.id}`); }}><Eye size={16} color={Colors.primary.blue} /></TouchableOpacity>
-          </TouchableOpacity>
-        ))
+          </View>
+          {pendingCancellations.map((req) => {
+            const stored = cancellationNotes[req.id] || { organizerResponse: '', internalComment: '' };
+            return (
+            <CancellationRequestCard
+              key={req.id}
+              req={req}
+              organizerResponse={stored.organizerResponse}
+              internalComment={stored.internalComment}
+              onOpenNoteModal={handleOpenNoteModal}
+              onApprove={handleApproveCancellation}
+              onReject={handleRejectCancellation}
+              formatDate={formatDate}
+            />
+            );
+          })}
+        </Card>
       )}
-    </Card>
+
+      {/* Demandes d'annulation déjà traitées — collapsible */}
+      {processedCancellations.length > 0 && (
+        <Card style={[styles.listCard, { marginBottom: 12 }]}>
+          <TouchableOpacity
+            style={[styles.cardTitleRow, { marginBottom: 0 }]}
+            onPress={() => setShowProcessedCancellations(v => !v)}
+            activeOpacity={0.7}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', justifyContent: 'center', alignItems: 'center' }}>
+                <CheckSquare size={15} color={Colors.text.secondary} />
+              </View>
+              <Text style={styles.cardTitle}>Demandes traitées ({processedCancellations.length})</Text>
+            </View>
+            <ChevronRight size={18} color={Colors.text.muted} style={{ transform: [{ rotate: showProcessedCancellations ? '90deg' : '0deg' }] }} />
+          </TouchableOpacity>
+
+          {showProcessedCancellations && processedCancellations.map((req, idx) => (
+            <View key={req.id} style={{
+              paddingVertical: 12,
+              borderBottomWidth: idx < processedCancellations.length - 1 ? 1 : 0,
+              borderBottomColor: Colors.border.light,
+            }}>
+              {/* Ligne d'en-tête: statut + nom + date */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 4,
+                  paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+                  backgroundColor: req.status === 'approved' ? Colors.status.error + '18' : Colors.status.success + '18',
+                }}>
+                  {req.status === 'approved'
+                    ? <XCircle size={12} color={Colors.status.error} />
+                    : <CheckCircle size={12} color={Colors.status.success} />}
+                  <Text style={{
+                    color: req.status === 'approved' ? Colors.status.error : Colors.status.success,
+                    fontSize: 11, fontWeight: '700',
+                  }}>
+                    {req.status === 'approved' ? 'APPROUVÉE' : 'REJETÉE'}
+                  </Text>
+                </View>
+                <Text style={{ color: Colors.text.muted, fontSize: 11 }}>
+                  {formatDate(req.reviewedAt ?? req.createdAt)}
+                </Text>
+              </View>
+
+              <Text style={{ color: Colors.text.primary, fontSize: 14, fontWeight: '600', marginBottom: 4 }}>
+                {req.tournamentName ?? 'Tournoi inconnu'}
+              </Text>
+              <Text style={{ color: Colors.text.secondary, fontSize: 12, fontStyle: 'italic', marginBottom: 8 }}>
+                "{req.reason}"
+              </Text>
+
+              {req.organizerResponse && (
+                <View style={{ backgroundColor: 'rgba(16,185,129,0.08)', borderRadius: 8, padding: 10, marginBottom: 6, borderLeftWidth: 3, borderLeftColor: Colors.status.success }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                    <MessageSquare size={11} color={Colors.status.success} />
+                    <Text style={{ color: Colors.status.success, fontSize: 10, fontWeight: '700' }}>Réponse organisateur</Text>
+                  </View>
+                  <Text style={{ color: Colors.text.primary, fontSize: 13 }}>{req.organizerResponse}</Text>
+                </View>
+              )}
+              {req.internalComment && (
+                <View style={{ backgroundColor: 'rgba(239,68,68,0.08)', borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: Colors.status.error }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                    <Lock size={11} color={Colors.status.error} />
+                    <Text style={{ color: Colors.status.error, fontSize: 10, fontWeight: '700' }}>Note interne</Text>
+                  </View>
+                  <Text style={{ color: Colors.text.primary, fontSize: 13 }}>{req.internalComment}</Text>
+                </View>
+              )}
+
+              <TouchableOpacity
+                onPress={() => router.push(`/tournament/${req.tournamentId}`)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 }}
+              >
+                <Eye size={13} color={Colors.primary.blue} />
+                <Text style={{ color: Colors.primary.blue, fontSize: 12, fontWeight: '600' }}>Voir le tournoi</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </Card>
+      )}
+
+      {/* Liste des tournois avec filtres */}
+      <Card style={styles.listCard}>
+        <View style={styles.cardTitleRow}>
+          <Text style={styles.cardTitle}>Tournois ({filteredTournaments.length})</Text>
+          <TouchableOpacity style={styles.adminCreateBtn} onPress={() => router.navigate('/create-tournament' as any)}>
+            <Plus size={18} color="#FFFFFF" />
+            <Text style={styles.adminCreateBtnText}>Créer</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Filtres par statut — pills */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', gap: 8, paddingRight: 16 }}>
+            {tournamentStatusFilters.map(f => {
+              const active = tournamentFilter === f.key;
+              const count = f.key === 'all' ? tournamentCounts.total : tournamentCounts[f.key];
+              return (
+                <TouchableOpacity
+                  key={f.key}
+                  onPress={() => setTournamentFilter(f.key)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 5,
+                    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                    backgroundColor: active ? f.color + '22' : 'rgba(255,255,255,0.04)',
+                    borderWidth: 1.5, borderColor: active ? f.color : Colors.border.light,
+                  }}
+                >
+                  {f.icon}
+                  <Text style={{ color: active ? f.color : Colors.text.muted, fontSize: 12, fontWeight: '700' }}>
+                    {f.label}
+                  </Text>
+                  <View style={{
+                    minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5,
+                    backgroundColor: active ? f.color + '30' : 'rgba(255,255,255,0.08)',
+                    justifyContent: 'center', alignItems: 'center',
+                  }}>
+                    <Text style={{ color: active ? f.color : Colors.text.muted, fontSize: 10, fontWeight: '800' }}>{count}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        {filteredTournaments.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Award size={40} color={Colors.text.muted} />
+            <Text style={styles.emptyText}>Aucun tournoi</Text>
+            <Button title="Créer un tournoi" onPress={() => router.navigate('/create-tournament' as any)} variant="orange" size="medium" style={{ marginTop: 12 }} />
+          </View>
+        ) : (
+          filteredTournaments.map((t) => {
+            const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
+              registration: { label: 'Inscriptions', color: Colors.status.success, bg: Colors.status.success + '18' },
+              in_progress: { label: 'En cours', color: Colors.status.warning, bg: Colors.status.warning + '18' },
+              completed: { label: 'Terminé', color: Colors.primary.blue, bg: Colors.primary.blue + '18' },
+              cancelled: { label: 'Annulé', color: Colors.status.error, bg: Colors.status.error + '18' },
+            };
+            const sc = statusConfig[t.status] ?? { label: t.status, color: Colors.text.muted, bg: 'rgba(255,255,255,0.06)' };
+            const teamCount = t.registeredTeams?.length ?? 0;
+            const fillPct = t.maxTeams > 0 ? Math.min(100, (teamCount / t.maxTeams) * 100) : 0;
+
+            return (
+              <TouchableOpacity
+                key={t.id}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', paddingVertical: 12,
+                  borderBottomWidth: 1, borderBottomColor: Colors.border.light,
+                }}
+                onPress={() => router.push(`/tournament/${t.id}`)}
+              >
+                {/* Barre de couleur statut */}
+                <View style={{ width: 4, height: 44, borderRadius: 2, backgroundColor: sc.color, marginRight: 12 }} />
+
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <Text style={{ color: Colors.text.primary, fontSize: 15, fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
+                      {t.name}
+                    </Text>
+                    <View style={{ backgroundColor: sc.bg, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 }}>
+                      <Text style={{ color: sc.color, fontSize: 10, fontWeight: '700' }}>{sc.label}</Text>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                      <Users size={11} color={Colors.text.muted} />
+                      <Text style={{ color: Colors.text.muted, fontSize: 11, fontWeight: '500' }}>{teamCount}/{t.maxTeams}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                      <MapPin size={11} color={Colors.text.muted} />
+                      <Text style={{ color: Colors.text.muted, fontSize: 11 }} numberOfLines={1}>{t.venue?.name ?? '-'}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                      <Calendar size={11} color={Colors.text.muted} />
+                      <Text style={{ color: Colors.text.muted, fontSize: 11 }}>{formatDate(t.startDate)}</Text>
+                    </View>
+                  </View>
+
+                  {/* Barre de remplissage équipes */}
+                  {t.status !== 'cancelled' && t.maxTeams > 0 && (
+                    <View style={{ height: 3, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 2, marginTop: 6 }}>
+                      <View style={{ height: 3, width: `${fillPct}%`, backgroundColor: sc.color, borderRadius: 2 }} />
+                    </View>
+                  )}
+                </View>
+
+                <TouchableOpacity style={styles.actionBtnBlue} onPress={(e) => { e.stopPropagation(); router.push(`/tournament/${t.id}`); }}>
+                  <Eye size={16} color={Colors.primary.blue} />
+                </TouchableOpacity>
+              </TouchableOpacity>
+            );
+          })
+        )}
+      </Card>
+    </View>
   );
 
   const demoTickets = useMemo(() => [
@@ -1692,12 +2559,98 @@ export default function AdminScreen() {
     },
   ] as VerificationRequest[], []);
 
+  const disputeSeverityLabels: Record<TournamentDispute['severity'], string> = { minor: 'Mineur', major: 'Majeur' };
+  const disputeStatusLabels: Record<TournamentDispute['status'], string> = { open: 'Ouvert', investigating: 'En examen', resolved: 'Résolu' };
+  const disputeStatusColors: Record<TournamentDispute['status'], string> = {
+    open: Colors.status.error,
+    investigating: Colors.status.warning,
+    resolved: Colors.status.success,
+  };
+
+  const renderDisputesCard = () => (
+    <Card style={[styles.listCard, openDisputes.some((d) => d.severity === 'major') && { borderColor: Colors.status.error + '35' }]}>
+      <View style={styles.cardTitleRow}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={styles.cardTitle}>Litiges tournois ({openDisputes.length})</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.refreshBtn}
+          onPress={() => queryClient.invalidateQueries({ queryKey: ['open-disputes'] })}
+        >
+          <RefreshCw size={16} color={Colors.primary.blue} />
+        </TouchableOpacity>
+      </View>
+      {openDisputes.length === 0 ? (
+        <View style={styles.emptyState}><ShieldAlert size={40} color={Colors.text.muted} /><Text style={styles.emptyText}>Aucun litige ouvert</Text></View>
+      ) : (
+        openDisputes.map((dispute) => {
+          const tournament = getTournamentById(dispute.tournamentId);
+          const reporter = getUserByIdSync(dispute.reportedBy);
+          const isMajor = dispute.severity === 'major';
+          const isBusy = investigateDisputeMutation.isPending || resolveDisputeMutation.isPending;
+
+          return (
+            <View key={dispute.id} style={[styles.ticketItem, { flexDirection: 'column', alignItems: 'stretch' }, isMajor && { borderColor: Colors.status.error + '40', backgroundColor: Colors.status.error + '08' }]}>
+              <View style={styles.ticketHeader}>
+                <Text style={styles.ticketSubject}>{tournament?.name || 'Tournoi inconnu'}</Text>
+                <View style={[styles.ticketStatusBadge, { borderWidth: 1, borderColor: disputeStatusColors[dispute.status], backgroundColor: 'transparent' }]}>
+                  <Text style={[styles.ticketStatusText, { color: disputeStatusColors[dispute.status] }]}>{disputeStatusLabels[dispute.status]}</Text>
+                </View>
+              </View>
+              <Text style={styles.ticketUser}>👤 Signalé par: {reporter?.fullName || dispute.reportedBy}</Text>
+              <Text style={[styles.ticketMeta, isMajor && { color: Colors.status.error, fontWeight: '700' as const }]}>
+                ⚠️ Sévérité: {disputeSeverityLabels[dispute.severity]} • 📅 {formatDate(dispute.createdAt)}
+              </Text>
+              <Text style={styles.ticketDesc}>{dispute.reason}</Text>
+
+              {isMajor && dispute.status !== 'resolved' && (
+                <View style={[styles.infoBanner, { borderColor: Colors.status.error + '35', backgroundColor: Colors.status.error + '10' }]}>
+                  <AlertTriangle size={14} color={Colors.status.error} />
+                  <Text style={[styles.infoText, { color: Colors.status.error }]}>Bloque la libération des fonds organisateur de ce tournoi.</Text>
+                </View>
+              )}
+
+              {dispute.status !== 'resolved' && (
+                <>
+                  <TextInput
+                    style={styles.noteInputSmall}
+                    placeholder="Note de résolution (optionnel)"
+                    placeholderTextColor={Colors.text.muted}
+                    value={disputeNoteById[dispute.id] || ''}
+                    onChangeText={(v) => setDisputeNoteById((prev) => ({ ...prev, [dispute.id]: v }))}
+                    multiline
+                  />
+                  <View style={styles.ticketActions}>
+                    {dispute.status === 'open' && (
+                      <TouchableOpacity style={styles.actionBtnBlue} onPress={() => handleInvestigateDispute(dispute)} disabled={isBusy}>
+                        <Search size={16} color={Colors.primary.blue} />
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity style={styles.actionBtnGreen} onPress={() => handleResolveDispute(dispute)} disabled={isBusy}>
+                      <CheckCircle size={16} color={Colors.status.success} />
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+
+              {dispute.status === 'resolved' && dispute.resolutionNote && (
+                <Text style={styles.ticketMeta}>Résolution: {dispute.resolutionNote}</Text>
+              )}
+            </View>
+          );
+        })
+      )}
+    </Card>
+  );
+
   const renderTickets = () => {
     const hasRealTickets = tickets && tickets.length > 0;
     const displayTickets = hasRealTickets ? tickets : demoTickets;
     const isDemo = !hasRealTickets;
 
     return (
+    <>
+    {renderDisputesCard()}
     <Card style={styles.listCard}>
       <View style={styles.cardTitleRow}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -1754,6 +2707,7 @@ export default function AdminScreen() {
         ))
       )}
     </Card>
+    </>
     );
   };
 
@@ -1905,6 +2859,15 @@ export default function AdminScreen() {
             {pendingPayoutRequests.length > 0 && (
               <View style={styles.quickBadge}>
                 <Text style={styles.quickBadgeText}>{pendingPayoutRequests.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickActionBtn} onPress={() => setActiveTab('tickets')}>
+            <AlertTriangle size={24} color={Colors.status.error} />
+            <Text style={styles.quickActionText}>Litiges tournois</Text>
+            {openDisputes.length > 0 && (
+              <View style={styles.quickBadge}>
+                <Text style={styles.quickBadgeText}>{openDisputes.length}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -2285,6 +3248,7 @@ export default function AdminScreen() {
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.blue} />}
           >
             {activeTab === 'overview' && renderOverview()}
@@ -2297,6 +3261,7 @@ export default function AdminScreen() {
             {activeTab === 'verifications' && renderVerifications()}
             {activeTab === 'payments' && renderPaymentsTab()}
             {activeTab === 'payouts' && renderPayoutsTab()}
+            {activeTab === 'invoices' && renderInvoicesTab()}
             {activeTab === 'activity' && renderActivity()}
             {activeTab === 'qa' && renderQa()}
             {activeTab === 'prod_report' && renderProdReport()}
@@ -2305,6 +3270,124 @@ export default function AdminScreen() {
             <View style={styles.bottomSpacer} />
           </ScrollView>
         </SafeAreaView>
+
+        {/* Modal pour la réponse admin à une demande d'annulation */}
+        <Modal
+          visible={cancellationNoteModal !== null}
+          animationType="fade"
+          transparent
+          onRequestClose={() => setCancellationNoteModal(null)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}
+          >
+            <View style={{
+              backgroundColor: Colors.background.card,
+              borderRadius: 14,
+              padding: 20,
+              width: '100%',
+              maxWidth: 500,
+            }}>
+              {/* Réponse à l'organisateur — visible par le gestionnaire */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <Text style={{ color: Colors.text.primary, fontSize: 15, fontWeight: '700' }}>
+                  Réponse à l'organisateur
+                </Text>
+                <View style={{ backgroundColor: 'rgba(16,185,129,0.15)', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                  <Text style={{ color: Colors.status.success, fontSize: 10, fontWeight: '600' }}>Visible</Text>
+                </View>
+              </View>
+              <TextInput
+                style={{
+                  backgroundColor: Colors.background.dark,
+                  borderRadius: 10,
+                  padding: 14,
+                  color: Colors.text.primary,
+                  fontSize: 15,
+                  minHeight: 100,
+                  textAlignVertical: 'top',
+                  borderWidth: 1,
+                  borderColor: Colors.border.light,
+                  marginBottom: 16,
+                }}
+                placeholder="Réponse qui sera visible par l'organisateur..."
+                placeholderTextColor={Colors.text.muted}
+                value={cancellationNoteModal?.organizerResponse ?? ''}
+                onChangeText={(v) => setCancellationNoteModal((prev) => prev ? { ...prev, organizerResponse: v } : prev)}
+                multiline
+                autoFocus
+              />
+
+              {/* Note interne — visible uniquement par l'admin */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <Text style={{ color: Colors.text.primary, fontSize: 15, fontWeight: '700' }}>
+                  Note interne (admin)
+                </Text>
+                <View style={{ backgroundColor: 'rgba(239,68,68,0.15)', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                  <Text style={{ color: Colors.status.error, fontSize: 10, fontWeight: '600' }}>Privé</Text>
+                </View>
+              </View>
+              <TextInput
+                style={{
+                  backgroundColor: Colors.background.dark,
+                  borderRadius: 10,
+                  padding: 14,
+                  color: Colors.text.primary,
+                  fontSize: 15,
+                  minHeight: 80,
+                  textAlignVertical: 'top',
+                  borderWidth: 1,
+                  borderColor: Colors.border.light,
+                  marginBottom: 16,
+                }}
+                placeholder="Note visible uniquement par les admins..."
+                placeholderTextColor={Colors.text.muted}
+                value={cancellationNoteModal?.internalComment ?? ''}
+                onChangeText={(v) => setCancellationNoteModal((prev) => prev ? { ...prev, internalComment: v } : prev)}
+                multiline
+              />
+
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    backgroundColor: 'rgba(255,255,255,0.08)',
+                    alignItems: 'center',
+                  }}
+                  onPress={() => setCancellationNoteModal(null)}
+                >
+                  <Text style={{ color: Colors.text.secondary, fontSize: 15, fontWeight: '600' }}>Annuler</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    backgroundColor: Colors.primary.blue,
+                    alignItems: 'center',
+                  }}
+                  onPress={() => {
+                    if (cancellationNoteModal) {
+                      setCancellationNotes((prev) => ({
+                        ...prev,
+                        [cancellationNoteModal.reqId]: {
+                          organizerResponse: cancellationNoteModal.organizerResponse,
+                          internalComment: cancellationNoteModal.internalComment,
+                        },
+                      }));
+                    }
+                    setCancellationNoteModal(null);
+                  }}
+                >
+                  <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '700' }}>Enregistrer</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
 
         <Modal visible={selectedUserForBan !== null} animationType="slide" transparent>
           <KeyboardAvoidingView
@@ -2769,6 +3852,20 @@ const styles = StyleSheet.create({
   ticketDesc: { color: Colors.text.muted, fontSize: 13, marginBottom: 4 },
   ticketMeta: { color: Colors.text.muted, fontSize: 11 },
   ticketActions: { flexDirection: 'column', gap: 8 },
+  noteInputSmall: {
+    minHeight: 44,
+    marginTop: 8,
+    marginBottom: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    backgroundColor: Colors.background.dark,
+    color: Colors.text.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+    textAlignVertical: 'top',
+  },
   verificationItem: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 12, borderTopWidth: 1, borderTopColor: Colors.border.light, gap: 12 },
   verificationInfo: { flex: 1 },
   verificationHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },

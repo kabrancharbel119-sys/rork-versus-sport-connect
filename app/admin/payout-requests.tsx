@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { tournamentPayoutRequestsApi } from '@/lib/api/tournament-payments';
+import { venuesApi } from '@/lib/api/venues';
 import type { TournamentPayoutRequest } from '@/types';
 
 const purposeLabels: Record<TournamentPayoutRequest['purposeCategory'], string> = {
@@ -23,8 +24,40 @@ const purposeLabels: Record<TournamentPayoutRequest['purposeCategory'], string> 
   other: 'Autre',
 };
 
+function VenueAdvancePayoutInfo({ venueId, amount }: { venueId: string; amount: number }) {
+  const { data: venue } = useQuery({
+    queryKey: ['venue', venueId],
+    queryFn: () => venuesApi.getById(venueId),
+    enabled: !!venueId,
+  });
+
+  if (!venue) return null;
+
+  return (
+    <Card style={styles.venueAdvanceCard}>
+      <Text style={styles.venueAdvanceTitle}>Versement direct au terrain</Text>
+      <View style={styles.metaRow}>
+        <FileText size={13} color={Colors.primary.blue} />
+        <Text style={styles.metaText}>Terrain: {venue.name}</Text>
+      </View>
+      <View style={styles.metaRow}>
+        <FileText size={13} color={Colors.primary.blue} />
+        <Text style={styles.metaText}>Montant: {amount.toLocaleString()} FCFA</Text>
+      </View>
+      <View style={styles.metaRow}>
+        <FileText size={13} color={Colors.primary.blue} />
+        <Text style={styles.metaText}>Numéro de paiement: {venue.payoutPhone || venue.phone || 'Non renseigné'}</Text>
+      </View>
+      <Text style={styles.venueAdvanceHint}>
+        Ce montant doit être versé directement au gestionnaire du terrain. Il est automatiquement enregistré dans le ledger tournoi.
+      </Text>
+    </Card>
+  );
+}
+
 export default function AdminPayoutRequestsScreen() {
   const router = useRouter();
+  const { getUserByIdSync } = useUsers();
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -135,7 +168,7 @@ export default function AdminPayoutRequestsScreen() {
           ) : (
             requests.map((request) => {
               const tournament = getTournamentById(request.tournamentId);
-              const organizer = getUserById(request.organizerId);
+              const organizer = getUserByIdSync(request.organizerId);
               const isBusy = approveMutation.isPending || rejectMutation.isPending;
 
               return (
@@ -162,6 +195,10 @@ export default function AdminPayoutRequestsScreen() {
                     <FileText size={13} color={Colors.text.muted} />
                     <Text style={styles.metaText}>Téléphone de versement: {request.payoutPhone}</Text>
                   </View>
+
+                  {request.purposeCategory === 'venue' && request.venueId && (
+                    <VenueAdvancePayoutInfo venueId={request.venueId} amount={request.requestedAmount} />
+                  )}
                   {request.fallbackContact ? (
                     <View style={styles.metaRow}>
                       <FileText size={13} color={Colors.text.muted} />
@@ -273,4 +310,7 @@ const styles = StyleSheet.create({
   actionsRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
   rejectBtn: { flex: 1, borderColor: Colors.status.error },
   approveBtn: { flex: 1.5 },
+  venueAdvanceCard: { marginTop: 10, borderColor: Colors.primary.blue + '35', backgroundColor: Colors.primary.blue + '08' },
+  venueAdvanceTitle: { color: Colors.primary.blue, fontSize: 13, fontWeight: '700' as const, marginBottom: 8 },
+  venueAdvanceHint: { color: Colors.text.secondary, fontSize: 12, marginTop: 8, lineHeight: 17 },
 });

@@ -7,6 +7,7 @@
  * - SUPABASE_SERVICE_ROLE_KEY
  * Optionnelles : PORT, ALLOWED_ORIGINS, RESEND_API_KEY
  */
+import "dotenv/config";
 import { serve } from "@hono/node-server";
 import app from "./hono";
 

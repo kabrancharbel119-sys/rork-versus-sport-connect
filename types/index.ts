@@ -12,6 +12,22 @@ export type TournamentTeamStatus = 'pending_payment' | 'payment_submitted' | 'co
 export type PayoutRequestStatus = 'pending' | 'approved' | 'rejected';
 export type PayoutPurposeCategory = 'venue' | 'referees' | 'logistics' | 'communication' | 'prize' | 'other';
 
+// Mode de paiement configuré par le gestionnaire de terrain
+export type VenuePaymentMode = 'in_app_immediate' | 'in_app_on_site_qr' | 'cash_off_app';
+// Statut du paiement d'une réservation (indépendant du statut booking)
+export type BookingPaymentStatus = 'not_required' | 'pending' | 'paid' | 'refunded' | 'failed';
+// Statut de versement effectif d'une demande d'avance approuvée
+export type DisbursementStatus = 'not_sent' | 'sent_to_venue' | 'sent_to_organizer';
+// Types d'écriture du ledger des fonds tournoi
+export type FundsLedgerEntryType = 'collection' | 'refund' | 'venue_advance' | 'logistics_advance' | 'platform_fee' | 'organizer_release';
+// Litiges tournoi
+export type DisputeSeverity = 'minor' | 'major';
+export type DisputeStatus = 'open' | 'investigating' | 'resolved';
+// Factures
+export type InvoiceDocumentType = 'invoice' | 'credit_note' | 'payout_receipt';
+export type InvoiceContextType = 'booking' | 'tournament_registration' | 'venue_advance' | 'logistics_advance' | 'organizer_release';
+export type InvoiceStatus = 'issued' | 'paid' | 'refunded' | 'cancelled';
+
 export const DEFAULT_ROLES = ['Capitaine', 'Co-Capitaine', 'Coach', 'Gardien', 'Défenseur', 'Milieu', 'Attaquant', 'Ailier', 'Pivot', 'Meneur', 'Arrière', 'Libero', 'Passeur', 'Central', 'Remplaçant'] as const;
 
 export interface UserLocation {
@@ -224,6 +240,8 @@ export interface Venue {
   surfaceType?: string;
   rules?: string;
   cancellationHours?: number;
+  paymentMode?: VenuePaymentMode;
+  payoutPhone?: string;
 }
 
 export interface VenueReview {
@@ -258,6 +276,10 @@ export interface Booking {
   checkInToken?: string;
   validatedAt?: Date;
   validatedBy?: string;
+  // Paiement in-app
+  paymentStatus?: BookingPaymentStatus;
+  paymentTransactionId?: string;
+  paidAt?: Date;
 }
 
 export interface Tournament {
@@ -267,7 +289,7 @@ export interface Tournament {
   sport: Sport;
   format: string;
   type: 'knockout' | 'league' | 'group_knockout';
-  status: 'registration' | 'in_progress' | 'completed' | 'venue_pending';
+  status: 'registration' | 'in_progress' | 'completed' | 'venue_pending' | 'cancelled';
   level: SkillLevel;
   maxTeams: number;
   registeredTeams: string[];
@@ -285,6 +307,26 @@ export interface Tournament {
   createdBy: string;
   createdAt: Date;
   isDemo?: boolean;
+  entryPaymentMode?: VenuePaymentMode;
+}
+
+export type CancellationRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface TournamentCancellationRequest {
+  id: string;
+  tournamentId: string;
+  organizerId: string;
+  reason: string;
+  status: CancellationRequestStatus;
+  reviewedBy?: string;
+  reviewedAt?: Date;
+  adminNote?: string;
+  organizerResponse?: string;
+  internalComment?: string;
+  refundProcessed: boolean;
+  refundAmount: number;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface TournamentPayment {
@@ -348,6 +390,69 @@ export interface TournamentPayoutRequest {
   reviewedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  // Avance terrain fléchée + suivi de versement
+  venueId?: string;
+  disbursementStatus?: DisbursementStatus;
+  disbursedAt?: Date;
+  disbursementTransactionId?: string;
+}
+
+export interface TournamentFundsLedgerEntry {
+  id: string;
+  tournamentId: string;
+  entryType: FundsLedgerEntryType;
+  amount: number; // positif = entrée, négatif = sortie (FCFA)
+  referenceType?: string;
+  referenceId?: string;
+  performedBy?: string;
+  note?: string;
+  createdAt: Date;
+}
+
+export interface TournamentFundsSummary {
+  tournamentId: string;
+  netCollected: number;
+  totalAdvanced: number;
+  availableForLogisticsAdvance: number;
+  fillRatePercent: number;
+  canReleaseOrganizerFunds: boolean;
+}
+
+export interface TournamentDispute {
+  id: string;
+  tournamentId: string;
+  reportedBy: string;
+  severity: DisputeSeverity;
+  reason: string;
+  status: DisputeStatus;
+  resolutionNote?: string;
+  resolvedBy?: string;
+  resolvedAt?: Date;
+  createdAt: Date;
+}
+
+export interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  documentType: InvoiceDocumentType;
+  contextType: InvoiceContextType;
+  contextId: string;
+  amount: number;
+  currency: string;
+  payerId?: string;
+  beneficiaryId?: string;
+  description: string;
+  paymentMethod?: string;
+  paymentTransactionId?: string;
+  status: InvoiceStatus;
+  issuedAt: Date;
+  paidAt?: Date;
+  metadata?: Record<string, any>;
+  payerName?: string;
+  payeeName?: string;
+  eventName?: string;
+  reason?: string;
+  createdAt: Date;
 }
 
 export interface TournamentPrize {

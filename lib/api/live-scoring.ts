@@ -456,7 +456,7 @@ class LiveScoringApi {
 
     if (registeredPlayers) {
       for (const player of registeredPlayers) {
-        await notificationsApi.send(player.user_id || player.id, {
+        await notificationsApi.send(player.user_id, {
           type: 'match',
           title,
           message,

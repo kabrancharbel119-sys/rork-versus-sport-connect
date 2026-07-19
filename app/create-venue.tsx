@@ -6,7 +6,7 @@ import { useRouter, Stack } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, MapPin, Phone, Mail, DollarSign, Check, X, Plus } from 'lucide-react-native';
+import { ArrowLeft, MapPin, Phone, Mail, DollarSign, Check, X, Plus, Wallet } from 'lucide-react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,7 +14,7 @@ import { venuesApi } from '@/lib/api/venues';
 import { Button } from '@/components/Button';
 import { CityAutocomplete, CityResult } from '@/components/CityAutocomplete';
 import { uploadVenueImage } from '@/lib/uploadImage';
-import type { Sport } from '@/types';
+import type { Sport, VenuePaymentMode } from '@/types';
 
 const ALL_SPORTS: Sport[] = ['football', 'basketball', 'volleyball', 'tennis', 'handball', 'rugby', 'badminton', 'tabletennis', 'padel', 'squash', 'futsal', 'beachvolleyball'];
 
@@ -33,6 +33,24 @@ const AMENITIES = [
 const SURFACE_TYPES = [
   'Gazon naturel', 'Gazon synthétique', 'Terre battue', 'Béton',
   'Parquet', 'Sable', 'Tartan', 'Résine',
+];
+
+const PAYMENT_MODES: { value: VenuePaymentMode; label: string; description: string }[] = [
+  {
+    value: 'in_app_immediate',
+    label: 'Paiement au moment de la réservation',
+    description: 'Payer en ligne pour confirmer le créneau.',
+  },
+  {
+    value: 'in_app_on_site_qr',
+    label: 'Paiement In-App sur place',
+    description: 'Payer au scan du QR le jour J.',
+  },
+  {
+    value: 'cash_off_app',
+    label: 'Paiement cash',
+    description: 'Payer en espèces au terrain.',
+  },
 ];
 
 const DAY_NAMES = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
@@ -70,6 +88,8 @@ export default function CreateVenueScreen() {
     surfaceType: '',
     rules: '',
     openingHours: DEFAULT_HOURS,
+    paymentMode: 'cash_off_app' as VenuePaymentMode,
+    payoutPhone: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -118,6 +138,8 @@ export default function CreateVenueScreen() {
       surfaceType: formData.surfaceType || undefined,
       rules: formData.rules.trim() || undefined,
       openingHours: formData.openingHours,
+      paymentMode: formData.paymentMode,
+      payoutPhone: formData.payoutPhone.trim(),
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myVenues'] });
@@ -512,6 +534,48 @@ export default function CreateVenueScreen() {
               />
               <Text style={styles.switchHint}>Le joueur ne pourra plus annuler après ce délai avant le début du créneau.</Text>
 
+              <Text style={styles.sectionTitle}>Mode de paiement</Text>
+              <Text style={styles.switchHint}>
+                Choisissez comment les joueurs pourront payer les réservations de ce terrain. Option modifiable à tout moment.
+              </Text>
+
+              {PAYMENT_MODES.map((mode) => {
+                const selected = formData.paymentMode === mode.value;
+                return (
+                  <TouchableOpacity
+                    key={mode.value}
+                    style={[styles.paymentModeCard, selected && styles.paymentModeCardSelected]}
+                    onPress={() => updateField('paymentMode', mode.value)}
+                  >
+                    <View style={styles.paymentModeHeader}>
+                      <Wallet size={18} color={selected ? Colors.primary.orange : Colors.text.muted} />
+                      <Text style={[styles.paymentModeTitle, selected && styles.paymentModeTitleSelected]}>
+                        {mode.label}
+                      </Text>
+                      {selected && <Check size={16} color={Colors.primary.orange} />}
+                    </View>
+                    <Text style={styles.paymentModeDescription}>{mode.description}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {formData.paymentMode !== 'cash_off_app' && (
+                <>
+                  <Text style={styles.label}>Numéro de réception des paiements (Wave / Orange Money)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ex: +225 07 00 00 00"
+                    placeholderTextColor={Colors.text.muted}
+                    value={formData.payoutPhone}
+                    onChangeText={v => updateField('payoutPhone', v)}
+                    keyboardType="phone-pad"
+                  />
+                  <Text style={styles.switchHint}>
+                    Ce numéro sera utilisé pour verser les paiements reçus via l'application (directement au terrain ou en cas d'avance tournoi).
+                  </Text>
+                </>
+              )}
+
               <Button
                 title="Créer le terrain"
                 onPress={handleCreate}
@@ -664,5 +728,37 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  paymentModeCard: {
+    backgroundColor: Colors.background.card,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  paymentModeCardSelected: {
+    borderColor: Colors.primary.orange,
+    backgroundColor: Colors.primary.orange + '10',
+  },
+  paymentModeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  paymentModeTitle: {
+    flex: 1,
+    color: Colors.text.primary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  paymentModeTitleSelected: {
+    color: Colors.primary.orange,
+  },
+  paymentModeDescription: {
+    color: Colors.text.muted,
+    fontSize: 12,
+    marginTop: 6,
+    paddingLeft: 28,
   },
 });

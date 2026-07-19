@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, KeyboardAvoidingView, Platform, Switch, BackHandler } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, KeyboardAvoidingView, Platform, Switch, BackHandler, Modal } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Check, Plus, X } from 'lucide-react-native';
+import { ArrowLeft, Check, Plus, X, Wallet } from 'lucide-react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,7 +14,7 @@ import { venuesApi } from '@/lib/api/venues';
 import { Button } from '@/components/Button';
 import { uploadVenueImage } from '@/lib/uploadImage';
 import { CityAutocomplete, CityResult } from '@/components/CityAutocomplete';
-import type { Sport } from '@/types';
+import type { Sport, VenuePaymentMode } from '@/types';
 
 const ALL_SPORTS: Sport[] = ['football', 'basketball', 'volleyball', 'tennis', 'handball', 'rugby', 'badminton', 'tabletennis', 'padel', 'squash', 'futsal', 'beachvolleyball'];
 
@@ -35,7 +35,31 @@ const SURFACE_TYPES = [
   'Parquet', 'Sable', 'Tartan', 'Résine',
 ];
 
+const PAYMENT_MODES: { value: VenuePaymentMode; label: string; description: string }[] = [
+  {
+    value: 'in_app_immediate',
+    label: 'Paiement au moment de la réservation',
+    description: 'Payer en ligne pour confirmer le créneau.',
+  },
+  {
+    value: 'in_app_on_site_qr',
+    label: 'Paiement In-App sur place',
+    description: 'Payer au scan du QR le jour J.',
+  },
+  {
+    value: 'cash_off_app',
+    label: 'Paiement cash',
+    description: 'Payer en espèces au terrain.',
+  },
+];
+
 const DAY_NAMES = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+
+const paymentModeLabels: Record<string, string> = {
+  in_app_immediate: 'Paiement au moment de la réservation',
+  in_app_on_site_qr: 'Paiement In-App sur place',
+  cash_off_app: 'Paiement cash',
+};
 
 const DEFAULT_HOURS = DAY_NAMES.map((_, i) => ({
   dayOfWeek: i + 1 === 7 ? 0 : i + 1,
@@ -78,10 +102,13 @@ export default function EditVenueScreen() {
     surfaceType: '',
     rules: '',
     openingHours: DEFAULT_HOURS,
+    paymentMode: 'cash_off_app' as VenuePaymentMode,
+    payoutPhone: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   useEffect(() => {
     if (venueQuery.data) {
@@ -107,6 +134,8 @@ export default function EditVenueScreen() {
         surfaceType: v.surfaceType || '',
         rules: v.rules || '',
         openingHours: v.openingHours || DEFAULT_HOURS,
+        paymentMode: v.paymentMode || 'cash_off_app',
+        payoutPhone: v.payoutPhone || '',
       });
     }
   }, [venueQuery.data]);
@@ -133,13 +162,15 @@ export default function EditVenueScreen() {
       surfaceType: formData.surfaceType || undefined,
       rules: formData.rules.trim() || undefined,
       openingHours: formData.openingHours,
+      paymentMode: formData.paymentMode,
+      payoutPhone: formData.payoutPhone.trim(),
     }),
     onSuccess: () => {
       setHasChanges(false);
       queryClient.invalidateQueries({ queryKey: ['myVenues'] });
       queryClient.invalidateQueries({ queryKey: ['venues'] });
       queryClient.invalidateQueries({ queryKey: ['venue', id] });
-      Alert.alert('Terrain mis à jour !', '', [{ text: 'OK', onPress: () => safeBack(router, '/venue-manager') }]);
+      setShowSuccessModal(true);
     },
     onError: (error: Error) => {
       Alert.alert('Erreur', error.message || 'Impossible de modifier le terrain.');
@@ -256,6 +287,11 @@ export default function EditVenueScreen() {
   const handleSave = () => {
     if (!validate()) return;
     updateMutation.mutate();
+  };
+
+  const handleCloseSuccessModal = () => {
+    setShowSuccessModal(false);
+    safeBack(router, '/venue-manager');
   };
 
   if (!isVenueManager) {
@@ -593,6 +629,50 @@ export default function EditVenueScreen() {
               />
               <Text style={styles.switchHint}>Le joueur ne pourra plus annuler après ce délai avant le début du créneau.</Text>
 
+              <Text style={styles.sectionTitle}>Mode de paiement</Text>
+              <Text style={styles.switchHint}>
+                Choisissez comment les joueurs pourront payer les réservations de ce terrain. Option modifiable à tout moment.
+              </Text>
+
+              {PAYMENT_MODES.map((mode) => {
+                const selected = formData.paymentMode === mode.value;
+                return (
+                  <TouchableOpacity
+                    key={mode.value}
+                    style={[styles.paymentModeCard, selected && styles.paymentModeCardSelected]}
+                    onPress={() => {
+                      updateField('paymentMode', mode.value);
+                    }}
+                  >
+                    <View style={styles.paymentModeHeader}>
+                      <Wallet size={18} color={selected ? Colors.primary.orange : Colors.text.muted} />
+                      <Text style={[styles.paymentModeTitle, selected && styles.paymentModeTitleSelected]}>
+                        {mode.label}
+                      </Text>
+                      {selected && <Check size={16} color={Colors.primary.orange} />}
+                    </View>
+                    <Text style={styles.paymentModeDescription}>{mode.description}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {formData.paymentMode !== 'cash_off_app' && (
+                <>
+                  <Text style={styles.label}>Numéro de réception des paiements (Wave / Orange Money)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ex: +225 07 00 00 00"
+                    placeholderTextColor={Colors.text.muted}
+                    value={formData.payoutPhone}
+                    onChangeText={v => updateField('payoutPhone', v)}
+                    keyboardType="phone-pad"
+                  />
+                  <Text style={styles.switchHint}>
+                    Ce numéro sera utilisé pour verser les paiements reçus via l'application (directement au terrain ou en cas d'avance tournoi).
+                  </Text>
+                </>
+              )}
+
               <View style={[styles.switchRow, { marginTop: 12 }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.switchLabel}>Terrain actif</Text>
@@ -617,6 +697,31 @@ export default function EditVenueScreen() {
                 size="large"
                 style={{ marginTop: 24 }}
               />
+
+              <Modal
+                visible={showSuccessModal}
+                transparent
+                animationType="fade"
+                onRequestClose={handleCloseSuccessModal}
+              >
+                <View style={styles.successModalOverlay}>
+                  <View style={styles.successModalCard}>
+                    <View style={styles.successModalIconWrap}>
+                      <Check size={32} color="#FFF" />
+                    </View>
+                    <Text style={styles.successModalTitle}>Modifications effectuées avec succès</Text>
+                    <Text style={styles.successModalText}>
+                      Le mode de paiement et les autres modifications ont été enregistrés.
+                    </Text>
+                    <Text style={styles.successModalText}>
+                      Mode actuel : {paymentModeLabels[formData.paymentMode] || formData.paymentMode}
+                    </Text>
+                    <TouchableOpacity style={styles.successModalBtn} onPress={handleCloseSuccessModal} activeOpacity={0.8}>
+                      <Text style={styles.successModalBtnText}>OK</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </Modal>
             </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
@@ -763,5 +868,89 @@ const styles = StyleSheet.create({
   },
   citySection: {
     marginBottom: 16,
+  },
+  paymentModeCard: {
+    backgroundColor: Colors.background.card,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  paymentModeCardSelected: {
+    borderColor: Colors.primary.orange,
+    backgroundColor: Colors.primary.orange + '10',
+  },
+  paymentModeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  paymentModeTitle: {
+    flex: 1,
+    color: Colors.text.primary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  paymentModeTitleSelected: {
+    color: Colors.primary.orange,
+  },
+  paymentModeDescription: {
+    color: Colors.text.muted,
+    fontSize: 12,
+    marginTop: 6,
+    paddingLeft: 28,
+  },
+  successModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  successModalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: Colors.background.card,
+    borderRadius: 20,
+    padding: 26,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+  },
+  successModalIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Colors.status.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  successModalTitle: {
+    color: Colors.text.primary,
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  successModalText: {
+    color: Colors.text.secondary,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  successModalBtn: {
+    marginTop: 18,
+    backgroundColor: Colors.primary.orange,
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  successModalBtnText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

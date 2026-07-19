@@ -1,22 +1,23 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   MapPin, LogOut, Settings, Shield, FileText, HelpCircle,
-  User, DollarSign, Calendar, TrendingUp, ChevronRight,
+  User, DollarSign, Calendar, ChevronRight, Camera,
 } from 'lucide-react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { venuesApi } from '@/lib/api/venues';
 import { Card } from '@/components/Card';
+import { Avatar } from '@/components/Avatar';
 import type { Venue, Booking } from '@/types';
 
 export default function ManagerProfileTab() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, pickAvatar, isPickingAvatar } = useAuth();
 
   const venuesQuery = useQuery({
     queryKey: ['myVenues', user?.id],
@@ -45,6 +46,11 @@ export default function ManagerProfileTab() {
     ]);
   };
 
+  const handlePickAvatar = async () => {
+    try { await pickAvatar(); Alert.alert('Succès', 'Photo de profil mise à jour'); }
+    catch (err: any) { if (err.message !== 'Annulé') Alert.alert('Erreur', err.message || 'Impossible de changer la photo'); }
+  };
+
   const menuItems = [
     { icon: User, label: 'Modifier mon profil', onPress: () => router.push('/edit-profile' as any) },
     { icon: Settings, label: 'Paramètres', onPress: () => router.push('/settings' as any) },
@@ -64,16 +70,18 @@ export default function ManagerProfileTab() {
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* Profile card */}
           <Card style={styles.profileCard}>
-            <View style={styles.avatarWrap}>
-              <LinearGradient colors={[Colors.primary.orange, Colors.primary.orangeDark]} style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {(user?.fullName || user?.username || 'G')[0].toUpperCase()}
-                </Text>
-              </LinearGradient>
-              <View style={styles.managerBadge}>
-                <MapPin size={10} color="#FFF" />
+            <TouchableOpacity style={styles.avatarWrap} onPress={handlePickAvatar} activeOpacity={0.8}>
+              <View style={styles.avatarRing}>
+                <Avatar uri={user?.avatar} name={user?.fullName} size="large" />
+                <View style={styles.avatarCameraBtn}>
+                  {isPickingAvatar ? (
+                    <ActivityIndicator size={10} color="#FFF" />
+                  ) : (
+                    <Camera size={12} color="#FFF" />
+                  )}
+                </View>
               </View>
-            </View>
+            </TouchableOpacity>
             <Text style={styles.profileName}>{user?.fullName || user?.username || 'Gestionnaire'}</Text>
             <Text style={styles.profileEmail}>{user?.email}</Text>
             <View style={styles.profileRoleBadge}>
@@ -141,16 +149,16 @@ const styles = StyleSheet.create({
   scrollContent: { padding: 16, paddingBottom: 60 },
 
   profileCard: { alignItems: 'center', padding: 24, marginBottom: 16 },
-  avatarWrap: { position: 'relative', marginBottom: 12 },
-  avatar: {
-    width: 72, height: 72, borderRadius: 36,
-    alignItems: 'center', justifyContent: 'center',
+  avatarWrap: { marginBottom: 12 },
+  avatarRing: {
+    borderRadius: 999, padding: 3, borderWidth: 2,
+    borderColor: Colors.primary.orange + '40',
   },
-  avatarText: { color: '#FFF', fontSize: 28, fontWeight: '800' },
-  managerBadge: {
-    position: 'absolute', bottom: 0, right: -2,
-    width: 22, height: 22, borderRadius: 11,
-    backgroundColor: Colors.primary.orange, alignItems: 'center', justifyContent: 'center',
+  avatarCameraBtn: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: Colors.primary.orange,
+    alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: Colors.background.card,
   },
   profileName: { color: Colors.text.primary, fontSize: 18, fontWeight: '700' },

@@ -1,13 +1,14 @@
 import React, { useState, useMemo, Component, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, RefreshControl, ActivityIndicator } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, RefreshControl, ActivityIndicator, Alert } from 'react-native';
+import { useRouter, Stack, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, MapPin, Star, Search, DollarSign } from 'lucide-react-native';
+import { ArrowLeft, MapPin, Star, Search, DollarSign, Navigation } from 'lucide-react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { venuesApi } from '@/lib/api/venues';
 import { supabase } from '@/lib/supabase';
 import { Card } from '@/components/Card';
+import { useLocation } from '@/contexts/LocationContext';
 import type { Venue } from '@/types';
 
 const sportLabels: Record<string, string> = {
@@ -64,6 +65,10 @@ class VenuesErrorBoundary extends Component<
 
 function VenuesContent() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ nearby?: string }>();
+  const isNearbyMode = params.nearby === 'true';
+  const { location, requestPermission, updateLocation, isUpdating } = useLocation();
+  
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -75,13 +80,26 @@ function VenuesContent() {
   const [search, setSearch] = useState('');
   const [sportFilter, setSportFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [radiusKm, setRadiusKm] = useState(20);
 
   const venuesQuery = useQuery({
-    queryKey: ['venues'],
+    queryKey: ['venues', isNearbyMode, location?.latitude, location?.longitude, radiusKm],
     queryFn: async () => {
       try {
-        const result = await venuesApi.getAll();
-        return result || [];
+        console.log('[VenuesScreen] Fetching venues, isNearbyMode:', isNearbyMode);
+        // Always fetch all venues from database
+        const allVenues = await venuesApi.getAll();
+        console.log('[VenuesScreen] Fetched', allVenues?.length, 'venues from database');
+        
+        if (isNearbyMode && location && location.latitude && location.longitude) {
+          console.log('[VenuesScreen] Filtering nearby venues with location:', location.latitude, location.longitude, 'radius:', radiusKm);
+          const result = await venuesApi.getNearby(location.latitude, location.longitude, radiusKm);
+          console.log('[VenuesScreen] Nearby venues:', result?.length);
+          // Return nearby venues, or all venues if no nearby venues found
+          return (result && result.length > 0) ? result : allVenues;
+        }
+        
+        return allVenues || [];
       } catch (error: any) {
         console.error('[VenuesScreen] API Error:', error?.message || error);
         return [];
@@ -104,25 +122,61 @@ function VenuesContent() {
     };
   }, [queryClient]);
 
+  // Refresh venues when location changes in nearby mode
+  useEffect(() => {
+    if (isNearbyMode && location && location.latitude && location.longitude) {
+      console.log('[VenuesScreen] Location changed, refreshing nearby venues');
+      queryClient.invalidateQueries({ queryKey: ['venues'] });
+    }
+  }, [isNearbyMode, location?.latitude, location?.longitude, queryClient]);
+
   const venues: Venue[] = venuesQuery.data || [];
 
   const filteredVenues = useMemo(() => {
     try {
+      console.log('[VenuesScreen] Filtering venues, total:', venues.length, 'search:', search, 'sportFilter:', sportFilter);
+      
+      // First filter out inactive venues
       let list = venues.filter(v => v && v.isActive !== false);
+      console.log('[VenuesScreen] Active venues:', list.length);
 
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        list = list.filter(v =>
-          (v.name || '').toLowerCase().includes(q) ||
-          (v.city || '').toLowerCase().includes(q) ||
-          (v.address || '').toLowerCase().includes(q)
-        );
+      // If no search and no sport filter, return all active venues
+      if (!search.trim() && sportFilter === 'all') {
+        console.log('[VenuesScreen] No filters, returning all active venues');
+        return list;
       }
 
+      // Apply search filter
+      if (search.trim()) {
+        const q = search.toLowerCase().trim();
+        console.log('[VenuesScreen] Searching for:', q);
+        
+        list = list.filter(v => {
+          const name = v.name || '';
+          const city = v.city || '';
+          const address = v.address || '';
+          
+          const nameMatch = name.toLowerCase().includes(q);
+          const cityMatch = city.toLowerCase().includes(q);
+          const addressMatch = address.toLowerCase().includes(q);
+          const matches = nameMatch || cityMatch || addressMatch;
+          
+          if (matches) {
+            console.log('[VenuesScreen] Match found:', name, city);
+          }
+          
+          return matches;
+        });
+        console.log('[VenuesScreen] After search filter:', list.length);
+      }
+
+      // Apply sport filter
       if (sportFilter !== 'all') {
         list = list.filter(v => Array.isArray(v.sport) && (v.sport as string[]).includes(sportFilter));
+        console.log('[VenuesScreen] After sport filter:', list.length);
       }
 
+      console.log('[VenuesScreen] Final filtered venues:', list.length);
       return list;
     } catch (e) {
       console.error('[VenuesScreen] Filter error:', e);
@@ -176,6 +230,46 @@ function VenuesContent() {
           ))}
         </ScrollView>
 
+        {/* Nearby mode controls */}
+        {isNearbyMode && (
+          <View style={styles.nearbyControls}>
+            {!location ? (
+              <TouchableOpacity 
+                style={styles.enableLocationBtn}
+                onPress={async () => {
+                  const hasPermission = await requestPermission();
+                  if (hasPermission) {
+                    await updateLocation();
+                  } else {
+                    Alert.alert('Permission requise', 'Activez la localisation pour voir les terrains à proximité.');
+                  }
+                }}
+                disabled={isUpdating}
+              >
+                <Navigation size={18} color={Colors.primary.orange} />
+                <Text style={styles.enableLocationText}>
+                  {isUpdating ? 'Localisation...' : 'Activer la localisation'}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.radiusSelector}>
+                <Text style={styles.radiusLabel}>Rayon: {radiusKm} km</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.radiusScroller} contentContainerStyle={styles.radiusContent}>
+                  {[5, 10, 20, 50].map(r => (
+                    <TouchableOpacity
+                      key={r}
+                      style={[styles.radiusChip, radiusKm === r && styles.radiusChipActive]}
+                      onPress={() => setRadiusKm(r)}
+                    >
+                      <Text style={[styles.radiusText, radiusKm === r && styles.radiusTextActive]}>{r} km</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+        )}
+
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
@@ -210,6 +304,7 @@ function VenuesContent() {
                 const price = Number(venue.pricePerHour) || 0;
                 const sports = Array.isArray(venue.sport) ? (venue.sport as string[]) : [];
                 const amenities = Array.isArray(venue.amenities) ? venue.amenities : [];
+                const distance = isNearbyMode && (venue as any).distance !== undefined ? (venue as any).distance : null;
 
                 return (
                   <TouchableOpacity
@@ -237,6 +332,12 @@ function VenuesContent() {
                           <DollarSign size={13} color={Colors.primary.orange} />
                           <Text style={styles.priceText}>{price.toLocaleString()} FCFA/h</Text>
                         </View>
+                        {distance !== null && (
+                          <View style={styles.distanceBadge}>
+                            <Navigation size={13} color={Colors.primary.blue} />
+                            <Text style={styles.distanceText}>{distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`}</Text>
+                          </View>
+                        )}
                         <View style={styles.sportsList}>
                           {sports.slice(0, 3).map(s => (
                             <View key={s} style={styles.sportTag}>
@@ -348,6 +449,8 @@ const styles = StyleSheet.create({
   },
   priceBadge: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   priceText: { color: Colors.primary.orange, fontSize: 14, fontWeight: '700' },
+  distanceBadge: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  distanceText: { color: Colors.primary.blue, fontSize: 13, fontWeight: '600' },
   sportsList: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   sportTag: {
     backgroundColor: Colors.background.cardLight,
@@ -358,5 +461,46 @@ const styles = StyleSheet.create({
   amenitiesPreview: {
     color: Colors.text.muted, fontSize: 12, marginTop: 8,
     paddingTop: 8, borderTopWidth: 1, borderTopColor: Colors.border.light,
+  },
+  nearbyControls: {
+    paddingHorizontal: 16, paddingVertical: 12,
+    backgroundColor: Colors.background.card + '40',
+    borderBottomWidth: 1, borderBottomColor: Colors.border.light + '60',
+  },
+  enableLocationBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.primary.orange + '20',
+    paddingHorizontal: 16, paddingVertical: 12, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.primary.orange + '40',
+  },
+  enableLocationText: {
+    color: Colors.primary.orange, fontSize: 14, fontWeight: '600',
+  },
+  radiusSelector: {
+    gap: 8,
+  },
+  radiusLabel: {
+    color: Colors.text.secondary, fontSize: 12, fontWeight: '600',
+  },
+  radiusScroller: {
+    maxHeight: 36,
+  },
+  radiusContent: {
+    gap: 8,
+  },
+  radiusChip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
+    backgroundColor: Colors.background.card,
+    borderWidth: 1, borderColor: Colors.border.light,
+  },
+  radiusChipActive: {
+    backgroundColor: Colors.primary.orange + '20',
+    borderColor: Colors.primary.orange,
+  },
+  radiusText: {
+    color: Colors.text.secondary, fontSize: 12, fontWeight: '600',
+  },
+  radiusTextActive: {
+    color: Colors.primary.orange,
   },
 });

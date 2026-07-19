@@ -138,12 +138,14 @@ function RootLayoutNav() {
         <Stack.Screen name="tournaments" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="tournament/[id]" />
         <Stack.Screen name="tournament/[id]/advance-payout-request" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="tournament/[id]/report-dispute" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="edit-tournament/[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="venues" />
         <Stack.Screen name="venue/[id]" />
         <Stack.Screen name="create-venue" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="edit-venue/[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="venue-manager" />
+        <Stack.Screen name="invoice/[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       </Stack>
     </View>
   );

@@ -24,10 +24,11 @@ import { useTournaments } from '@/contexts/TournamentsContext';
 import { useTeams } from '@/contexts/TeamsContext';
 import { useMatches } from '@/contexts/MatchesContext';
 import { tournamentsApi } from '@/lib/api/tournaments';
+import { tournamentCancellationApi } from '@/lib/api/tournament-cancellations';
 import { matchesApi } from '@/lib/api/matches';
 import { notificationsApi } from '@/lib/api/notifications';
 import { supabase } from '@/lib/supabase';
-import type { Tournament, Match } from '@/types';
+import type { Tournament, Match, TournamentCancellationRequest } from '@/types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const IS_WEB = Platform.OS === 'web';
@@ -618,7 +619,7 @@ export default function ManageTournamentScreen() {
   const { t, locale } = useI18n();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, isAdmin } = useAuth();
-  const { getTournamentById, updateTournament, deleteTournament, refetchTournaments, addMatchToTournament, setTournamentWinner, removeMatchFromTournament } = useTournaments();
+  const { getTournamentById, updateTournament, deleteTournament, requestCancellation, refetchTournaments, addMatchToTournament, setTournamentWinner, removeMatchFromTournament } = useTournaments();
   const { getTeamById } = useTeams();
   const { createMatch, updateMatchScore, venues } = useMatches();
 
@@ -667,6 +668,14 @@ export default function ManageTournamentScreen() {
     || (tournament.managers ?? []).includes(user.id)
   ));
   const canView = !!tournament;
+
+  const cancellationQuery = useQuery({
+    queryKey: ['tournament-cancellation', id],
+    queryFn: () => tournamentCancellationApi.getByTournament(id!),
+    enabled: !!id,
+    refetchInterval: 15_000,
+  });
+  const cancellationRequest: TournamentCancellationRequest | null = cancellationQuery.data ?? null;
 
   const goBack = useCallback(() => {
     if (router.canGoBack()) {
@@ -1487,15 +1496,97 @@ export default function ManageTournamentScreen() {
     }
   }, [tournament, updateTournament, refetchAll]);
 
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [isSubmittingCancellation, setIsSubmittingCancellation] = useState(false);
+
   const handleDelete = useCallback(() => {
-    Alert.alert('Supprimer le tournoi', 'Cette action est irréversible.', [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Supprimer', style: 'destructive', onPress: async () => {
-        try { await deleteTournament({ tournamentId: tournament!.id, userId: user!.id, isAdmin }); Alert.alert('Supprimé', '', [{ text: 'OK', onPress: () => router.replace(`/tournament/${id}` as any) }]); }
-        catch (e: unknown) { Alert.alert('Erreur', (e as Error).message); }
-      }},
-    ]);
-  }, [tournament, user, isAdmin, deleteTournament, router, id]);
+    if (!tournament || !user) return;
+
+    // Tournoi gratuit ou sans équipes confirmées: suppression directe
+    if (tournament.entryFee === 0 || (tournament.registeredTeams?.length ?? 0) === 0) {
+      Alert.alert('Supprimer le tournoi', 'Cette action est irréversible.', [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Supprimer', style: 'destructive', onPress: async () => {
+          try {
+            if ((tournament.registeredTeams?.length ?? 0) > 0) {
+              await tournamentCancellationApi.notifyTeamsOfCancellation(tournament!.id, 'Tournoi supprimé par l\'organisateur');
+            }
+            await deleteTournament({ tournamentId: tournament!.id, userId: user!.id, isAdmin });
+            Alert.alert('Supprimé', '', [{ text: 'OK', onPress: () => router.replace('/tournaments' as any) }]);
+          }
+          catch (e: unknown) { Alert.alert('Erreur', (e as Error).message); }
+        }},
+      ]);
+      return;
+    }
+
+    // Admin: peut annuler directement
+    if (isAdmin) {
+      Alert.alert(
+        'Annuler le tournoi',
+        'En tant qu\'administrateur, vous pouvez annuler ce tournoi directement. Les équipes confirmées seront remboursées.',
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Annuler le tournoi', style: 'destructive', onPress: async () => {
+            try {
+              await updateTournament({ tournamentId: tournament!.id, updates: { status: 'cancelled' as any } });
+              await tournamentCancellationApi.notifyTeamsOfCancellation(tournament!.id, 'Annulation par l\'administrateur');
+              await refetchAll();
+              Alert.alert('Tournoi annulé', 'Le tournoi a été annulé. Toutes les équipes inscrites ont été notifiées.');
+            } catch (e: unknown) {
+              Alert.alert('Erreur', (e as Error).message);
+            }
+          }},
+        ]
+      );
+      return;
+    }
+
+    // Organisateur avec équipes payantes: doit soumettre une demande
+    setShowCancelModal(true);
+  }, [tournament, user, isAdmin, deleteTournament, router, id, updateTournament, refetchAll]);
+
+  const handlePermanentDelete = useCallback(() => {
+    if (!tournament || !user) return;
+    Alert.alert(
+      'Supprimer définitivement',
+      'Ce tournoi est annulé. Le supprimer le fera disparaître de toutes les listes. Cette action est irréversible.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Supprimer', style: 'destructive', onPress: async () => {
+          try {
+            await deleteTournament({ tournamentId: tournament!.id, userId: user!.id, isAdmin });
+            Alert.alert('Tournoi supprimé', '', [{ text: 'OK', onPress: () => router.replace('/tournaments' as any) }]);
+          } catch (e: unknown) {
+            Alert.alert('Erreur', (e as Error).message);
+          }
+        }},
+      ]
+    );
+  }, [tournament, user, isAdmin, deleteTournament, router]);
+
+  const handleSubmitCancellation = useCallback(async () => {
+    if (!tournament || !user || !cancelReason.trim()) return;
+    setIsSubmittingCancellation(true);
+    try {
+      await requestCancellation({
+        tournamentId: tournament.id,
+        organizerId: user.id,
+        reason: cancelReason.trim(),
+      });
+      setShowCancelModal(false);
+      setCancelReason('');
+      Alert.alert(
+        'Demande envoyée',
+        'Votre demande d\'annulation a été envoyée aux administrateurs. Vous serez notifié de leur décision.',
+      );
+    } catch (e: unknown) {
+      Alert.alert('Erreur', (e as Error).message);
+    } finally {
+      setIsSubmittingCancellation(false);
+    }
+  }, [tournament, user, cancelReason, requestCancellation]);
 
   const handleManagerAdded = useCallback(async () => {
     await refetchAll();
@@ -1523,7 +1614,9 @@ export default function ManageTournamentScreen() {
     ? t('tournamentDetail.statusRegistration')
     : tournament?.status === 'in_progress'
       ? t('tournamentDetail.statusInProgress')
-      : t('tournamentDetail.statusCompleted');
+      : tournament?.status === 'cancelled'
+        ? 'Annulé'
+        : t('tournamentDetail.statusCompleted');
 
   if (loading && !tournament) {
     return (
@@ -1661,7 +1754,7 @@ export default function ManageTournamentScreen() {
       <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={st.safe}>
         <LinearGradient
-          colors={tournament.status === 'completed' ? ['#4A5688', '#364270'] : tournament.status === 'in_progress' ? ['#22A85A', '#1A8C48'] : ['#E8740C', '#C85F0A']}
+          colors={tournament.status === 'completed' ? ['#4A5688', '#364270'] : tournament.status === 'in_progress' ? ['#22A85A', '#1A8C48'] : tournament.status === 'cancelled' ? ['#7F1D1D', '#5B1414'] : ['#E8740C', '#C85F0A']}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
           style={st.headerBanner}
         >
@@ -2476,7 +2569,7 @@ export default function ManageTournamentScreen() {
                 <View style={st.statCard}>
                   <Text style={st.statCardTitle}>Plus large victoire</Text>
                   <View style={st.statCardRow}>
-                    <Text style={st.statCardValue}>{teamName(tournamentStats.biggestWinMatch.homeTeamId)} {tournamentStats.biggestWinMatch.score!.home} - {tournamentStats.biggestWinMatch.score!.away} {teamName(tournamentStats.biggestWinMatch.awayTeamId)}</Text>
+                    <Text style={st.statCardValue}>{teamName((tournamentStats.biggestWinMatch as Match).homeTeamId)} {(tournamentStats.biggestWinMatch as Match).score!.home} - {(tournamentStats.biggestWinMatch as Match).score!.away} {teamName((tournamentStats.biggestWinMatch as Match).awayTeamId)}</Text>
                     <Text style={st.statCardBig}>+{tournamentStats.biggestWinMargin}</Text>
                   </View>
                 </View>
@@ -2486,7 +2579,7 @@ export default function ManageTournamentScreen() {
                 <View style={st.statCard}>
                   <Text style={st.statCardTitle}>Match le plus prolifique</Text>
                   <View style={st.statCardRow}>
-                    <Text style={st.statCardValue}>{teamName(tournamentStats.highestScoringMatch.homeTeamId)} {tournamentStats.highestScoringMatch.score!.home} - {tournamentStats.highestScoringMatch.score!.away} {teamName(tournamentStats.highestScoringMatch.awayTeamId)}</Text>
+                    <Text style={st.statCardValue}>{teamName((tournamentStats.highestScoringMatch as Match).homeTeamId)} {(tournamentStats.highestScoringMatch as Match).score!.home} - {(tournamentStats.highestScoringMatch as Match).score!.away} {teamName((tournamentStats.highestScoringMatch as Match).awayTeamId)}</Text>
                     <Text style={st.statCardBig}>{tournamentStats.highestScoringTotal} buts</Text>
                   </View>
                 </View>
@@ -2643,12 +2736,87 @@ export default function ManageTournamentScreen() {
               </View>
             )}
 
+            {cancellationRequest && (
+              <View style={[st.dangerZone, { borderColor: cancellationRequest.status === 'approved' ? Colors.status.error + '40' : cancellationRequest.status === 'rejected' ? Colors.status.success + '40' : Colors.status.warning + '40' }]}>
+                <Text style={[st.dangerZoneTitle, { color: cancellationRequest.status === 'approved' ? Colors.status.error : cancellationRequest.status === 'rejected' ? Colors.status.success : Colors.status.warning }]}>
+                  Demande d'annulation
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <View style={{
+                    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
+                    backgroundColor: cancellationRequest.status === 'approved' ? Colors.status.error + '20'
+                      : cancellationRequest.status === 'rejected' ? Colors.status.success + '20'
+                      : Colors.status.warning + '20',
+                  }}>
+                    <Text style={{
+                      color: cancellationRequest.status === 'approved' ? Colors.status.error
+                        : cancellationRequest.status === 'rejected' ? Colors.status.success
+                        : Colors.status.warning,
+                      fontSize: 12, fontWeight: '700',
+                    }}>
+                      {cancellationRequest.status === 'approved' ? 'APPROUVÉE' : cancellationRequest.status === 'rejected' ? 'REJETÉE' : 'EN ATTENTE'}
+                    </Text>
+                  </View>
+                  <Text style={{ color: Colors.text.muted, fontSize: 12 }}>
+                    {cancellationRequest.createdAt ? new Date(cancellationRequest.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                  </Text>
+                </View>
+                <Text style={{ color: Colors.text.secondary, fontSize: 13, marginBottom: 6 }}>
+                  Raison: <Text style={{ color: Colors.text.primary, fontStyle: 'italic' }}>{cancellationRequest.reason}</Text>
+                </Text>
+                {cancellationRequest.organizerResponse && (
+                  <View style={{
+                    backgroundColor: 'rgba(16,185,129,0.08)',
+                    borderRadius: 8,
+                    padding: 12,
+                    marginTop: 8,
+                    borderLeftWidth: 3,
+                    borderLeftColor: Colors.status.success,
+                  }}>
+                    <Text style={{ color: Colors.status.success, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>
+                      RÉPONSE DE L'ADMINISTRATEUR
+                    </Text>
+                    <Text style={{ color: Colors.text.primary, fontSize: 14 }}>
+                      {cancellationRequest.organizerResponse}
+                    </Text>
+                  </View>
+                )}
+                {cancellationRequest.status === 'pending' && (
+                  <Text style={{ color: Colors.text.muted, fontSize: 12, marginTop: 8 }}>
+                    Votre demande est en cours de traitement. Vous serez notifié de la décision.
+                  </Text>
+                )}
+              </View>
+            )}
+
             <View style={st.dangerZone}>
               <Text style={st.dangerZoneTitle}>Zone de danger</Text>
-              <TouchableOpacity style={st.dangerAction} onPress={handleDelete}>
-                <Trash2 size={18} color={Colors.status.error} />
-                <View style={{ flex: 1 }}><Text style={st.dangerActionTitle}>Supprimer le tournoi</Text><Text style={st.dangerActionSub}>Cette action est irréversible</Text></View>
-              </TouchableOpacity>
+              {tournament.status === 'cancelled' ? (
+                <TouchableOpacity style={st.dangerAction} onPress={handlePermanentDelete}>
+                  <Trash2 size={18} color={Colors.status.error} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={st.dangerActionTitle}>Supprimer définitivement</Text>
+                    <Text style={st.dangerActionSub}>Le tournoi est annulé. Supprimez-le pour qu'il disparaisse de la liste.</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : tournament.entryFee > 0 && (tournament.registeredTeams?.length ?? 0) > 0 ? (
+                <TouchableOpacity style={st.dangerAction} onPress={handleDelete}>
+                  <Trash2 size={18} color={Colors.status.error} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={st.dangerActionTitle}>{isAdmin ? 'Annuler le tournoi' : 'Demander l\'annulation'}</Text>
+                    <Text style={st.dangerActionSub}>
+                      {isAdmin
+                        ? 'Annuler et rembourser les équipes'
+                        : 'Des équipes ont payé. Une demande d\'annulation sera envoyée aux administrateurs.'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={st.dangerAction} onPress={handleDelete}>
+                  <Trash2 size={18} color={Colors.status.error} />
+                  <View style={{ flex: 1 }}><Text style={st.dangerActionTitle}>Supprimer le tournoi</Text><Text style={st.dangerActionSub}>Cette action est irréversible</Text></View>
+                </TouchableOpacity>
+              )}
             </View>
           </>)}
 
@@ -2657,6 +2825,63 @@ export default function ManageTournamentScreen() {
         </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
+
+    <Modal visible={showCancelModal} animationType="slide" transparent statusBarTranslucent>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={st.modalOverlay}>
+          {!IS_WEB && <TouchableOpacity style={st.modalDismiss} activeOpacity={1} onPress={() => { Keyboard.dismiss(); }} />}
+          <View style={st.modalContent}>
+            <View style={st.modalHeader}>
+              <Text style={st.modalTitle}>Demande d'annulation</Text>
+              <TouchableOpacity onPress={() => { setShowCancelModal(false); setCancelReason(''); }} style={st.modalClose}>
+                <X size={22} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <View style={{ padding: 20 }}>
+              <Text style={{ color: Colors.text.secondary, fontSize: 14, marginBottom: 12 }}>
+                Des équipes ont payé leur inscription. Expliquez la raison de l'annulation. Les administrateurs examineront votre demande.
+              </Text>
+              <TextInput
+                style={{
+                  backgroundColor: Colors.background.card,
+                  borderRadius: 12,
+                  padding: 14,
+                  color: Colors.text.primary,
+                  fontSize: 15,
+                  minHeight: 100,
+                  textAlignVertical: 'top',
+                  borderWidth: 1,
+                  borderColor: Colors.border.light,
+                }}
+                placeholder="Raison de l'annulation..."
+                placeholderTextColor={Colors.text.muted}
+                value={cancelReason}
+                onChangeText={setCancelReason}
+                multiline
+                autoFocus
+              />
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+                <Button
+                  title="Annuler"
+                  onPress={() => { setShowCancelModal(false); setCancelReason(''); }}
+                  variant="secondary"
+                  size="medium"
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  title={isSubmittingCancellation ? 'Envoi...' : 'Envoyer la demande'}
+                  onPress={handleSubmitCancellation}
+                  variant="primary"
+                  size="medium"
+                  style={{ flex: 1 }}
+                  disabled={!cancelReason.trim() || isSubmittingCancellation}
+                />
+              </View>
+            </View>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
 
     <Modal visible={showCreateMatchModal} animationType="slide" transparent statusBarTranslucent>
       <View style={st.modalOverlay}>

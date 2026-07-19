@@ -1,11 +1,11 @@
 import React, { useCallback, useMemo } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, Modal, Pressable } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Bell, Users, Trophy, Swords, MessageCircle, CheckCheck, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, Bell, Users, Trophy, Swords, MessageCircle, CheckCheck, Trash2, X, ChevronRight } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useNotifications } from '@/contexts/NotificationsContext';
 import { useTeams } from '@/contexts/TeamsContext';
@@ -16,11 +16,12 @@ import type { Notification } from '@/types';
 export default function NotificationsScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { notifications, markAsRead, markAllAsRead, deleteNotification, refetchNotifications, notifyTeamRequest } = useNotifications();
+  const { notifications, markAsRead, markAllAsRead, deleteNotification, refetchNotifications } = useNotifications();
   const { teams, getPendingRequests, handleRequest, refetchTeams } = useTeams();
   const { users } = useUsers();
   const [refreshing, setRefreshing] = React.useState(false);
   const [processingRequestId, setProcessingRequestId] = React.useState<string | null>(null);
+  const [selectedNotification, setSelectedNotification] = React.useState<(typeof notificationsWithTeamRequests)[0] | null>(null);
 
   const usersById = useMemo(() => {
     const map = new Map<string, (typeof users)[number]>();
@@ -125,6 +126,11 @@ export default function NotificationsScreen() {
       } as any);
       return;
     }
+    setSelectedNotification(notification);
+  };
+
+  const handleNotificationNavigate = (notification: (typeof notificationsWithTeamRequests)[0]) => {
+    setSelectedNotification(null);
     if (
       notification.type === 'team' &&
       notification.title === 'Nouvelle demande'
@@ -306,6 +312,65 @@ export default function NotificationsScreen() {
           </ScrollView>
         </SafeAreaView>
       </View>
+
+      {/* Modal détail notification */}
+      <Modal
+        visible={selectedNotification !== null}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setSelectedNotification(null)}
+      >
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }} onPress={() => setSelectedNotification(null)}>
+          <Pressable style={{ backgroundColor: Colors.background.card, borderRadius: 16, padding: 20, width: '100%', maxWidth: 400 }} onPress={(e) => e.stopPropagation()}>
+            {selectedNotification && (() => {
+              const n = selectedNotification;
+              const hasRoute = !!n.data?.route;
+              return (
+                <>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <View style={[styles.iconContainer, { backgroundColor: getIconBg(n.type) }]}>
+                        {getIcon(n.type)}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: Colors.text.primary, fontSize: 16, fontWeight: '700' }}>{n.title}</Text>
+                        <Text style={{ color: Colors.text.muted, fontSize: 12, marginTop: 2 }}>{formatTime(n.createdAt)}</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity onPress={() => setSelectedNotification(null)} style={{ padding: 4 }}>
+                      <X size={20} color={Colors.text.muted} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 300, marginBottom: 16 }}>
+                    <Text style={{ color: Colors.text.secondary, fontSize: 15, lineHeight: 22 }}>
+                      {n.message}
+                    </Text>
+                  </ScrollView>
+
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity
+                      style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center' }}
+                      onPress={() => setSelectedNotification(null)}
+                    >
+                      <Text style={{ color: Colors.text.secondary, fontSize: 14, fontWeight: '600' }}>Fermer</Text>
+                    </TouchableOpacity>
+                    {hasRoute && (
+                      <TouchableOpacity
+                        style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: Colors.primary.blue, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                        onPress={() => handleNotificationNavigate(n)}
+                      >
+                        <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700' }}>Voir</Text>
+                        <ChevronRight size={16} color="#FFF" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </>
+              );
+            })()}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </>
   );
 }

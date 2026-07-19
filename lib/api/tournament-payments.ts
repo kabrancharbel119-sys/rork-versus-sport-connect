@@ -1,5 +1,6 @@
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { notificationsApi } from '@/lib/api/notifications';
+import { tournamentFundsApi } from '@/lib/api/tournament-funds';
 import { DEMO_TOURNAMENT_ID, DEMO_TEAMS } from '@/lib/demo-data';
 import type {
   TournamentPayment,
@@ -75,6 +76,10 @@ interface TournamentPayoutRequestRow {
   reviewed_at: string | null;
   created_at: string;
   updated_at: string;
+  venue_id?: string | null;
+  disbursement_status?: string | null;
+  disbursed_at?: string | null;
+  disbursement_transaction_id?: string | null;
 }
 
 // =============================================
@@ -125,6 +130,10 @@ function mapPayoutRequestRowToRequest(row: TournamentPayoutRequestRow): Tourname
     reviewedAt: row.reviewed_at ? new Date(row.reviewed_at) : undefined,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
+    venueId: row.venue_id || undefined,
+    disbursementStatus: (row.disbursement_status as TournamentPayoutRequest['disbursementStatus']) ?? 'not_sent',
+    disbursedAt: row.disbursed_at ? new Date(row.disbursed_at) : undefined,
+    disbursementTransactionId: row.disbursement_transaction_id || undefined,
   };
 }
 
@@ -331,6 +340,21 @@ export const tournamentPaymentsApi = {
       .eq('tournament_id', payment.tournamentId)
       .eq('team_id', payment.teamId);
 
+    // Écriture au ledger: encaissement de l'inscription (non bloquant)
+    try {
+      await tournamentFundsApi.addLedgerEntry({
+        tournamentId: payment.tournamentId,
+        entryType: 'collection',
+        amount: payment.amount,
+        referenceType: 'tournament_payment',
+        referenceId: payment.id,
+        performedBy: adminId,
+        note: 'Encaissement inscription équipe',
+      });
+    } catch (e) {
+      console.warn('[PaymentsAPI] Ledger entry failed after approval:', (e as Error)?.message ?? e);
+    }
+
     // Notifications (non bloquantes)
     try {
       const { data: teamRow } = await (supabase
@@ -349,6 +373,9 @@ export const tournamentPaymentsApi = {
       const tournamentName = tournamentRow?.name || 'ce tournoi';
       const captainId = teamRow?.captain_id as string | undefined;
       const organizerId = tournamentRow?.created_by as string | undefined;
+
+      // La facture d'inscription est maintenant générée automatiquement par le trigger DB
+      // create_invoice_for_tournament_payment sur UPDATE status = 'approved'
 
       if (captainId) {
         await notificationsApi.send(captainId, {
@@ -472,7 +499,22 @@ export const tournamentPayoutRequestsApi = {
     fallbackContact?: string;
     urgency: 'low' | 'medium' | 'high';
     payoutPhone: string;
+    venueId?: string;
   }): Promise<TournamentPayoutRequest> {
+    // RÈGLES ANTI-FRAUDE: valider la demande avant insertion
+    // - avance 'venue': terrain lié obligatoire, paiement direct au terrain, terrain in-app uniquement
+    // - autres catégories: seuil de remplissage 50% + plafond 30% du net encaissé
+    const validation = await tournamentFundsApi.validateAdvanceRequest({
+      tournamentId: data.tournamentId,
+      purposeCategory: data.purposeCategory,
+      requestedAmount: data.requestedAmount,
+      organizerId: data.organizerId,
+      venueId: data.venueId,
+    });
+    if (!validation.allowed) {
+      throw new Error(validation.reason || 'Demande d’avance non autorisée');
+    }
+
     const { data: row, error } = await (supabase
       .from('tournament_payout_requests')
       .insert({
@@ -490,6 +532,7 @@ export const tournamentPayoutRequestsApi = {
         urgency: data.urgency,
         payout_phone: data.payoutPhone,
         status: 'pending',
+        venue_id: data.venueId || null,
       })
       .select('*')
       .single() as any);
@@ -547,6 +590,65 @@ export const tournamentPayoutRequestsApi = {
 
     if (error) throw error;
     return mapPayoutRequestRowToRequest(data as TournamentPayoutRequestRow);
+  },
+
+  /**
+   * Marquer une demande approuvée comme versée (ADMIN).
+   * - Avance 'venue': versement direct au gestionnaire du terrain (sent_to_venue)
+   * - Autres: versement à l'organisateur (sent_to_organizer)
+   * Écrit dans le ledger + génère un reçu de décaissement.
+   */
+  async markDisbursed(requestId: string, adminId: string, transactionId?: string): Promise<TournamentPayoutRequest> {
+    const client = (supabaseAdmin ?? supabase) as typeof supabase;
+
+    // Récupérer la demande pour déterminer la destination du versement
+    const { data: reqRow, error: reqError } = await (client
+      .from('tournament_payout_requests')
+      .select('*')
+      .eq('id', requestId)
+      .single() as any);
+
+    if (reqError || !reqRow) throw reqError ?? new Error('Demande introuvable');
+    if (reqRow.status !== 'approved') throw new Error('La demande doit être approuvée avant versement');
+    if (reqRow.disbursement_status && reqRow.disbursement_status !== 'not_sent') {
+      throw new Error('Cette demande a déjà été versée');
+    }
+
+    const isVenueAdvance = reqRow.purpose_category === 'venue';
+    const disbursementStatus = isVenueAdvance ? 'sent_to_venue' : 'sent_to_organizer';
+
+    const { data: row, error } = await (client
+      .from('tournament_payout_requests')
+      .update({
+        disbursement_status: disbursementStatus,
+        disbursed_at: new Date().toISOString(),
+        disbursement_transaction_id: transactionId || null,
+      })
+      .eq('id', requestId)
+      .select('*')
+      .single() as any);
+
+    if (error) throw error;
+
+    // Écriture au ledger (non bloquante pour ne pas casser le flux principal)
+    try {
+      await tournamentFundsApi.addLedgerEntry({
+        tournamentId: reqRow.tournament_id,
+        entryType: isVenueAdvance ? 'venue_advance' : 'logistics_advance',
+        amount: reqRow.requested_amount,
+        referenceType: 'payout_request',
+        referenceId: requestId,
+        performedBy: adminId,
+        note: isVenueAdvance ? 'Avance versée directement au terrain' : 'Avance logistique versée à l’organisateur',
+      });
+    } catch (e) {
+      console.warn('[PayoutRequestsAPI] Ledger entry failed after disbursement:', (e as Error)?.message ?? e);
+    }
+
+    // Le reçu de décaissement est maintenant généré automatiquement par le trigger DB
+    // create_invoice_for_payout_request sur UPDATE disbursement_status = 'sent_to_venue' / 'sent_to_organizer'
+
+    return mapPayoutRequestRowToRequest(row as TournamentPayoutRequestRow);
   },
 
   async rejectRequest(requestId: string, adminId: string, adminNote?: string): Promise<TournamentPayoutRequest> {

@@ -1,15 +1,16 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Dimensions, TextInput, Modal } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Dimensions, TextInput, Modal, Linking } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, MapPin, Phone, Mail, Star, DollarSign, Check, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { ArrowLeft, MapPin, Phone, Mail, Star, DollarSign, Check, AlertCircle, ChevronDown, ChevronUp, Wallet } from 'lucide-react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { venuesApi } from '@/lib/api/venues';
 import { venueReviewsApi } from '@/lib/api/venue-reviews';
+import { paymentProvider, isInAppPaymentAvailable } from '@/lib/payments/payment-provider';
 import { supabase } from '@/lib/supabase';
 import { tournamentsApi } from '@/lib/api/tournaments';
 import { Card } from '@/components/Card';
@@ -21,6 +22,18 @@ const sportLabels: Record<string, string> = {
   tennis: 'Tennis', handball: 'Handball', rugby: 'Rugby', badminton: 'Badminton',
   tabletennis: 'Tennis de table', padel: 'Padel', squash: 'Squash',
   futsal: 'Futsal', beachvolleyball: 'Beach-volley',
+};
+
+const paymentModeLabels: Record<string, string> = {
+  in_app_immediate: 'Paiement au moment de la réservation',
+  in_app_on_site_qr: 'Paiement In-App sur place',
+  cash_off_app: 'Paiement cash',
+};
+
+const paymentModeNotes: Record<string, string> = {
+  in_app_immediate: 'Payer en ligne pour confirmer.',
+  in_app_on_site_qr: 'Payer au scan du QR le jour J.',
+  cash_off_app: 'Payer en espèces au terrain.',
 };
 
 function toLocalDateString(date: Date): string {
@@ -53,6 +66,8 @@ export default function VenueDetailScreen() {
   const [isGalleryExpanded, setIsGalleryExpanded] = useState(true);
   const [isReviewsExpanded, setIsReviewsExpanded] = useState(true);
   const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
+  const [paymentPending, setPaymentPending] = useState(false);
+  const [pendingPaymentRef, setPendingPaymentRef] = useState<string | null>(null);
 
   const venueQuery = useQuery({
     queryKey: ['venue', id],
@@ -133,7 +148,7 @@ export default function VenueDetailScreen() {
   });
 
   const bookMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (opts?: { providerTransactionId?: string; paymentStatus?: 'pending' | 'paid' }) => {
       if (!user) throw new Error('Vous devez être connecté pour réserver.');
       if (selectedSlots.length === 0) throw new Error('Sélectionnez au moins un créneau horaire.');
       const sorted = [...selectedSlots].sort((a, b) => a - b);
@@ -144,17 +159,29 @@ export default function VenueDetailScreen() {
         date: selectedDate,
         startTime,
         endTime,
+        paymentStatus: opts?.paymentStatus,
+        paymentTransactionId: opts?.providerTransactionId,
       });
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['availability', id] });
       queryClient.invalidateQueries({ queryKey: ['ownerBookings'] });
       queryClient.invalidateQueries({ queryKey: ['userBookings'] });
       setSelectedSlots([]);
-      Alert.alert(
-        'Réservation confirmée !',
-        'Votre créneau a été réservé avec succès. Vous pouvez retrouver vos réservations dans votre profil.'
-      );
+      const mode = venue?.paymentMode || 'cash_off_app';
+
+      // If payment is pending (GeniusPay async flow), inform user and start polling
+      if (data?.id && (data as any)?.payment_status === 'pending') {
+        setPaymentPending(true);
+        setPendingPaymentRef(data.id);
+        Alert.alert(
+          'Réservation en attente de paiement',
+          'Vous allez être redirigé vers la page de paiement GeniusPay.\nUne fois le paiement confirmé, votre réservation sera validée automatiquement.'
+        );
+      } else {
+        const successMessage = `${paymentModeLabels[mode] || 'Réservation confirmée'}\n${paymentModeNotes[mode] || ''}`;
+        Alert.alert('Réservation confirmée !', successMessage);
+      }
     },
     onError: (error: Error) => {
       Alert.alert(
@@ -168,6 +195,54 @@ export default function VenueDetailScreen() {
   const slots = availabilityQuery.data || [];
   const currentHour = new Date().getHours();
   const isToday = selectedDate === toLocalDateString(new Date());
+
+  // Poll booking payment status when waiting for GeniusPay webhook confirmation
+  useEffect(() => {
+    if (!paymentPending || !pendingPaymentRef) return;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 60; // 5 min at 5s intervals
+
+    const poll = async () => {
+      while (!cancelled && attempts < maxAttempts) {
+        attempts++;
+        try {
+          const { data, error } = await supabase
+            .from('bookings')
+            .select('payment_status')
+            .eq('id', pendingPaymentRef)
+            .single();
+
+          if (error) {
+            console.warn('[VenueDetail] Poll error:', error.message);
+          } else if (data?.payment_status === 'paid') {
+            queryClient.invalidateQueries({ queryKey: ['availability', id] });
+            queryClient.invalidateQueries({ queryKey: ['userBookings'] });
+            setPaymentPending(false);
+            setPendingPaymentRef(null);
+            Alert.alert('Paiement confirmé ✅', 'Votre paiement a été confirmé. La réservation est validée.');
+            return;
+          } else if (data?.payment_status === 'failed') {
+            setPaymentPending(false);
+            setPendingPaymentRef(null);
+            Alert.alert('Paiement échoué', 'Le paiement n\'a pas abouti. Vous pouvez réessayer.');
+            return;
+          }
+        } catch (e) {
+          console.warn('[VenueDetail] Poll exception:', e);
+        }
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+      if (!cancelled) {
+        setPaymentPending(false);
+        setPendingPaymentRef(null);
+        console.log('[VenueDetail] Polling timed out after', maxAttempts, 'attempts');
+      }
+    };
+
+    poll();
+    return () => { cancelled = true; };
+  }, [paymentPending, pendingPaymentRef, id, queryClient]);
 
   const dates = useMemo(() => {
     const result = [];
@@ -288,17 +363,120 @@ export default function VenueDetailScreen() {
 
   const confirmBook = () => {
     if (!bookingSummary || !venue) return;
+    const paymentLabel = paymentModeLabels[venue.paymentMode || ''] || 'Mode de paiement du terrain';
+    const paymentNote = paymentModeNotes[venue.paymentMode || ''] || '';
     Alert.alert(
       'Confirmer la réservation',
       `${venue.name}\n` +
       `${bookingSummary.dateStr}\n` +
       `${bookingSummary.timeStr} (${bookingSummary.duration}h)\n\n` +
-      `Total : ${totalPrice.toLocaleString()} FCFA`,
+      `Total : ${totalPrice.toLocaleString()} FCFA\n\n` +
+      `${paymentLabel}${paymentNote ? `\n${paymentNote}` : ''}`,
       [
         { text: 'Annuler', style: 'cancel' },
-        { text: 'Confirmer', onPress: () => bookMutation.mutate() },
+        { text: 'Confirmer', onPress: () => processPaymentAndBook() },
       ]
     );
+  };
+
+  const processPaymentAndBook = async () => {
+    if (!user || !venue || !bookingSummary) return;
+
+    // Cash / off-app: no payment to collect in the app
+    if (venue.paymentMode === 'cash_off_app') {
+      bookMutation.mutate(undefined);
+      return;
+    }
+
+    // In-app on-site QR: payment is handled at QR scan, not at reservation
+    if (venue.paymentMode === 'in_app_on_site_qr') {
+      bookMutation.mutate(undefined);
+      return;
+    }
+
+    // In-app immediate: GeniusPay async checkout flow
+    if (!isInAppPaymentAvailable()) {
+      Alert.alert(
+        'Paiement in-app indisponible',
+        'Aucun fournisseur de paiement n\'est configuré. L\'intégration GeniusPay est en attente.'
+      );
+      return;
+    }
+
+    // Step 1: Create the booking in 'pending' payment state first
+    const sorted = [...selectedSlots].sort((a, b) => a - b);
+    const startTime = `${sorted[0]}:00`;
+    const endTime = `${sorted[sorted.length - 1] + 1}:00`;
+
+    let bookingId: string;
+    try {
+      const booking = await venuesApi.book(user.id, {
+        venueId: id!,
+        date: selectedDate,
+        startTime,
+        endTime,
+        paymentStatus: 'pending',
+      });
+      bookingId = booking.id;
+    } catch (e: any) {
+      Alert.alert(
+        'Impossible de réserver',
+        e?.message || 'Une erreur est survenue lors de la réservation.'
+      );
+      return;
+    }
+
+    // Step 2: Initiate GeniusPay payment with the real booking ID as contextId
+    const reference = `VENUE-${venue.id}-${Date.now()}`;
+    const paymentResult = await paymentProvider.initiatePayment({
+      reference,
+      amount: totalPrice,
+      currency: 'XOF',
+      contextType: 'booking',
+      contextId: bookingId,
+      payerId: user.id,
+      successUrl: `https://versus-sport-connect.vercel.app/payment/success?booking_id=${bookingId}`,
+      errorUrl: `https://versus-sport-connect.vercel.app/payment/error?booking_id=${bookingId}`,
+    });
+
+    if (!paymentResult.success) {
+      Alert.alert(
+        'Paiement refusé',
+        paymentResult.error || 'Le paiement n\'a pas pu être traité. Veuillez réessayer.'
+      );
+      return;
+    }
+
+    // Step 3: Invalidate queries and start polling for payment confirmation
+    queryClient.invalidateQueries({ queryKey: ['availability', id] });
+    queryClient.invalidateQueries({ queryKey: ['ownerBookings'] });
+    queryClient.invalidateQueries({ queryKey: ['userBookings'] });
+    setSelectedSlots([]);
+    setPaymentPending(true);
+    setPendingPaymentRef(bookingId);
+
+    // Step 4: Open GeniusPay checkout in browser
+    if (paymentResult.checkoutUrl) {
+      Alert.alert(
+        'Réservation en attente de paiement',
+        'Vous allez être redirigé vers la page de paiement GeniusPay.\nUne fois le paiement confirmé, votre réservation sera validée automatiquement.'
+      );
+      const supported = await Linking.canOpenURL(paymentResult.checkoutUrl);
+      if (supported) {
+        await Linking.openURL(paymentResult.checkoutUrl);
+      } else {
+        Alert.alert(
+          'Ouverture impossible',
+          'Impossible d\'ouvrir la page de paiement. Copiez ce lien et ouvrez-le dans votre navigateur :\n' + paymentResult.checkoutUrl
+        );
+      }
+    } else {
+      // Fallback: no checkout URL — booking stays pending, webhook will confirm
+      Alert.alert(
+        'Réservation en attente',
+        'Le paiement est en cours de traitement. Vous recevrez une notification dès qu\'il sera confirmé.'
+      );
+    }
   };
 
   const handleBack = () => {
@@ -472,6 +650,16 @@ export default function VenueDetailScreen() {
                 <View style={styles.infoRow}>
                   <Mail size={16} color={Colors.text.muted} />
                   <Text style={styles.infoText}>{venue.email}</Text>
+                </View>
+              ) : null}
+
+              {venue.paymentMode ? (
+                <View style={styles.infoRow}>
+                  <Wallet size={16} color={Colors.text.muted} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.infoText}>{paymentModeLabels[venue.paymentMode] || venue.paymentMode}</Text>
+                    <Text style={styles.paymentModeNote}>{paymentModeNotes[venue.paymentMode]}</Text>
+                  </View>
                 </View>
               ) : null}
 
@@ -724,6 +912,17 @@ export default function VenueDetailScreen() {
                   ? 'Vérifiez vos heures puis confirmez en bas de l’écran.'
                   : 'Sélectionnez votre date et vos créneaux pour voir le total.'}
               </Text>
+
+              {/* Payment mode info */}
+              {venue.paymentMode && (
+                <View style={styles.paymentNotice}>
+                  <Wallet size={18} color={Colors.primary.blue} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.paymentNoticeTitle}>{paymentModeLabels[venue.paymentMode] || venue.paymentMode}</Text>
+                    <Text style={styles.paymentNoticeText}>{paymentModeNotes[venue.paymentMode]}</Text>
+                  </View>
+                </View>
+              )}
 
               {/* Date Selector */}
               <Text style={styles.bookingStepTitle}>1. Choisir une date</Text>
@@ -1568,4 +1767,26 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   fullscreenCloseText: { color: Colors.text.primary, fontSize: 14, fontWeight: '700' },
+  paymentModeNote: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
+  paymentNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.primary.blue + '14',
+    borderWidth: 1,
+    borderColor: Colors.primary.blue + '35',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  paymentNoticeTitle: {
+    color: Colors.primary.blue,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  paymentNoticeText: {
+    color: Colors.text.secondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
 });

@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Modal,
   Image,
+  Linking,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter, Stack } from 'expo-router';
@@ -17,6 +18,8 @@ import { Colors } from '@/constants/colors';
 import { Button } from '@/components/Button';
 import { venuesApi } from '@/lib/api/venues';
 import { useAuth } from '@/contexts/AuthContext';
+import { paymentProvider, isInAppPaymentAvailable } from '@/lib/payments/payment-provider';
+import { supabase } from '@/lib/supabase';
 import type { Booking } from '@/types';
 
 interface ScannedUser {
@@ -41,6 +44,7 @@ export default function ScanQRScreen() {
   const [scanned, setScanned] = useState(false);
   const [scanning, setScanning] = useState(true);
   const [validating, setValidating] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
   const [scannedData, setScannedData] = useState<ScannedBooking | null>(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [scannedToken, setScannedToken] = useState<string | null>(null);
@@ -123,11 +127,124 @@ export default function ScanQRScreen() {
     }
   };
 
+  const paymentStatus = scannedData?.booking.paymentStatus;
+  const paymentMode = (scannedData?.booking as any)?.venue?.paymentMode ?? 'cash_off_app';
+  const paymentRequired = paymentMode === 'in_app_on_site_qr' && paymentStatus !== 'paid';
+  const isPaymentConfigured = isInAppPaymentAvailable();
+
+  const handlePay = async () => {
+    if (!scannedData || !user?.id) return;
+
+    setIsPaying(true);
+    try {
+      const booking = scannedData.booking;
+      const reference = `BOOKING-${booking.id}-${Date.now()}`;
+      const paymentResult = await paymentProvider.initiatePayment({
+        reference,
+        amount: booking.totalPrice,
+        currency: 'XOF',
+        contextType: 'booking',
+        contextId: booking.id,
+        payerId: booking.userId,
+        successUrl: `https://versus-sport-connect.vercel.app/payment/success?booking_id=${booking.id}`,
+        errorUrl: `https://versus-sport-connect.vercel.app/payment/error?booking_id=${booking.id}`,
+      });
+
+      if (!paymentResult.success) {
+        Alert.alert(
+          'Paiement refusé',
+          paymentResult.error || 'Le paiement n\'a pas pu être traité.'
+        );
+        return;
+      }
+
+      // Set booking payment_status to 'pending' while waiting for webhook
+      await venuesApi.updateBookingPaymentStatus(booking.id, 'pending');
+
+      // Open GeniusPay checkout page
+      if (paymentResult.checkoutUrl) {
+        const supported = await Linking.canOpenURL(paymentResult.checkoutUrl);
+        if (supported) {
+          await Linking.openURL(paymentResult.checkoutUrl);
+        } else {
+          Alert.alert(
+            'Ouverture impossible',
+            'Impossible d\'ouvrir la page de paiement. Copiez ce lien :\n' + paymentResult.checkoutUrl
+          );
+        }
+      }
+
+      Alert.alert(
+        'Paiement en cours',
+        'Le client doit compléter le paiement sur la page GeniusPay. Une fois confirmé, le statut se mettra à jour automatiquement.'
+      );
+
+      // Start polling for payment confirmation
+      let attempts = 0;
+      const maxAttempts = 60;
+      const poll = async () => {
+        while (attempts < maxAttempts) {
+          attempts++;
+          try {
+            const { data, error } = await supabase
+              .from('bookings')
+              .select('payment_status, payment_transaction_id')
+              .eq('id', booking.id)
+              .single();
+
+            if (data?.payment_status === 'paid') {
+              setScannedData({
+                ...scannedData,
+                booking: {
+                  ...booking,
+                  paymentStatus: 'paid',
+                  paymentTransactionId: data.payment_transaction_id || paymentResult.providerTransactionId,
+                  paidAt: new Date(),
+                },
+              });
+              Alert.alert('Paiement confirmé ✅', 'Le paiement a été encaissé. Vous pouvez maintenant valider.');
+              return;
+            } else if (data?.payment_status === 'failed') {
+              Alert.alert('Paiement échoué', 'Le paiement n\'a pas abouti. Le client peut réessayer.');
+              return;
+            }
+          } catch (e) {
+            console.warn('[ScanQR] Poll error:', e);
+          }
+          await new Promise((r) => setTimeout(r, 5000));
+        }
+        console.log('[ScanQR] Polling timed out');
+      };
+      poll();
+    } catch (error: any) {
+      console.error('[ScanQR] Payment error:', error);
+      Alert.alert('Erreur de paiement', error.message || 'Impossible de traiter le paiement.');
+    } finally {
+      setIsPaying(false);
+    }
+  };
+
   const handleValidate = async () => {
     if (!scannedData || !user?.id || !scannedToken) return;
-    
+
+    if (paymentMode === 'in_app_on_site_qr' && paymentStatus !== 'paid') {
+      Alert.alert(
+        'Paiement requis',
+        'Ce créneau est en Paiement In-App sur place. Le paiement doit être encaissé avant validation.'
+      );
+      return;
+    }
+
+    if (paymentMode === 'in_app_immediate' && paymentStatus !== 'paid') {
+      Alert.alert(
+        'Paiement non reçu',
+        'Le paiement au moment de la réservation n\'a pas été confirmé. Vérifiez le statut de la réservation.'
+      );
+      return;
+    }
+
     setValidating(true);
-    
+
     try {
       console.log('[ScanQR] Validating:', {
         bookingId: scannedData.booking.id,
@@ -140,7 +257,7 @@ export default function ScanQRScreen() {
         scannedToken,
         user.id
       );
-      
+
       setValidating(false);
       setShowConfirmation(false);
       setTimeout(() => {
@@ -403,30 +520,60 @@ export default function ScanQRScreen() {
 
                 {/* Action Buttons */}
                 <View style={styles.actionButtons}>
-                  <TouchableOpacity
-                    style={[styles.validateButton, validating && { opacity: 0.7 }]}
-                    onPress={handleValidate}
-                    disabled={validating}
-                    activeOpacity={0.85}
-                  >
-                    <LinearGradient
-                      colors={[Colors.primary.orange, Colors.primary.orangeDark]}
-                      style={styles.validateButtonGradient}
-                    >
-                      {validating
-                        ? <ActivityIndicator size="small" color="#fff" />
-                        : <CheckCircle size={20} color="#fff" />
-                      }
-                      <Text style={styles.validateButtonText}>
-                        {validating ? 'Validation en cours...' : 'Confirmer la validation'}
+                  {paymentRequired && !isPaymentConfigured && (
+                    <View style={styles.paymentInfo}>
+                      <Text style={styles.paymentInfoText}>
+                        Paiement In-App sur place requis, mais aucun fournisseur de paiement n'est configuré.
                       </Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {paymentRequired ? (
+                    <TouchableOpacity
+                      style={[styles.validateButton, (isPaying || validating) && { opacity: 0.7 }]}
+                      onPress={handlePay}
+                      disabled={isPaying || validating || !isPaymentConfigured}
+                      activeOpacity={0.85}
+                    >
+                      <LinearGradient
+                        colors={[Colors.status.success, '#1B6B3E']}
+                        style={styles.validateButtonGradient}
+                      >
+                        {isPaying
+                          ? <ActivityIndicator size="small" color="#fff" />
+                          : <DollarSign size={20} color="#fff" />
+                        }
+                        <Text style={styles.validateButtonText}>
+                          {isPaying ? 'Paiement en cours...' : 'Payer et encaisser'}
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.validateButton, validating && { opacity: 0.7 }]}
+                      onPress={handleValidate}
+                      disabled={validating}
+                      activeOpacity={0.85}
+                    >
+                      <LinearGradient
+                        colors={[Colors.primary.orange, Colors.primary.orangeDark]}
+                        style={styles.validateButtonGradient}
+                      >
+                        {validating
+                          ? <ActivityIndicator size="small" color="#fff" />
+                          : <CheckCircle size={20} color="#fff" />
+                        }
+                        <Text style={styles.validateButtonText}>
+                          {validating ? 'Validation en cours...' : 'Confirmer la validation'}
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  )}
 
                   <TouchableOpacity
                     style={styles.cancelButton}
                     onPress={handleCancel}
-                    disabled={validating}
+                    disabled={validating || isPaying}
                     activeOpacity={0.7}
                   >
                     <Text style={styles.cancelButtonText}>Annuler</Text>
@@ -724,6 +871,20 @@ const styles = StyleSheet.create({
   },
   actionButtons: {
     gap: 12,
+  },
+  paymentInfo: {
+    backgroundColor: Colors.background.cardLight,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    marginBottom: 4,
+  },
+  paymentInfoText: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
   },
   validateButton: {
     borderRadius: 14,

@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { matchesApi } from '@/lib/api/matches';
-import type { Tournament, TournamentPrize, Venue, Sport, SkillLevel } from '@/types';
+import { notificationsApi } from '@/lib/api/notifications';
+import type { Tournament, TournamentPrize, Venue, Sport, SkillLevel, VenuePaymentMode } from '@/types';
 import type { Match } from '@/types';
 import { DEMO_TOURNAMENT_ID, DEMO_MATCHES } from '@/lib/demo-data';
 
@@ -30,6 +31,7 @@ export interface TournamentRow {
   created_by: string | null;
   created_at: string;
   is_demo?: boolean;
+  entry_payment_mode?: string | null;
 }
 
 const defaultVenue: Venue = {
@@ -85,6 +87,7 @@ export function mapTournamentRowToTournament(row: TournamentRow): Tournament {
     createdBy: row.created_by ?? '',
     createdAt: new Date(row.created_at),
     isDemo: row.is_demo ?? false,
+    entryPaymentMode: (row.entry_payment_mode as VenuePaymentMode | null) ?? 'in_app_immediate',
   };
 }
 
@@ -154,21 +157,46 @@ export const tournamentsApi = {
     sponsorName?: string;
     sponsorLogo?: string;
     selectedSlots?: Record<string, number[]>;
+    entryPaymentMode?: VenuePaymentMode;
   }) {
     console.log('[TournamentsAPI] Creating tournament:', data.name);
+
+    // RÈGLE: un tournoi doit obligatoirement être lié à un terrain inscrit dans l'app
+    if (!data.venue?.id) {
+      throw new Error('Un tournoi doit être organisé sur un terrain inscrit dans l’application');
+    }
 
     // Determine initial status BEFORE inserting: fetch venue to check auto_approve
     let initialStatus: 'registration' | 'venue_pending' = 'registration';
     let venueRowForBooking: any = null;
-    if (data.venue?.id) {
-      const { data: vr } = await (supabase
+    {
+      const { data: vr, error: venueError } = await (supabase
         .from('venues')
         .select('*')
         .eq('id', data.venue.id)
         .single() as any);
-      if (vr) {
-        venueRowForBooking = vr;
-        if (vr.auto_approve === false) initialStatus = 'venue_pending';
+      if (venueError || !vr) {
+        throw new Error('Terrain introuvable. Le tournoi doit être organisé sur un terrain inscrit dans l’application');
+      }
+      if (vr.is_active === false) {
+        throw new Error('Ce terrain n’est pas actif actuellement');
+      }
+      venueRowForBooking = vr;
+      if (vr.auto_approve === false) initialStatus = 'venue_pending';
+
+      // RÈGLE SÉCURITÉ: un gestionnaire de terrain ne peut organiser que sur SES terrains
+      const { data: creatorRow } = await (supabase
+        .from('users')
+        .select('role')
+        .eq('id', userId)
+        .single() as any);
+      if (creatorRow?.role === 'venue_manager' && vr.owner_id !== userId) {
+        throw new Error('En tant que gestionnaire de terrain, vous ne pouvez organiser un tournoi que sur vos propres terrains');
+      }
+
+      // Le gestionnaire organise sur son propre terrain: réservation auto-confirmée
+      if (creatorRow?.role === 'venue_manager' && vr.owner_id === userId) {
+        initialStatus = 'registration';
       }
     }
 
@@ -202,6 +230,7 @@ export const tournamentsApi = {
         created_by: userId,
         sponsor_name: data.sponsorName ?? null,
         sponsor_logo: data.sponsorLogo ?? null,
+        entry_payment_mode: data.entryPaymentMode ?? 'in_app_immediate',
       } as any)
       .select()
       .single() as any);
@@ -214,7 +243,8 @@ export const tournamentsApi = {
     if (data.venue?.id && venueRowForBooking) {
       try {
         const v = venueRowForBooking;
-        const autoApprove = v.auto_approve !== false;
+        const isOwnVenue = v.owner_id === userId;
+        const autoApprove = isOwnVenue || v.auto_approve !== false;
         const bookingStatus = autoApprove ? 'confirmed' : 'pending';
 
         const startDate = new Date(data.startDate);
@@ -277,7 +307,7 @@ export const tournamentsApi = {
     entryFee?: number;
     prizePool?: number;
     prizes?: TournamentPrize[];
-    status?: 'registration' | 'in_progress' | 'completed';
+    status?: 'registration' | 'in_progress' | 'completed' | 'venue_pending' | 'cancelled';
     sponsorName?: string;
     sponsorLogo?: string;
     matchIds?: string[];
@@ -370,8 +400,28 @@ export const tournamentsApi = {
     return mapTournamentRowToTournament(row as TournamentRow);
   },
 
-  async delete(id: string) {
-    console.log('[TournamentsAPI] Deleting tournament:', id);
+  async delete(id: string, isAdmin: boolean = false) {
+    console.log('[TournamentsAPI] Deleting tournament:', id, 'isAdmin:', isAdmin);
+
+    // Check if tournament has entry fee and at least one confirmed team
+    const { data: tournament } = await supabase
+      .from('tournaments')
+      .select('entry_fee, entry_payment_mode')
+      .eq('id', id)
+      .single();
+
+    if (tournament && (tournament.entry_fee ?? 0) > 0) {
+      const { count } = await supabase
+        .from('tournament_teams')
+        .select('id', { count: 'exact', head: true })
+        .eq('tournament_id', id)
+        .eq('status', 'confirmed');
+
+      if ((count ?? 0) > 0 && !isAdmin) {
+        throw new Error('Impossible de supprimer ce tournoi : des équipes ont déjà payé leur inscription. Contactez un administrateur pour effectuer cette opération après vérification.');
+      }
+    }
+
     const { error } = await (supabase.from('tournaments').delete().eq('id', id) as any);
     if (error) throw error;
     return { success: true };
@@ -383,7 +433,7 @@ export const tournamentsApi = {
     // Vérifier que le tournoi existe et accepte les inscriptions
     const { data: tournament, error: tournamentError } = await (supabase
       .from('tournaments')
-      .select('status, max_teams, entry_fee')
+      .select('status, max_teams, entry_fee, entry_payment_mode')
       .eq('id', tournamentId)
       .single() as any);
     
@@ -407,33 +457,89 @@ export const tournamentsApi = {
     if (spotsError) throw spotsError;
     if (!hasSpots) throw new Error('Tournoi complet');
     
-    // Inscrire l'équipe avec statut pending_payment
+    // Déterminer le statut initial selon le mode de paiement:
+    // - in_app_immediate: pending_payment (l'équipe doit payer via GeniusPay pour être confirmée)
+    // - in_app_on_site_qr: confirmed (paiement sur place au scan QR)
+    // - cash_off_app: confirmed (paiement cash directement à l'organisateur)
+    const paymentMode = tournament.entry_payment_mode || 'in_app_immediate';
+    const requiresInAppPayment = tournament.entry_fee > 0 && paymentMode === 'in_app_immediate';
+    const initialStatus = requiresInAppPayment ? 'pending_payment' : 'confirmed';
+    
+    // Inscrire l'équipe avec le statut approprié
     const { error: insertError } = await supabase
       .from('tournament_teams')
       .insert({
         tournament_id: tournamentId,
         team_id: teamId,
-        status: 'pending_payment',
+        status: initialStatus,
+        ...(initialStatus === 'confirmed' ? { confirmed_at: new Date().toISOString() } : {}),
       });
     
     if (insertError) throw insertError;
     
-    // Aussi mettre à jour registered_teams pour compatibilité (sera déprécié)
-    const { data: row } = await supabase
-      .from('tournaments')
-      .select('registered_teams')
-      .eq('id', tournamentId)
-      .single();
-    
-    const current = (row?.registered_teams as string[]) || [];
-    if (!current.includes(teamId)) {
-      await supabase
+    // Notifier l'organisateur de la nouvelle inscription
+    try {
+      const { data: tournamentInfo } = await supabase
         .from('tournaments')
-        .update({ registered_teams: [...current, teamId] } as any)
-        .eq('id', tournamentId);
+        .select('name, created_by')
+        .eq('id', tournamentId)
+        .maybeSingle();
+
+      const { data: teamInfo } = await supabase
+        .from('teams')
+        .select('name, captain_id')
+        .eq('id', teamId)
+        .maybeSingle();
+
+      if (tournamentInfo?.created_by) {
+        await notificationsApi.send(tournamentInfo.created_by, {
+          type: 'tournament',
+          title: 'Nouvelle inscription',
+          message: `L'équipe "${teamInfo?.name ?? 'Équipe'}" s'est inscrite à votre tournoi "${tournamentInfo.name}".${initialStatus === 'confirmed' ? ' Inscription confirmée.' : ' En attente de paiement.'}`,
+          data: {
+            tournamentId,
+            route: `/tournament/${tournamentId}/manage`,
+          },
+        });
+      }
+
+      // Notifier le capitaine de l'équipe de la confirmation
+      if (initialStatus === 'confirmed' && teamInfo?.captain_id) {
+        await notificationsApi.send(teamInfo.captain_id, {
+          type: 'tournament',
+          title: 'Inscription confirmée',
+          message: `L'inscription de votre équipe "${teamInfo.name}" au tournoi "${tournamentInfo?.name ?? 'Tournoi'}" est confirmée.`,
+          data: {
+            tournamentId,
+            route: `/tournament/${tournamentId}`,
+          },
+        });
+      }
+    } catch (e) {
+      console.warn('[TournamentsAPI] Notification failed:', (e as Error)?.message);
     }
     
-    return { success: true, requiresPayment: tournament.entry_fee > 0 };
+    // Mettre à jour registered_teams uniquement si l'équipe est confirmée
+    // (pas de paiement in-app requis). Pour les paiements in_app_immediate,
+    // l'équipe sera ajoutée à registered_teams par le webhook GeniusPay
+    // quand le paiement sera confirmé.
+    if (initialStatus === 'confirmed') {
+      const { data: row } = await supabase
+        .from('tournaments')
+        .select('registered_teams')
+        .eq('id', tournamentId)
+        .single();
+      
+      const current = (row?.registered_teams as string[]) || [];
+      if (!current.includes(teamId)) {
+        await supabase
+          .from('tournaments')
+          .update({ registered_teams: [...current, teamId] } as any)
+          .eq('id', tournamentId);
+      }
+    }
+    
+    return { success: true, requiresPayment: requiresInAppPayment, paymentMode, entryFee: tournament.entry_fee };
   },
 
   async unregisterTeam(tournamentId: string, teamId: string) {

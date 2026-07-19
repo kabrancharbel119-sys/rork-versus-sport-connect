@@ -25,6 +25,12 @@
             "NSPrivacyAccessedAPITypeReasons": [
               "CA92.1"
             ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
           }
         ]
       },
@@ -32,7 +38,8 @@
         "NSCameraUsageDescription": "VS a besoin d'accéder à votre caméra pour prendre une photo de profil.",
         "NSPhotoLibraryUsageDescription": "VS a besoin d'accéder à vos photos pour choisir une photo de profil.",
         "NSLocationWhenInUseUsageDescription": "VS utilise votre position pour trouver des matchs et des joueurs près de chez vous.",
-        "NSPhotoLibraryAddUsageDescription": "VS a besoin d'enregistrer des photos dans votre galerie."
+        "NSPhotoLibraryAddUsageDescription": "VS a besoin d'enregistrer des photos dans votre galerie.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -65,7 +72,8 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.VIBRATE",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.RECEIVE_BOOT_COMPLETED"
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {

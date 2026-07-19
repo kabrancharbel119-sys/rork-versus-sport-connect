@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { Home, MapPin, Calendar, User } from 'lucide-react-native';
+import { Home, MapPin, Calendar, User, FileText } from 'lucide-react-native';
 import { View, Text, StyleSheet } from 'react-native';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Colors } from '@/constants/colors';
@@ -81,6 +81,19 @@ export default function ManagerTabLayout() {
                 <TabBarBadge count={pendingCount} />
               </View>
             ),
+          }}
+        />
+        <Tabs.Screen
+          name="invoices"
+          options={{
+            title: 'Factures',
+            tabBarIcon: ({ color, size }) => <FileText size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="notifications"
+          options={{
+            href: null,
           }}
         />
         <Tabs.Screen

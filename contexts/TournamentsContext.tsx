@@ -3,8 +3,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { Tournament, Sport, SkillLevel, Venue, TournamentPrize } from '@/types';
+import { Tournament, Sport, SkillLevel, Venue, TournamentPrize, VenuePaymentMode } from '@/types';
 import { tournamentsApi } from '@/lib/api/tournaments';
+import { tournamentCancellationApi } from '@/lib/api/tournament-cancellations';
 
 const TOURNAMENTS_REFETCH_INTERVAL_MS = 60_000;
 
@@ -28,6 +29,7 @@ interface CreateTournamentData {
   sponsorName?: string;
   sponsorLogo?: string;
   selectedSlots?: Record<string, number[]>;
+  entryPaymentMode?: VenuePaymentMode;
 }
 
 export const [TournamentsProvider, useTournaments] = createContextHook(() => {
@@ -111,6 +113,7 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
           sponsorName: data.sponsorName,
           sponsorLogo: data.sponsorLogo,
           selectedSlots: data.selectedSlots,
+          entryPaymentMode: data.entryPaymentMode,
         });
         await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
         return result;
@@ -170,13 +173,20 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
         await tournamentsApi.registerTeam(tournamentId, teamId);
         await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
         await queryClient.invalidateQueries({ queryKey: ['myTournaments'] });
+        await queryClient.invalidateQueries({ queryKey: ['tournament-teams'] });
       } catch (err) {
-        // Fallback optimiste si l'API échoue
-        const tournamentIndex = current.findIndex(t => t.id === tournamentId);
-        if (tournamentIndex !== -1) {
-          const updated = [...current];
-          updated[tournamentIndex] = { ...current[tournamentIndex], registeredTeams: [...current[tournamentIndex].registeredTeams, teamId] };
-          await saveTournaments(updated);
+        // Fallback optimiste si l'API échoue — uniquement pour les modes sans paiement in-app
+        const paymentMode = tournament.entryPaymentMode ?? 'in_app_immediate';
+        const needsInAppPayment = (tournament.entryFee ?? 0) > 0 && paymentMode === 'in_app_immediate';
+        if (!needsInAppPayment) {
+          const tournamentIndex = current.findIndex(t => t.id === tournamentId);
+          if (tournamentIndex !== -1) {
+            const updated = [...current];
+            updated[tournamentIndex] = { ...current[tournamentIndex], registeredTeams: [...current[tournamentIndex].registeredTeams, teamId] };
+            await saveTournaments(updated);
+          }
+        } else {
+          throw err;
         }
       }
     },
@@ -282,9 +292,13 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
       if (!isAdmin && tournament.createdBy !== userId) throw new Error('Seul le créateur peut supprimer ce tournoi');
       if (!isAdmin && tournament.status === 'in_progress') throw new Error('Impossible de supprimer un tournoi en cours');
       try {
-        await tournamentsApi.delete(tournamentId);
+        await tournamentsApi.delete(tournamentId, isAdmin);
         await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
       } catch (err) {
+        const msg = (err as Error)?.message ?? '';
+        if (msg.includes('équipes ont déjà payé')) {
+          throw err;
+        }
         await saveTournaments(current.filter(t => t.id !== tournamentId));
       }
     },
@@ -327,6 +341,19 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
     ].some((s) => msg.includes(s));
   }, []);
 
+  const requestCancellationMutation = useMutation({
+    mutationFn: async ({ tournamentId, organizerId, reason }: { tournamentId: string; organizerId: string; reason: string }) => {
+      console.log('[Tournaments] Requesting cancellation for:', tournamentId);
+      const result = await tournamentCancellationApi.requestCancellation({
+        tournamentId,
+        organizerId,
+        reason,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
+      return result;
+    },
+  });
+
   return {
     tournaments,
     isLoading: tournamentsQuery.isLoading,
@@ -338,6 +365,7 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
     unregisterTeam: unregisterTeamMutation.mutateAsync,
     updateTournament: updateTournamentMutation.mutateAsync,
     deleteTournament: deleteTournamentMutation.mutateAsync,
+    requestCancellation: requestCancellationMutation.mutateAsync,
     addMatchToTournament: addMatchToTournamentMutation.mutateAsync,
     setTournamentWinner: setTournamentWinnerMutation.mutateAsync,
     removeMatchFromTournament: removeMatchFromTournamentMutation.mutateAsync,
