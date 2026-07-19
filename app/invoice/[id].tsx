@@ -87,6 +87,21 @@ export default function InvoiceDetailScreen() {
   const isPayer = invoice?.payerId === user?.id;
   const isBeneficiary = invoice?.beneficiaryId === user?.id;
 
+  const contextLabels: Record<string, string> = {
+    booking: 'Réservation de terrain',
+    tournament_registration: 'Inscription tournoi',
+    venue_advance: 'Avance terrain',
+    logistics_advance: 'Avance logistique',
+    organizer_release: 'Versement organisateur',
+  };
+  const contextLabel = invoice ? contextLabels[invoice.contextType] ?? invoice.contextType : '';
+  const paymentMethodLabels: Record<string, string> = {
+    in_app_immediate: 'Paiement in-app',
+    in_app_on_site_qr: 'QR sur place',
+    cash_off_app: 'Espèces',
+  };
+  const paymentMethodLabel = invoice?.paymentMethod ? (paymentMethodLabels[invoice.paymentMethod] ?? invoice.paymentMethod) : 'Non renseigné';
+
   return (
     <SafeAreaView style={styles.container}>
       <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
@@ -149,32 +164,23 @@ export default function InvoiceDetailScreen() {
             <View style={styles.detailsSection}>
               <Text style={styles.sectionTitle}>Informations</Text>
               <DetailRow label="Type" value={documentLabels[invoice.documentType] ?? invoice.documentType} icon={FileText} />
-              <DetailRow label="Contexte" value={`${invoice.contextType} (${invoice.contextId.slice(0, 8)})`} icon={CreditCard} />
+              <DetailRow label="Contexte" value={contextLabel} icon={CreditCard} />
               <DetailRow label="Description" value={invoice.description} icon={Calendar} />
               <DetailRow label="Date d'émission" value={formatDate(invoice.issuedAt)} icon={Calendar} />
               {invoice.paidAt && (
                 <DetailRow label="Date de paiement" value={formatDateTime(invoice.paidAt)} icon={CheckCircle} />
               )}
-              <DetailRow label="Méthode de paiement" value={invoice.paymentMethod?.toUpperCase() ?? 'Non renseignée'} icon={DollarSign} />
-              {invoice.paymentTransactionId && (
-                <DetailRow label="Transaction" value={invoice.paymentTransactionId} icon={CreditCard} />
-              )}
+              <DetailRow label="Méthode de paiement" value={paymentMethodLabel} icon={DollarSign} />
             </View>
 
             <View style={styles.detailsSection}>
               <Text style={styles.sectionTitle}>Parties</Text>
-              <DetailRow label="Payeur" value={isPayer ? 'Vous' : invoice.payerId ? `ID ${invoice.payerId.slice(0, 8)}` : 'Non renseigné'} icon={User} />
-              <DetailRow label="Bénéficiaire" value={isBeneficiary ? 'Vous' : invoice.beneficiaryId ? `ID ${invoice.beneficiaryId.slice(0, 8)}` : 'Non renseigné'} icon={User} />
+              <DetailRow label="Payeur" value={isPayer ? 'Vous' : invoice.payerName || 'Non renseigné'} icon={User} />
+              <DetailRow label="Bénéficiaire" value={isBeneficiary ? 'Vous' : invoice.payeeName || 'Non renseigné'} icon={User} />
+              {invoice.eventName && (
+                <DetailRow label="Événement" value={invoice.eventName} icon={Calendar} />
+              )}
             </View>
-
-            {invoice.metadata && Object.keys(invoice.metadata).length > 0 && (
-              <View style={styles.detailsSection}>
-                <Text style={styles.sectionTitle}>Métadonnées</Text>
-                {Object.entries(invoice.metadata).map(([key, value]) => (
-                  <DetailRow key={key} label={key} value={String(value)} />
-                ))}
-              </View>
-            )}
           </View>
         </ScrollView>
       )}

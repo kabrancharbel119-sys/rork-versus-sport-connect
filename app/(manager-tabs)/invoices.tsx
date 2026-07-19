@@ -37,6 +37,14 @@ const documentLabels: Record<string, string> = {
   payout_receipt: 'Reçu',
 };
 
+const contextLabels: Record<string, string> = {
+  booking: 'Réservation de terrain',
+  tournament_registration: 'Inscription tournoi',
+  venue_advance: 'Avance terrain',
+  logistics_advance: 'Avance logistique',
+  organizer_release: 'Versement organisateur',
+};
+
 function formatAmount(amount: number, currency: string) {
   return `${amount.toLocaleString()} ${currency}`;
 }
@@ -108,7 +116,7 @@ export default function ManagerInvoicesTab() {
         </View>
 
         <View style={styles.cardFooter}>
-          <Text style={styles.contextText}>{item.contextType} • {item.contextId.slice(0, 8)}</Text>
+          <Text style={styles.contextText}>{contextLabels[item.contextType] ?? item.contextType}</Text>
           <ChevronRight size={16} color={Colors.text.muted} />
         </View>
       </TouchableOpacity>

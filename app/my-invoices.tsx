@@ -259,7 +259,7 @@ export default function MyInvoicesScreen() {
                       </View>
                       <View style={styles.divider} />
                       <View style={styles.detailRow}>
-                        <Text style={styles.detailKey}>Date d'emission</Text>
+                        <Text style={styles.detailKey}>Date d&apos;emission</Text>
                         <Text style={styles.detailVal}>{formatDate(inv.issuedAt)}</Text>
                       </View>
                       {inv.paidAt && (
