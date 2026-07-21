@@ -30,7 +30,7 @@ export default function NotificationsScreen() {
   }, [users]);
 
   const notificationsWithTeamRequests = useMemo(() => {
-    const list: (Notification & { _synthetic?: boolean; _teamId?: string; _requestId?: string; _requestUserId?: string })[] = notifications.filter((n) => n.type !== 'chat');
+    const list: (Notification & { _synthetic?: boolean; _teamId?: string; _requestId?: string; _requestUserId?: string })[] = [...notifications];
     if (!user) return list;
     for (const team of teams) {
       const isCaptain = team.captainId === user.id;

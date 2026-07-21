@@ -3,7 +3,7 @@ import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIn
 import { useRouter, Stack } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Calendar, Clock, MapPin, DollarSign, XCircle, CheckCircle, AlertCircle, Inbox } from 'lucide-react-native';
+import { ArrowLeft, Calendar, Clock, MapPin, XCircle, CheckCircle, AlertCircle, Inbox } from 'lucide-react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -88,6 +88,7 @@ export default function MyBookingsScreen() {
     enabled: !!user,
   });
 
+
   // Load venue names for display
   const venuesQuery = useQuery({
     queryKey: ['venues'],
@@ -99,9 +100,9 @@ export default function MyBookingsScreen() {
   });
 
   const venueMap = React.useMemo(() => {
-    const map: Record<string, { name: string; city: string; cancellationHours: number }> = {};
+    const map: Record<string, { name: string; city: string; cancellationHours: number; paymentMode?: string }> = {};
     for (const v of (venuesQuery.data || [])) {
-      map[v.id] = { name: v.name, city: v.city, cancellationHours: v.cancellationHours ?? 24 };
+      map[v.id] = { name: v.name, city: v.city, cancellationHours: v.cancellationHours ?? 24, paymentMode: v.paymentMode };
     }
     return map;
   }, [venuesQuery.data]);

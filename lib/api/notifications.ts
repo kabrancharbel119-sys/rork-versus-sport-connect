@@ -173,16 +173,26 @@ export const notificationsApi = {
       data = res.data;
       error = res.error;
     } else {
-      // Pas de service role : passer par le RPC SECURITY DEFINER
-      const res = await (supabase.rpc as any)('admin_send_notification', {
+      // Pas de service role : utiliser le RPC SECURITY DEFINER qui contourne la RLS
+      const res = await (supabase.rpc as any)('send_notification_to_user', {
         p_target_user_id: targetUserId,
         p_type: notification.type,
         p_title: notification.title,
         p_message: notification.message,
+        p_data: notification.data ?? null,
       });
       error = res.error;
-      // Le RPC ne retourne pas la row, on crée un objet minimal
-      data = error ? null : { id: '', user_id: targetUserId, ...notification, is_read: false, created_at: new Date().toISOString() };
+      if (!error && res.data) {
+        // Re-fetch the inserted notification to get the full row
+        const { data: notifRow } = await (supabase
+          .from('notifications')
+          .select('*')
+          .eq('id', res.data)
+          .single() as any);
+        data = notifRow;
+      } else if (!error) {
+        data = { id: '', user_id: targetUserId, ...notification, is_read: false, created_at: new Date().toISOString() };
+      }
     }
 
     if (error) throw error;

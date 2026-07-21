@@ -213,12 +213,24 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
     mutationFn: async ({ matchId, userId, asAdmin }: { matchId: string; userId: string; asAdmin?: boolean }) => {
       if (__DEV__) console.log('[Matches] Deleting match:', matchId, asAdmin ? '(admin)' : '');
       
-      // Delete from Supabase database
+      // Delete from Supabase database (throws if RLS blocks it)
       await matchesApi.delete(matchId, userId, asAdmin ?? false);
       
-      // Update local cache
+      // Immediately update React Query cache to remove the deleted match
+      queryClient.setQueryData<Match[]>(['matches'], (old) => 
+        (old ?? []).filter(m => m.id !== matchId)
+      );
+      
+      // Update local state and storage
       const updatedMatches = matches.filter(m => m.id !== matchId);
       await saveMatches(updatedMatches);
+    },
+    onSuccess: () => {
+      // Invalidate to get fresh data from server, but only after local cache is updated
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+    onError: (error) => {
+      console.error('[Matches] Delete failed:', error);
     },
   });
 

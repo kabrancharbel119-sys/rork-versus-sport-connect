@@ -13,7 +13,7 @@ export type PayoutRequestStatus = 'pending' | 'approved' | 'rejected';
 export type PayoutPurposeCategory = 'venue' | 'referees' | 'logistics' | 'communication' | 'prize' | 'other';
 
 // Mode de paiement configuré par le gestionnaire de terrain
-export type VenuePaymentMode = 'in_app_immediate' | 'in_app_on_site_qr' | 'cash_off_app';
+export type VenuePaymentMode = 'in_app_immediate' | 'cash_off_app';
 // Statut du paiement d'une réservation (indépendant du statut booking)
 export type BookingPaymentStatus = 'not_required' | 'pending' | 'paid' | 'refunded' | 'failed';
 // Statut de versement effectif d'une demande d'avance approuvée
@@ -272,6 +272,7 @@ export interface Booking {
   tournamentId?: string;
   notes?: string;
   createdAt: Date;
+  bookingCode?: string;
   // QR Code validation fields
   checkInToken?: string;
   validatedAt?: Date;

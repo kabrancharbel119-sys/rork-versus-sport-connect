@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { notificationsApi } from '@/lib/api/notifications';
 import type { ChatRoom, ChatMessage, ChatRequest } from '@/types';
 
 export interface ChatRoomRow {
@@ -368,14 +369,19 @@ export const chatApi = {
       .eq('id', userId)
       .single() as any);
 
+    const senderName = user?.username || 'Quelqu\'un';
+    const preview = content.slice(0, 50);
     for (const participantId of participants.filter(p => p !== userId)) {
-      await (supabase.from('notifications').insert({
-        user_id: participantId,
-        type: 'chat',
-        title: roomData.name,
-        message: `${user?.username || 'Quelqu\'un'}: ${content.slice(0, 50)}`,
-        data: { roomId: roomData.id }
-      } as any) as any);
+      try {
+        await notificationsApi.send(participantId, {
+          type: 'chat',
+          title: roomData.name,
+          message: `${senderName}: ${preview}`,
+          data: { route: `/chat/${roomData.id}` },
+        });
+      } catch (e) {
+        console.log('[ChatAPI] Failed to send notification to', participantId, e);
+      }
     }
 
     return mapChatMessageRowToMessage(messageData);

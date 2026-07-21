@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Platform, ViewStyle, Animated, Pressable } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Platform, ViewStyle, Animated, Pressable, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,7 +7,7 @@ import {
   Plus, MapPin, Calendar, DollarSign, Clock,
   ChevronRight, Users, AlertCircle, Settings,
   Star, Eye, Trophy, ScanLine, Bell, Wallet,
-  BarChart3, Users2,
+  BarChart3, Users2, CheckCircle,
 } from 'lucide-react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
@@ -20,9 +20,21 @@ import type { Venue, Booking, Tournament } from '@/types';
 
 const REFETCH_INTERVAL = 30_000;
 const PAD = 20;
+const { width } = Dimensions.get('window');
 
 function toLocalDateStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function formatTime(val: string): string {
+  if (!val) return '';
+  if (val.includes('T')) {
+    const timePart = val.split('T')[1];
+    const h = timePart.split(':')[0];
+    const m = timePart.split(':')[1];
+    return `${h}:${m}`;
+  }
+  return val.length >= 5 ? val.slice(0, 5) : val;
 }
 
 const cardShadow: ViewStyle = Platform.select({
@@ -359,49 +371,90 @@ export default function ManagerDashboardTab() {
 
               {/* ════ PLANNING DU JOUR ════ */}
               <SectionHeader title="Planning du jour" accentColor={Colors.status.success} count={todayBookings.length} onSeeAll={() => router.push('/(manager-tabs)/bookings')} />
-              {todayBookings.length > 0 ? (
-                <View style={styles.timeline}>
-                  {todayBookings.sort((a, b) => a.startTime.localeCompare(b.startTime)).map((booking, idx) => {
-                    const sc = statusConfig[booking.status] || statusConfig.pending;
-                    const now = new Date();
-                    const nowMin = now.getHours() * 60 + now.getMinutes();
-                    const [sH, sM] = booking.startTime.split(':').map(Number);
-                    const [eH, eM] = booking.endTime.split(':').map(Number);
-                    const startMin = sH * 60 + sM;
-                    const endMin = eH * 60 + eM;
-                    const isNow = booking.date === todayStr && nowMin >= startMin && nowMin < endMin;
-                    const isPast = booking.date === todayStr && nowMin >= endMin;
-                    return (
-                      <PressableCard key={booking.id} onPress={() => router.push('/(manager-tabs)/bookings')} style={styles.timelineItemWrap}>
-                        <View style={[styles.timelineItem, isNow && styles.timelineItemLive, isPast && styles.timelineItemPast]}>
-                          {isNow && <View style={styles.timelineLiveBar} />}
-                          <View style={styles.timelineTime}>
-                            <Text style={[styles.timelineTimeText, isNow && { color: Colors.primary.orange }]}>{booking.startTime}</Text>
-                            <Text style={styles.timelineTimeSep}>→</Text>
-                            <Text style={styles.timelineTimeText}>{booking.endTime}</Text>
-                          </View>
-                          <View style={styles.timelineInfo}>
-                            <Text style={styles.timelineVenue} numberOfLines={1}>{getVenueName(booking.venueId)}</Text>
-                            <View style={styles.timelineMetaRow}>
-                              {isNow && (
-                                <View style={styles.timelineLiveBadge}>
-                                  <PulseDot color={Colors.status.success} size={5} />
-                                  <Text style={styles.timelineLiveText}>EN COURS</Text>
+              {todayBookings.length > 0 ? (() => {
+                const sorted = [...todayBookings].sort((a, b) => a.startTime.localeCompare(b.startTime));
+                const slides: Booking[][] = [];
+                for (let i = 0; i < sorted.length; i += 2) {
+                  slides.push(sorted.slice(i, i + 2));
+                }
+                return (
+                  <>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      snapToInterval={width - PAD * 2 + 10}
+                      decelerationRate="fast"
+                      contentContainerStyle={styles.planningScroll}
+                    >
+                      {slides.map((slideBookings, slideIdx) => (
+                        <View key={slideIdx} style={styles.planningSlide}>
+                          {slideBookings.map((booking) => {
+                            const sc = statusConfig[booking.status] || statusConfig.pending;
+                            const now = new Date();
+                            const nowMin = now.getHours() * 60 + now.getMinutes();
+                            const [sH, sM] = formatTime(booking.startTime).split(':').map(Number);
+                            const [eH, eM] = formatTime(booking.endTime).split(':').map(Number);
+                            const startMin = sH * 60 + sM;
+                            const endMin = eH * 60 + eM;
+                            const isNow = nowMin >= startMin && nowMin < endMin;
+                            const isPast = nowMin >= endMin;
+                            const clientName = booking.user?.fullName || booking.user?.username || '';
+                            const isPaid = booking.paymentStatus === 'paid';
+                            return (
+                              <PressableCard key={booking.id} onPress={() => router.push(`/(manager-tabs)/bookings?bookingId=${booking.id}` as any)} style={styles.planningCardWrap}>
+                                <View style={[styles.planningCard, isNow && styles.planningCardLive, isPast && styles.planningCardPast]}>
+                                  <View style={[styles.planningTimeBlock, isNow && { backgroundColor: Colors.primary.orange + '15' }]}>
+                                    <Text style={[styles.planningTimeStart, isNow && { color: Colors.primary.orange }]}>
+                                      {formatTime(booking.startTime)}
+                                    </Text>
+                                    <Text style={styles.planningTimeEnd}>{formatTime(booking.endTime)}</Text>
+                                  </View>
+                                  <View style={styles.planningInfo}>
+                                    <Text style={styles.planningVenue} numberOfLines={1}>{getVenueName(booking.venueId)}</Text>
+                                    {clientName ? (
+                                      <Text style={styles.planningClient} numberOfLines={1}>{clientName}</Text>
+                                    ) : null}
+                                    <View style={styles.planningTags}>
+                                      {isNow ? (
+                                        <View style={styles.planningLiveTag}>
+                                          <PulseDot color={Colors.status.success} size={5} />
+                                          <Text style={styles.planningLiveText}>EN COURS</Text>
+                                        </View>
+                                      ) : isPast ? (
+                                        <Text style={styles.planningPastText}>Terminé</Text>
+                                      ) : null}
+                                      {isPaid && (
+                                        <View style={styles.planningPaidTag}>
+                                          <CheckCircle size={9} color={Colors.status.success} />
+                                          <Text style={styles.planningPaidText}>Payé</Text>
+                                        </View>
+                                      )}
+                                      <Text style={styles.planningPrice}>{booking.totalPrice.toLocaleString()} F</Text>
+                                    </View>
+                                  </View>
+                                  <View style={styles.planningRight}>
+                                    <View style={[styles.planningStatusPill, { backgroundColor: sc.color + '18' }]}>
+                                      <Text style={[styles.planningStatusText, { color: sc.color }]}>{sc.label}</Text>
+                                    </View>
+                                    <ChevronRight size={14} color={Colors.text.muted} />
+                                  </View>
                                 </View>
-                              )}
-                              <Text style={styles.timelinePrice}>{booking.totalPrice.toLocaleString()} FCFA</Text>
-                            </View>
-                          </View>
-                          <View style={[styles.timelineStatusPill, { backgroundColor: sc.color + '18' }]}>
-                            <Text style={[styles.timelineStatusText, { color: sc.color }]}>{sc.label}</Text>
-                          </View>
+                              </PressableCard>
+                            );
+                          })}
                         </View>
-                        {idx < todayBookings.length - 1 && <View style={styles.timelineConnector} />}
-                      </PressableCard>
-                    );
-                  })}
-                </View>
-              ) : (
+                      ))}
+                    </ScrollView>
+                    {slides.length > 1 && (
+                      <View style={styles.planningDots}>
+                        {slides.map((_, i) => (
+                          <View key={i} style={styles.planningDot} />
+                        ))}
+                      </View>
+                    )}
+                  </>
+                );
+              })() : (
                 <View style={[styles.emptyCard, cardShadow]}>
                   <Calendar size={28} color={Colors.text.muted} />
                   <Text style={styles.emptyCardText}>{`Aucune réservation aujourd'hui`}</Text>
@@ -615,36 +668,42 @@ const styles = StyleSheet.create({
   seeAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 'auto' as any },
   seeAllText: { color: Colors.primary.orange, fontSize: 12, fontWeight: '600' },
 
-  // ════ TIMELINE ════
-  timeline: { gap: 0 },
-  timelineItemWrap: { borderRadius: 14 },
-  timelineItem: {
+  // ════ PLANNING DU JOUR ════
+  planningScroll: { paddingRight: 0 },
+  planningSlide: { width: width - PAD * 2, gap: 10, marginRight: 10 },
+  planningList: { gap: 10 },
+  planningCardWrap: { borderRadius: 14 },
+  planningCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: Colors.background.card,
-    borderRadius: 14, padding: 14,
+    borderRadius: 14, paddingVertical: 12, paddingHorizontal: 12,
     borderWidth: 1, borderColor: Colors.border.light + '40',
   },
-  timelineItemLive: { borderColor: Colors.primary.orange + '40', borderWidth: 1.5 },
-  timelineItemPast: { opacity: 0.5 },
-  timelineLiveBar: {
-    position: 'absolute', left: 0, top: 14, bottom: 14, width: 3,
-    borderRadius: 2, backgroundColor: Colors.primary.orange,
+  planningCardLive: { borderColor: Colors.primary.orange + '40', borderWidth: 1.5 },
+  planningCardPast: { opacity: 0.5 },
+  planningTimeBlock: {
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.background.cardLight,
+    borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10,
+    minWidth: 56,
   },
-  timelineTime: { alignItems: 'center', gap: 2, minWidth: 50 },
-  timelineTimeText: { color: Colors.text.primary, fontSize: 13, fontWeight: '700' },
-  timelineTimeSep: { color: Colors.text.muted, fontSize: 10 },
-  timelineInfo: { flex: 1, minWidth: 0 },
-  timelineVenue: { color: Colors.text.primary, fontSize: 13, fontWeight: '600', marginBottom: 4 },
-  timelineMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  timelineLiveBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  timelineLiveText: { color: Colors.status.success, fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
-  timelinePrice: { color: Colors.primary.orange, fontSize: 12, fontWeight: '700' },
-  timelineStatusPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  timelineStatusText: { fontSize: 10, fontWeight: '700' },
-  timelineConnector: {
-    width: 2, height: 12, marginLeft: 24,
-    backgroundColor: Colors.border.light + '30',
-  },
+  planningTimeStart: { color: Colors.text.primary, fontSize: 14, fontWeight: '800' },
+  planningTimeEnd: { color: Colors.text.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
+  planningInfo: { flex: 1, minWidth: 0, gap: 3 },
+  planningVenue: { color: Colors.text.primary, fontSize: 14, fontWeight: '700' },
+  planningClient: { color: Colors.text.muted, fontSize: 12, fontWeight: '500' },
+  planningTags: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  planningLiveTag: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  planningLiveText: { color: Colors.status.success, fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  planningPastText: { color: Colors.text.muted, fontSize: 10, fontWeight: '600' },
+  planningPaidTag: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: Colors.status.success + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  planningPaidText: { color: Colors.status.success, fontSize: 9, fontWeight: '700' },
+  planningPrice: { color: Colors.primary.orange, fontSize: 12, fontWeight: '700' },
+  planningRight: { alignItems: 'center', justifyContent: 'center', gap: 4 },
+  planningStatusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  planningStatusText: { fontSize: 9, fontWeight: '700' },
+  planningDots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 10 },
+  planningDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.border.light + '60' },
 
   // ════ EMPTY CARD ════
   emptyCard: {

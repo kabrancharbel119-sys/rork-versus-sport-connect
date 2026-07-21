@@ -39,7 +39,6 @@ const sportLabels: Record<string, string> = {
 
 const paymentModeLabels: Record<string, string> = {
   in_app_immediate: 'Paiement au moment de la réservation',
-  in_app_on_site_qr: 'Paiement In-App sur place',
   cash_off_app: 'Paiement cash',
 };
 

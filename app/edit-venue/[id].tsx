@@ -42,11 +42,6 @@ const PAYMENT_MODES: { value: VenuePaymentMode; label: string; description: stri
     description: 'Payer en ligne pour confirmer le créneau.',
   },
   {
-    value: 'in_app_on_site_qr',
-    label: 'Paiement In-App sur place',
-    description: 'Payer au scan du QR le jour J.',
-  },
-  {
     value: 'cash_off_app',
     label: 'Paiement cash',
     description: 'Payer en espèces au terrain.',
@@ -57,7 +52,6 @@ const DAY_NAMES = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 
 
 const paymentModeLabels: Record<string, string> = {
   in_app_immediate: 'Paiement au moment de la réservation',
-  in_app_on_site_qr: 'Paiement In-App sur place',
   cash_off_app: 'Paiement cash',
 };
 

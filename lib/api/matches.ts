@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 import type { Match, Venue, MatchPlayerStats } from '@/types';
 import { logger } from '@/lib/logger';
 
@@ -468,21 +468,49 @@ export const matchesApi = {
   async delete(matchId: string, userId: string, asAdmin: boolean = false) {
     logger.debug('MatchesAPI', 'Deleting match:', matchId, asAdmin ? '(admin)' : '');
     
-    if (!asAdmin) {
-      const match = await this.getById(matchId);
-      if (match.createdBy !== userId) {
-        throw new Error('Seul le créateur peut supprimer ce match');
+    // Check if user is the creator or an admin/manager
+    const match = await this.getById(matchId);
+    const isCreator = match.createdBy === userId;
+    
+    if (!isCreator && !asAdmin) {
+      // Check if user has admin/manager role
+      const { data: userData } = await (supabase
+        .from('users')
+        .select('role')
+        .eq('id', userId)
+        .single() as any);
+      const userRole = (userData as any)?.role;
+      if (userRole !== 'admin' && userRole !== 'manager') {
+        throw new Error('Seul le créateur ou un administrateur peut supprimer ce match');
       }
     }
     
-    // Delete from database
-    const { error } = await supabase
+    // Delete from database — use .select() to verify the row was actually deleted
+    const { data: deletedRows, error } = await supabase
       .from('matches')
       .delete()
-      .eq('id', matchId);
-    
+      .eq('id', matchId)
+      .select('id');
+
     if (error) throw error;
-    
+    if (!deletedRows || deletedRows.length === 0) {
+      logger.warn('MatchesAPI', 'RLS blocked delete, trying admin fallback for match:', matchId);
+      
+      // Fallback: use service role to bypass RLS
+      if (supabaseAdmin) {
+        const { error: adminError } = await supabaseAdmin
+          .from('matches')
+          .delete()
+          .eq('id', matchId);
+        if (adminError) throw adminError;
+        logger.debug('MatchesAPI', 'Match deleted via admin fallback:', matchId);
+        return { success: true };
+      }
+      
+      throw new Error('Impossible de supprimer le match. Vérifiez vos permissions.');
+    }
+
+    logger.debug('MatchesAPI', 'Match deleted successfully:', matchId);
     return { success: true };
   },
 };

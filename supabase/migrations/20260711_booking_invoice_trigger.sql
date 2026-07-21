@@ -81,7 +81,7 @@ BEGIN
     'paid',
     NOW(),
     NOW(),
-    jsonb_build_object('team_name', NULL),
+    jsonb_build_object('team_name', NULL, 'booking_code', NEW.booking_code),
     COALESCE(v_payer.full_name, NULL),
     COALESCE(v_payee.full_name, NULL),
     COALESCE(v_venue.name, NULL),

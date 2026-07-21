@@ -8,17 +8,16 @@ import {
   ActivityIndicator,
   Modal,
   Image,
-  Linking,
+  TextInput,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter, Stack } from 'expo-router';
-import { ArrowLeft, ScanLine, User, Calendar, Clock, CheckCircle, X, Shield, MapPin, DollarSign, BadgeCheck } from 'lucide-react-native';
+import { ArrowLeft, ScanLine, User, Calendar, Clock, CheckCircle, X, Shield, MapPin, DollarSign, BadgeCheck, Keyboard } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '@/constants/colors';
 import { Button } from '@/components/Button';
 import { venuesApi } from '@/lib/api/venues';
 import { useAuth } from '@/contexts/AuthContext';
-import { paymentProvider, isInAppPaymentAvailable } from '@/lib/payments/payment-provider';
 import { supabase } from '@/lib/supabase';
 import type { Booking } from '@/types';
 
@@ -44,10 +43,12 @@ export default function ScanQRScreen() {
   const [scanned, setScanned] = useState(false);
   const [scanning, setScanning] = useState(true);
   const [validating, setValidating] = useState(false);
-  const [isPaying, setIsPaying] = useState(false);
   const [scannedData, setScannedData] = useState<ScannedBooking | null>(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [scannedToken, setScannedToken] = useState<string | null>(null);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualCode, setManualCode] = useState('');
+  const [manualLoading, setManualLoading] = useState(false);
 
   useEffect(() => {
     if (!permission?.granted) {
@@ -129,111 +130,10 @@ export default function ScanQRScreen() {
 
   const paymentStatus = scannedData?.booking.paymentStatus;
   const paymentMode = (scannedData?.booking as any)?.venue?.paymentMode ?? 'cash_off_app';
-  const paymentRequired = paymentMode === 'in_app_on_site_qr' && paymentStatus !== 'paid';
-  const isPaymentConfigured = isInAppPaymentAvailable();
 
-  const handlePay = async () => {
-    if (!scannedData || !user?.id) return;
-
-    setIsPaying(true);
-    try {
-      const booking = scannedData.booking;
-      const reference = `BOOKING-${booking.id}-${Date.now()}`;
-      const paymentResult = await paymentProvider.initiatePayment({
-        reference,
-        amount: booking.totalPrice,
-        currency: 'XOF',
-        contextType: 'booking',
-        contextId: booking.id,
-        payerId: booking.userId,
-        successUrl: `https://versus-sport-connect.vercel.app/payment/success?booking_id=${booking.id}`,
-        errorUrl: `https://versus-sport-connect.vercel.app/payment/error?booking_id=${booking.id}`,
-      });
-
-      if (!paymentResult.success) {
-        Alert.alert(
-          'Paiement refusé',
-          paymentResult.error || 'Le paiement n\'a pas pu être traité.'
-        );
-        return;
-      }
-
-      // Set booking payment_status to 'pending' while waiting for webhook
-      await venuesApi.updateBookingPaymentStatus(booking.id, 'pending');
-
-      // Open GeniusPay checkout page
-      if (paymentResult.checkoutUrl) {
-        const supported = await Linking.canOpenURL(paymentResult.checkoutUrl);
-        if (supported) {
-          await Linking.openURL(paymentResult.checkoutUrl);
-        } else {
-          Alert.alert(
-            'Ouverture impossible',
-            'Impossible d\'ouvrir la page de paiement. Copiez ce lien :\n' + paymentResult.checkoutUrl
-          );
-        }
-      }
-
-      Alert.alert(
-        'Paiement en cours',
-        'Le client doit compléter le paiement sur la page GeniusPay. Une fois confirmé, le statut se mettra à jour automatiquement.'
-      );
-
-      // Start polling for payment confirmation
-      let attempts = 0;
-      const maxAttempts = 60;
-      const poll = async () => {
-        while (attempts < maxAttempts) {
-          attempts++;
-          try {
-            const { data, error } = await supabase
-              .from('bookings')
-              .select('payment_status, payment_transaction_id')
-              .eq('id', booking.id)
-              .single();
-
-            if (data?.payment_status === 'paid') {
-              setScannedData({
-                ...scannedData,
-                booking: {
-                  ...booking,
-                  paymentStatus: 'paid',
-                  paymentTransactionId: data.payment_transaction_id || paymentResult.providerTransactionId,
-                  paidAt: new Date(),
-                },
-              });
-              Alert.alert('Paiement confirmé ✅', 'Le paiement a été encaissé. Vous pouvez maintenant valider.');
-              return;
-            } else if (data?.payment_status === 'failed') {
-              Alert.alert('Paiement échoué', 'Le paiement n\'a pas abouti. Le client peut réessayer.');
-              return;
-            }
-          } catch (e) {
-            console.warn('[ScanQR] Poll error:', e);
-          }
-          await new Promise((r) => setTimeout(r, 5000));
-        }
-        console.log('[ScanQR] Polling timed out');
-      };
-      poll();
-    } catch (error: any) {
-      console.error('[ScanQR] Payment error:', error);
-      Alert.alert('Erreur de paiement', error.message || 'Impossible de traiter le paiement.');
-    } finally {
-      setIsPaying(false);
-    }
-  };
 
   const handleValidate = async () => {
     if (!scannedData || !user?.id || !scannedToken) return;
-
-    if (paymentMode === 'in_app_on_site_qr' && paymentStatus !== 'paid') {
-      Alert.alert(
-        'Paiement requis',
-        'Ce créneau est en Paiement In-App sur place. Le paiement doit être encaissé avant validation.'
-      );
-      return;
-    }
 
     if (paymentMode === 'in_app_immediate' && paymentStatus !== 'paid') {
       Alert.alert(
@@ -292,6 +192,61 @@ export default function ScanQRScreen() {
       setValidating(false);
       setShowConfirmation(false);
       setTimeout(() => Alert.alert(title, body), 400);
+    }
+  };
+
+  const handleManualCodeEntry = async () => {
+    const code = manualCode.trim().toUpperCase();
+    if (!code) {
+      Alert.alert('Code requis', 'Veuillez saisir le code de réservation.');
+      return;
+    }
+
+    setManualLoading(true);
+    try {
+      const bookingData = await venuesApi.getBookingByCode(code);
+
+      if (!bookingData.checkInToken) {
+        Alert.alert(
+          'Réservation invalide',
+          'Cette réservation ne possède pas de token de validation.',
+          [{ text: 'OK' }]
+        );
+        setManualLoading(false);
+        return;
+      }
+
+      setScannedToken(bookingData.checkInToken);
+
+      const rawUser = (bookingData as any).user;
+      const scannedUser: ScannedUser = {
+        id: rawUser?.id ?? bookingData.userId,
+        username: rawUser?.username ?? rawUser?.full_name ?? 'Utilisateur',
+        full_name: rawUser?.full_name ?? rawUser?.username ?? 'Utilisateur',
+        avatar_url: rawUser?.avatar ?? undefined,
+        completed_bookings_count: rawUser?.completed_bookings_count ?? 0,
+        total_bookings_count: rawUser?.total_bookings_count ?? 0,
+        member_since: rawUser?.created_at ?? rawUser?.member_since ?? new Date().toISOString(),
+      };
+
+      setScannedData({
+        booking: bookingData,
+        user: scannedUser,
+      });
+
+      setShowManualEntry(false);
+      setManualCode('');
+      setShowConfirmation(true);
+    } catch (error: any) {
+      const msg = error?.message || '';
+      let title = 'Code invalide';
+      let body = 'Aucune réservation trouvée avec ce code. Vérifiez et réessayez.';
+      if (msg.includes('multiple rows') || msg.includes('more than one')) {
+        body = 'Plusieurs réservations trouvées avec ce code. Contactez le support.';
+      }
+      Alert.alert(title, body, [{ text: 'OK' }]);
+    } finally {
+      setManualLoading(false);
     }
   };
 
@@ -408,6 +363,73 @@ export default function ScanQRScreen() {
         </LinearGradient>
       </CameraView>
 
+      {/* Manual Entry Button — positioned absolutely so it's always visible */}
+      <TouchableOpacity
+        style={styles.manualEntryBtn}
+        onPress={() => setShowManualEntry(true)}
+        activeOpacity={0.85}
+      >
+        <Keyboard size={18} color={Colors.primary.orange} />
+        <Text style={styles.manualEntryText}>Saisir le code manuellement</Text>
+      </TouchableOpacity>
+
+      {/* Manual Entry Modal */}
+      <Modal
+        visible={showManualEntry}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowManualEntry(false)}
+      >
+        <View style={styles.manualOverlay}>
+          <View style={styles.manualCard}>
+            <View style={styles.manualHeader}>
+              <Text style={styles.manualTitle}>Saisir le code de réservation</Text>
+              <TouchableOpacity
+                onPress={() => { setShowManualEntry(false); setManualCode(''); }}
+                style={styles.manualCloseBtn}
+              >
+                <X size={20} color={Colors.text.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.manualSubtitle}>
+              Demandez au client de vous communiquer le code affiché sous son QR code.
+            </Text>
+
+            <TextInput
+              style={styles.manualInput}
+              value={manualCode}
+              onChangeText={(text) => setManualCode(text.toUpperCase())}
+              placeholder="Ex: VS-AB12CD"
+              placeholderTextColor={Colors.text.muted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleManualCodeEntry}
+            />
+
+            <TouchableOpacity
+              style={styles.manualSubmitBtn}
+              onPress={handleManualCodeEntry}
+              disabled={manualLoading || !manualCode.trim()}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={[Colors.primary.orange, Colors.primary.orangeDark]}
+                style={styles.manualSubmitGradient}
+              >
+                {manualLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.manualSubmitText}>Rechercher la réservation</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Confirmation Modal */}
       <Modal
         visible={showConfirmation}
@@ -520,60 +542,30 @@ export default function ScanQRScreen() {
 
                 {/* Action Buttons */}
                 <View style={styles.actionButtons}>
-                  {paymentRequired && !isPaymentConfigured && (
-                    <View style={styles.paymentInfo}>
-                      <Text style={styles.paymentInfoText}>
-                        Paiement In-App sur place requis, mais aucun fournisseur de paiement n'est configuré.
+                  <TouchableOpacity
+                    style={[styles.validateButton, validating && { opacity: 0.7 }]}
+                    onPress={handleValidate}
+                    disabled={validating}
+                    activeOpacity={0.85}
+                  >
+                    <LinearGradient
+                      colors={[Colors.primary.orange, Colors.primary.orangeDark]}
+                      style={styles.validateButtonGradient}
+                    >
+                      {validating
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <CheckCircle size={20} color="#fff" />
+                      }
+                      <Text style={styles.validateButtonText}>
+                        {validating ? 'Validation en cours...' : 'Confirmer la validation'}
                       </Text>
-                    </View>
-                  )}
-
-                  {paymentRequired ? (
-                    <TouchableOpacity
-                      style={[styles.validateButton, (isPaying || validating) && { opacity: 0.7 }]}
-                      onPress={handlePay}
-                      disabled={isPaying || validating || !isPaymentConfigured}
-                      activeOpacity={0.85}
-                    >
-                      <LinearGradient
-                        colors={[Colors.status.success, '#1B6B3E']}
-                        style={styles.validateButtonGradient}
-                      >
-                        {isPaying
-                          ? <ActivityIndicator size="small" color="#fff" />
-                          : <DollarSign size={20} color="#fff" />
-                        }
-                        <Text style={styles.validateButtonText}>
-                          {isPaying ? 'Paiement en cours...' : 'Payer et encaisser'}
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      style={[styles.validateButton, validating && { opacity: 0.7 }]}
-                      onPress={handleValidate}
-                      disabled={validating}
-                      activeOpacity={0.85}
-                    >
-                      <LinearGradient
-                        colors={[Colors.primary.orange, Colors.primary.orangeDark]}
-                        style={styles.validateButtonGradient}
-                      >
-                        {validating
-                          ? <ActivityIndicator size="small" color="#fff" />
-                          : <CheckCircle size={20} color="#fff" />
-                        }
-                        <Text style={styles.validateButtonText}>
-                          {validating ? 'Validation en cours...' : 'Confirmer la validation'}
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  )}
+                    </LinearGradient>
+                  </TouchableOpacity>
 
                   <TouchableOpacity
                     style={styles.cancelButton}
                     onPress={handleCancel}
-                    disabled={validating || isPaying}
+                    disabled={validating}
                     activeOpacity={0.7}
                   >
                     <Text style={styles.cancelButtonText}>Annuler</Text>
@@ -914,5 +906,97 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     fontSize: 15,
     fontWeight: '600',
+  },
+  manualEntryBtn: {
+    position: 'absolute',
+    bottom: 24,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(2, 6, 23, 0.85)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  manualEntryText: {
+    color: Colors.primary.orange,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  manualOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(2, 6, 23, 0.82)',
+    paddingHorizontal: 28,
+  },
+  manualCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: Colors.background.card,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+  },
+  manualHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  manualTitle: {
+    color: Colors.text.primary,
+    fontSize: 18,
+    fontWeight: '700',
+    flex: 1,
+  },
+  manualCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manualSubtitle: {
+    color: Colors.text.secondary,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  manualInput: {
+    backgroundColor: Colors.background.cardLight,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    color: Colors.text.primary,
+    fontSize: 20,
+    fontWeight: '700',
+    fontFamily: 'monospace',
+    letterSpacing: 2,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  manualSubmitBtn: {
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  manualSubmitGradient: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+  },
+  manualSubmitText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

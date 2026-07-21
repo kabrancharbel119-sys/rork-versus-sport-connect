@@ -459,7 +459,6 @@ export const tournamentsApi = {
     
     // Déterminer le statut initial selon le mode de paiement:
     // - in_app_immediate: pending_payment (l'équipe doit payer via GeniusPay pour être confirmée)
-    // - in_app_on_site_qr: confirmed (paiement sur place au scan QR)
     // - cash_off_app: confirmed (paiement cash directement à l'organisateur)
     const paymentMode = tournament.entry_payment_mode || 'in_app_immediate';
     const requiresInAppPayment = tournament.entry_fee > 0 && paymentMode === 'in_app_immediate';

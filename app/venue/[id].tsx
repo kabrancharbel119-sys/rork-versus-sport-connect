@@ -26,13 +26,11 @@ const sportLabels: Record<string, string> = {
 
 const paymentModeLabels: Record<string, string> = {
   in_app_immediate: 'Paiement au moment de la réservation',
-  in_app_on_site_qr: 'Paiement In-App sur place',
   cash_off_app: 'Paiement cash',
 };
 
 const paymentModeNotes: Record<string, string> = {
   in_app_immediate: 'Payer en ligne pour confirmer.',
-  in_app_on_site_qr: 'Payer au scan du QR le jour J.',
   cash_off_app: 'Payer en espèces au terrain.',
 };
 
@@ -384,12 +382,6 @@ export default function VenueDetailScreen() {
 
     // Cash / off-app: no payment to collect in the app
     if (venue.paymentMode === 'cash_off_app') {
-      bookMutation.mutate(undefined);
-      return;
-    }
-
-    // In-app on-site QR: payment is handled at QR scan, not at reservation
-    if (venue.paymentMode === 'in_app_on_site_qr') {
       bookMutation.mutate(undefined);
       return;
     }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import { TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { QrCode } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
@@ -11,7 +11,7 @@ interface ShowQRButtonProps {
   venueName: string;
 }
 
-export function ShowQRButton({ booking, venueName }: ShowQRButtonProps) {
+export const ShowQRButton = memo(({ booking, venueName }: ShowQRButtonProps) => {
   const [showQR, setShowQR] = useState(false);
   const { user } = useAuth();
 
@@ -35,7 +35,13 @@ export function ShowQRButton({ booking, venueName }: ShowQRButtonProps) {
       />
     </>
   );
-}
+}, (prevProps, nextProps) => {
+  // Only re-render if these specific values change
+  return prevProps.booking.id === nextProps.booking.id &&
+    prevProps.booking.status === nextProps.booking.status &&
+    prevProps.booking.checkInToken === nextProps.booking.checkInToken &&
+    prevProps.venueName === nextProps.venueName;
+});
 
 const styles = StyleSheet.create({
   button: {

@@ -97,7 +97,6 @@ export default function InvoiceDetailScreen() {
   const contextLabel = invoice ? contextLabels[invoice.contextType] ?? invoice.contextType : '';
   const paymentMethodLabels: Record<string, string> = {
     in_app_immediate: 'Paiement in-app',
-    in_app_on_site_qr: 'QR sur place',
     cash_off_app: 'Espèces',
   };
   const paymentMethodLabel = invoice?.paymentMethod ? (paymentMethodLabels[invoice.paymentMethod] ?? invoice.paymentMethod) : 'Non renseigné';

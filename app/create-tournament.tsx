@@ -27,11 +27,6 @@ const ENTRY_PAYMENT_MODES: { value: VenuePaymentMode; label: string; description
     description: 'Les équipes paient les frais d\'inscription via l\'app pour confirmer leur participation.',
   },
   {
-    value: 'in_app_on_site_qr',
-    label: 'Paiement sur place (QR)',
-    description: 'Les équipes paient les frais au scan du QR le jour du tournoi.',
-  },
-  {
     value: 'cash_off_app',
     label: 'Paiement cash / hors app',
     description: 'Les équipes paient en espèces directement à l\'organisateur.',

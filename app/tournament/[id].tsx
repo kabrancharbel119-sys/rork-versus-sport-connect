@@ -490,9 +490,7 @@ export default function TournamentDetailScreen() {
         } else {
           const modeMsg = paymentMode === 'cash_off_app'
             ? 'Paiement en espèces à remettre à l\'organisateur.'
-            : paymentMode === 'in_app_on_site_qr'
-              ? 'Paiement à effectuer sur place via QR code.'
-              : '';
+            : '';
           setSuccessMessage(t('tournamentDetail.registerSuccess', { team: teamName }) + (modeMsg ? `\n${modeMsg}` : ''));
         }
       } catch (e: unknown) {
@@ -1468,9 +1466,6 @@ export default function TournamentDetailScreen() {
                           const pm = (tournament.entryPaymentMode ?? 'in_app_immediate') as VenuePaymentMode;
                           if (pm === 'cash_off_app' && (tournament.entryFee ?? 0) > 0) {
                             return <Text style={styles.paymentInfoText}>Paiement en espèces à remettre à l'organisateur le jour du tournoi.</Text>;
-                          }
-                          if (pm === 'in_app_on_site_qr' && (tournament.entryFee ?? 0) > 0) {
-                            return <Text style={styles.paymentInfoText}>Paiement à effectuer sur place via QR code le jour du tournoi.</Text>;
                           }
                           return null;
                         })()}

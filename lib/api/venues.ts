@@ -90,6 +90,7 @@ export const mapBookingRowToBooking = (row: BookingRow): Booking => ({
   tournamentId: (row as any).tournament_id ?? undefined,
   notes: row.notes ?? undefined,
   createdAt: new Date(row.created_at),
+  bookingCode: (row as any).booking_code ?? undefined,
   // QR Code validation fields
   checkInToken: (row as any).check_in_token ?? undefined,
   validatedAt: (row as any).validated_at ? new Date((row as any).validated_at) : undefined,
@@ -1031,6 +1032,48 @@ export const venuesApi = {
     }
 
     // Fetch reliability stats via RPC (completed / no-shows — hors cancelled/rejected)
+    const userId = data?.user_id ?? data?.user?.id;
+    let reliability = { completed: 0, no_shows: 0, total: 0 };
+    if (userId) {
+      const { data: rel } = await (supabase
+        .rpc('get_user_reliability', { p_user_id: userId }) as any);
+      if (rel) reliability = rel;
+    }
+    
+    const booking = mapBookingRowToBooking(data);
+    const rawUser = data.user ?? null;
+    if (rawUser) {
+      rawUser.completed_bookings_count = reliability.completed;
+      rawUser.no_shows = reliability.no_shows;
+      rawUser.total_bookings_count = reliability.total;
+    }
+    (booking as any).user = rawUser;
+    const rawVenue = data.venue ?? null;
+    if (rawVenue) {
+      (booking as any).venue = mapVenueRowToVenue(rawVenue);
+    }
+    return booking;
+  },
+
+  async getBookingByCode(code: string) {
+    const normalizedCode = code.trim().toUpperCase();
+    console.log('[VenuesAPI] Getting booking by code:', normalizedCode);
+    
+    const { data, error } = await (supabase
+      .from('bookings')
+      .select(`
+        *,
+        venue:venues(*),
+        user:users!bookings_user_id_fkey(id, username, full_name, avatar, completed_bookings_count, created_at)
+      `)
+      .eq('booking_code', normalizedCode)
+      .single() as any);
+    
+    if (error) {
+      console.error('[VenuesAPI] Error fetching booking by code:', error?.message);
+      throw new Error('Réservation introuvable avec ce code. Vérifiez le code et réessayez.');
+    }
+
     const userId = data?.user_id ?? data?.user?.id;
     let reliability = { completed: 0, no_shows: 0, total: 0 };
     if (userId) {

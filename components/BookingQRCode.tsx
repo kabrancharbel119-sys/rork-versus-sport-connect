@@ -91,6 +91,17 @@ export function BookingQRCode({ booking, venueName, visible, onClose }: BookingQ
             </Text>
           </View>
 
+          {/* Booking Code — for manual entry fallback */}
+          {booking.bookingCode && (
+            <View style={styles.codeContainer}>
+              <Text style={styles.codeLabel}>Code de réservation</Text>
+              <Text style={styles.codeValue}>{booking.bookingCode}</Text>
+              <Text style={styles.codeHint}>
+                Si le scan ne fonctionne pas, communiquez ce code au gestionnaire
+              </Text>
+            </View>
+          )}
+
           {/* Footer */}
           <View style={styles.footer}>
             <Text style={styles.footerText}>
@@ -180,6 +191,37 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  codeContainer: {
+    backgroundColor: Colors.background.cardLight,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+  },
+  codeLabel: {
+    color: Colors.text.muted,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  codeValue: {
+    color: Colors.primary.orange,
+    fontSize: 28,
+    fontWeight: '800',
+    fontFamily: 'monospace',
+    letterSpacing: 2,
+    marginBottom: 6,
+  },
+  codeHint: {
+    color: Colors.text.muted,
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 16,
   },
   footer: {
     alignItems: 'center',

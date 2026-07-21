@@ -9,7 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { ArrowLeft, Send, Image as ImageIcon, MoreVertical, Search, Bell, BellOff, Share2, Users, X } from 'lucide-react-native';
+import { ArrowLeft, Send, Image as ImageIcon, MoreVertical, Search, Bell, BellOff, Share2, Users, X, Check, CheckCheck } from 'lucide-react-native';
 import { Button } from '@/components/Button';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -265,6 +265,9 @@ export default function ChatRoomScreen() {
     return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   };
 
+  const otherParticipant = room?.type === 'direct' ? room.participants.find(id => id !== user?.id) : null;
+  const otherUser = otherParticipant ? usersById.get(otherParticipant) : null;
+
   if (!room) {
     return (
       <View style={styles.container}>
@@ -286,9 +289,9 @@ export default function ChatRoomScreen() {
       <View style={styles.container}>
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
-          <View style={styles.header}>
+          <View style={styles.headerBar}>
             <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/chat')}>
-              <ArrowLeft size={24} color={Colors.text.primary} />
+              <ArrowLeft size={22} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Accès restreint</Text>
             <View style={styles.placeholder} />
@@ -317,9 +320,44 @@ export default function ChatRoomScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         
         <SafeAreaView style={styles.safeArea} edges={['top']}>
+          {/* ════ FIXED HEADER ════ */}
+          <View style={styles.headerBar}>
+            <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/chat')} hitSlop={8}>
+              <ArrowLeft size={22} color={Colors.text.primary} />
+            </TouchableOpacity>
+            <View style={styles.headerInfo}>
+              {isDirectChat && otherUser ? (
+                <View style={styles.headerAvatarRow}>
+                  <Avatar uri={otherUser.avatar} name={otherUser.fullName || otherUser.username || ''} size="small" />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.headerTitle} numberOfLines={1}>{otherUser.fullName || otherUser.username || 'Utilisateur'}</Text>
+                    <Text style={styles.headerSubtitle}>{room.participants.length} membres</Text>
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.headerTitle} numberOfLines={1}>{room.name}</Text>
+                  <Text style={styles.headerSubtitle}>{room.participants.length} membres</Text>
+                </>
+              )}
+            </View>
+            <View style={styles.headerActions}>
+              <Pressable style={styles.headerIconBtn} onPress={handleSearchPress} hitSlop={6}>
+                <Search size={18} color={roomSearchQuery.trim() ? Colors.primary.blue : Colors.text.secondary} />
+              </Pressable>
+              <Pressable style={styles.headerIconBtn} onPress={handleNotifications} hitSlop={6}>
+                {isMuted ? <BellOff size={18} color={Colors.text.muted} /> : <Bell size={18} color={Colors.text.secondary} />}
+              </Pressable>
+              <Pressable style={styles.headerIconBtn} onPress={handleMore} hitSlop={6}>
+                <MoreVertical size={18} color={Colors.text.secondary} />
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Search bar (conditional, below header) */}
           {showSearchBar && (
             <View style={styles.roomSearchBar}>
-              <Search size={18} color={Colors.text.muted} />
+              <Search size={16} color={Colors.text.muted} />
               <TextInput
                 style={styles.roomSearchInput}
                 placeholder="Rechercher dans les messages..."
@@ -329,7 +367,7 @@ export default function ChatRoomScreen() {
                 autoFocus
               />
               <Pressable onPress={() => { setRoomSearchQuery(''); setShowSearchBar(false); }} hitSlop={8}>
-                <X size={18} color={Colors.text.muted} />
+                <X size={16} color={Colors.text.muted} />
               </Pressable>
             </View>
           )}
@@ -345,29 +383,6 @@ export default function ChatRoomScreen() {
               contentContainerStyle={styles.messagesContent}
               showsVerticalScrollIndicator={false}
             >
-              <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/chat')}>
-                  <ArrowLeft size={24} color={Colors.text.primary} />
-                </TouchableOpacity>
-                <View style={styles.headerInfo}>
-                  <Text style={styles.headerTitle} numberOfLines={1}>{room.name}</Text>
-                  <Text style={styles.headerSubtitle}>
-                    {room.participants.length} membres
-                  </Text>
-                </View>
-                <View style={styles.headerActions}>
-                  <Pressable style={styles.headerIconBtn} onPress={handleSearchPress} hitSlop={6}>
-                    <Search size={20} color={roomSearchQuery.trim() ? Colors.primary.blue : Colors.text.primary} />
-                  </Pressable>
-                  <Pressable style={styles.headerIconBtn} onPress={handleNotifications} hitSlop={6}>
-                    {isMuted ? <BellOff size={20} color={Colors.text.muted} /> : <Bell size={20} color={Colors.text.primary} />}
-                  </Pressable>
-                  <Pressable style={styles.headerIconBtn} onPress={handleMore} hitSlop={6}>
-                    <MoreVertical size={20} color={Colors.text.primary} />
-                  </Pressable>
-                </View>
-              </View>
-
               {roomSearchQuery.trim() && messages.length === 0 ? (
                 <View style={styles.searchNoResults}>
                   <Search size={32} color={Colors.text.muted} />
@@ -381,17 +396,21 @@ export default function ChatRoomScreen() {
                 const showDateLabel = dateLabel !== lastDateLabel;
                 lastDateLabel = dateLabel;
 
-                // Check if we should show timestamp (different sender or time gap > 5 min)
                 const prevMessage = index > 0 ? messages[index - 1] : null;
-                const timeDiff = prevMessage ? (new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime()) / 60000 : 999;
-                const showTimestamp = !prevMessage || prevMessage.senderId !== message.senderId || timeDiff > 5;
+                const nextMessage = index < messages.length - 1 ? messages[index + 1] : null;
+                const isGrouped = prevMessage && prevMessage.senderId === message.senderId &&
+                  (new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime()) / 60000 < 5;
+                const isLastInGroup = !nextMessage || nextMessage.senderId !== message.senderId ||
+                  (new Date(nextMessage.createdAt).getTime() - new Date(message.createdAt).getTime()) / 60000 > 5;
 
                 const bubble = (
                   <View style={[
                     styles.messageBubble,
-                    isOwnMessage ? styles.ownMessage : styles.otherMessage
+                    isOwnMessage ? styles.ownMessage : styles.otherMessage,
+                    isGrouped && (isOwnMessage ? styles.ownMessageGrouped : styles.otherMessageGrouped),
+                    isLastInGroup && (isOwnMessage ? styles.ownMessageLast : styles.otherMessageLast),
                   ]}>
-                    {!isOwnMessage && (
+                    {!isOwnMessage && !isGrouped && (
                       <Text style={styles.senderName}>{getSenderName(message.senderId)}</Text>
                     )}
                     {message.type === 'image' && (message.content.startsWith('http') || message.content.startsWith('file') || message.content.startsWith('content')) ? (
@@ -411,6 +430,11 @@ export default function ChatRoomScreen() {
                         {message.content}
                       </Text>
                     )}
+                    {isLastInGroup && (
+                      <Text style={[styles.bubbleTime, isOwnMessage && styles.ownBubbleTime]}>
+                        {formatTime(message.createdAt)}
+                      </Text>
+                    )}
                   </View>
                 );
 
@@ -421,17 +445,17 @@ export default function ChatRoomScreen() {
                         <Text style={styles.dateLabelText}>{dateLabel}</Text>
                       </View>
                     )}
-                    {showTimestamp && (
-                      <Text style={styles.timestampLabel}>
-                        {formatTime(message.createdAt)}
-                      </Text>
-                    )}
                     <View style={[
                       styles.messageWrapper,
-                      isOwnMessage ? styles.ownMessageWrapper : styles.otherMessageWrapper
+                      isOwnMessage ? styles.ownMessageWrapper : styles.otherMessageWrapper,
+                      isGrouped && styles.groupedMessage,
                     ]}>
                       {!isOwnMessage && (
-                        <Avatar uri={usersById.get(message.senderId)?.avatar} name={getSenderName(message.senderId)} size="small" />
+                        <View style={styles.avatarSlot}>
+                          {!isLastInGroup ? null : (
+                            <Avatar uri={usersById.get(message.senderId)?.avatar} name={getSenderName(message.senderId)} size="small" />
+                          )}
+                        </View>
                       )}
                       {canDelete ? (
                         <Pressable
@@ -463,22 +487,26 @@ export default function ChatRoomScreen() {
               })
               )}
             </ScrollView>
-            <View style={styles.inputContainer}>
+
+            {/* ════ INPUT BAR ════ */}
+            <View style={styles.inputBar}>
               <Pressable style={styles.attachButton} onPress={handleAttach} hitSlop={8}>
                 <ImageIcon size={22} color={Colors.text.muted} />
               </Pressable>
-              <TextInput
-                testID="chat-input"
-                style={styles.textInput}
-                placeholder="Écrire un message..."
-                placeholderTextColor={Colors.text.muted}
-                value={messageText}
-                onChangeText={setMessageText}
-                onSubmitEditing={() => messageText.trim() && handleSend()}
-                multiline
-                maxLength={1000}
-                blurOnSubmit={false}
-              />
+              <View style={styles.inputWrap}>
+                <TextInput
+                  testID="chat-input"
+                  style={styles.textInput}
+                  placeholder="Écrire un message..."
+                  placeholderTextColor={Colors.text.muted}
+                  value={messageText}
+                  onChangeText={setMessageText}
+                  onSubmitEditing={() => messageText.trim() && handleSend()}
+                  multiline
+                  maxLength={1000}
+                  blurOnSubmit={false}
+                />
+              </View>
               <Pressable
                 testID="btn-send-message"
                 style={({ pressed }) => [styles.sendButton, !messageText.trim() && styles.sendButtonDisabled, pressed && styles.sendButtonPressed]}
@@ -486,7 +514,7 @@ export default function ChatRoomScreen() {
                 disabled={!messageText.trim() || isSending}
                 hitSlop={8}
               >
-                <Send size={20} color={messageText.trim() ? '#FFFFFF' : Colors.text.muted} />
+                <Send size={18} color={messageText.trim() ? '#FFFFFF' : Colors.text.muted} />
               </Pressable>
             </View>
           </KeyboardAvoidingView>
@@ -497,162 +525,66 @@ export default function ChatRoomScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
+  container: { flex: 1 },
+  safeArea: { flex: 1 },
+
+  // ════ HEADER BAR (fixed) ════
+  headerBar: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: Colors.border.light + '40',
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.background.card,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
   },
-  headerInfo: {
-    flex: 1,
-    marginHorizontal: 12,
-  },
-  headerTitle: {
-    color: Colors.text.primary,
-    fontSize: 17,
-    fontWeight: '600' as const,
-  },
-  headerSubtitle: {
-    color: Colors.text.muted,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
+  headerInfo: { flex: 1, marginHorizontal: 8, minWidth: 0 },
+  headerAvatarRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerTitle: { color: Colors.text.primary, fontSize: 16, fontWeight: '700' },
+  headerSubtitle: { color: Colors.text.muted, fontSize: 11, marginTop: 1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   headerIconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: Colors.background.card,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
   },
+
+  // ════ SEARCH BAR ════
   roomSearchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginVertical: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: 12, marginVertical: 6,
+    paddingHorizontal: 12, paddingVertical: 8,
     backgroundColor: Colors.background.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
-    gap: 10,
-  },
-  roomSearchInput: {
-    flex: 1,
-    color: Colors.text.primary,
-    fontSize: 15,
-    paddingVertical: 2,
-  },
-  searchNoResults: {
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  searchNoResultsText: {
-    color: Colors.text.muted,
-    fontSize: 14,
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    paddingHorizontal: 40,
-  },
-  errorTitle: {
-    color: Colors.text.primary,
-    fontSize: 20,
-    fontWeight: '700' as const,
-    marginTop: 20,
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  errorText: {
-    color: Colors.text.muted,
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  errorLink: {
-    color: Colors.primary.blue,
-    fontSize: 14,
-  },
-  backBtn: {
-    marginTop: 24,
-    backgroundColor: Colors.primary.blue,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  backBtnText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600' as const,
-  },
-  placeholder: {
-    width: 40,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  messagesContainer: {
-    flex: 1,
-  },
-  messagesContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  dateLabel: {
-    alignItems: 'center',
-    marginVertical: 16,
-  },
-  dateLabelText: {
-    color: Colors.text.muted,
-    fontSize: 12,
-    backgroundColor: Colors.background.card,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  messageWrapper: {
-    flexDirection: 'row',
-    marginBottom: 12,
+    borderRadius: 10, borderWidth: 1, borderColor: Colors.border.light + '60',
     gap: 8,
   },
-  ownMessageWrapper: {
-    justifyContent: 'flex-end',
+  roomSearchInput: {
+    flex: 1, color: Colors.text.primary, fontSize: 14, paddingVertical: 2,
   },
-  otherMessageWrapper: {
-    justifyContent: 'flex-start',
+
+  // ════ MESSAGES ════
+  keyboardView: { flex: 1 },
+  messagesContainer: { flex: 1 },
+  messagesContent: { paddingHorizontal: 14, paddingVertical: 12 },
+
+  dateLabel: { alignItems: 'center', marginVertical: 12 },
+  dateLabelText: {
+    color: Colors.text.muted, fontSize: 11, fontWeight: '600',
+    backgroundColor: Colors.background.card + '80',
+    paddingHorizontal: 12, paddingVertical: 4, borderRadius: 10,
+    overflow: 'hidden',
   },
+
+  messageWrapper: { flexDirection: 'row', marginBottom: 2, gap: 8 },
+  groupedMessage: { marginBottom: 1 },
+  ownMessageWrapper: { justifyContent: 'flex-end' },
+  otherMessageWrapper: { justifyContent: 'flex-start' },
+
+  avatarSlot: { width: 32, height: 32, justifyContent: 'flex-end' },
+
   messageBubble: {
-    maxWidth: '85%',
-    padding: 12,
-    borderRadius: 16,
+    maxWidth: '78%',
+    paddingHorizontal: 14, paddingVertical: 9,
+    borderRadius: 18,
   },
   ownMessage: {
     backgroundColor: Colors.primary.blue,
@@ -661,91 +593,77 @@ const styles = StyleSheet.create({
   otherMessage: {
     backgroundColor: Colors.background.card,
     borderBottomLeftRadius: 4,
+    borderWidth: 1, borderColor: Colors.border.light + '30',
   },
+  ownMessageGrouped: { borderBottomRightRadius: 18 },
+  otherMessageGrouped: { borderBottomLeftRadius: 18 },
+  ownMessageLast: { borderBottomRightRadius: 4 },
+  otherMessageLast: { borderBottomLeftRadius: 4 },
+
   senderName: {
-    color: Colors.primary.orange,
-    fontSize: 12,
-    fontWeight: '600' as const,
-    marginBottom: 4,
+    color: Colors.primary.orange, fontSize: 11, fontWeight: '700',
+    marginBottom: 3,
   },
-  messageContentRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    flexWrap: 'wrap',
+  messageText: { color: Colors.text.primary, fontSize: 14, lineHeight: 19 },
+  ownMessageText: { color: '#FFFFFF' },
+  messageImage: { width: 200, height: 150, borderRadius: 12, marginBottom: 4 },
+
+  bubbleTime: {
+    color: Colors.text.muted, fontSize: 10,
+    marginTop: 4, alignSelf: 'flex-end',
   },
-  messageText: {
-    color: Colors.text.primary,
-    fontSize: 15,
+  ownBubbleTime: { color: 'rgba(255,255,255,0.6)' },
+
+  // ════ SEARCH NO RESULTS ════
+  searchNoResults: { alignItems: 'center', paddingVertical: 32 },
+  searchNoResultsText: {
+    color: Colors.text.muted, fontSize: 14,
+    marginTop: 12, textAlign: 'center',
   },
-  messageImage: {
-    width: 200,
-    height: 150,
-    borderRadius: 12,
-    marginBottom: 4,
+
+  // ════ ERROR / ACCESS ════
+  errorContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 40 },
+  errorTitle: { color: Colors.text.primary, fontSize: 20, fontWeight: '700', marginTop: 20, marginBottom: 12, textAlign: 'center' },
+  errorText: { color: Colors.text.muted, fontSize: 15, textAlign: 'center', lineHeight: 22 },
+  errorLink: { color: Colors.primary.blue, fontSize: 14 },
+  backBtn: {
+    marginTop: 24, backgroundColor: Colors.primary.blue,
+    paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12,
   },
-  ownMessageText: {
-    color: '#FFFFFF',
-  },
-  messageTime: {
-    color: Colors.text.muted,
-    fontSize: 10,
-    marginTop: 6,
-    alignSelf: 'flex-end',
-  },
-  messageTimeInline: {
-    marginTop: 0,
-    marginLeft: 4,
-    alignSelf: 'flex-end',
-  },
-  ownMessageTime: {
-    color: 'rgba(255,255,255,0.7)',
-  },
-  timestampLabel: {
-    color: Colors.text.muted,
-    fontSize: 11,
-    textAlign: 'center',
-    marginVertical: 8,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    padding: 12,
-    paddingBottom: 24,
+  backBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+  placeholder: { width: 40 },
+
+  // ════ INPUT BAR ════
+  inputBar: {
+    flexDirection: 'row', alignItems: 'flex-end',
+    paddingHorizontal: 10, paddingVertical: 8, paddingBottom: 16,
     backgroundColor: Colors.background.card,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.light,
+    borderTopWidth: 1, borderTopColor: Colors.border.light + '40',
     gap: 8,
   },
   attachButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: Colors.background.cardLight,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
-  textInput: {
+  inputWrap: {
     flex: 1,
     backgroundColor: Colors.background.cardLight,
     borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    color: Colors.text.primary,
-    fontSize: 15,
-    maxHeight: 100,
-  },
-  sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.primary.blue,
-    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 2,
+    minHeight: 38,
     justifyContent: 'center',
   },
-  sendButtonDisabled: {
-    backgroundColor: Colors.background.cardLight,
+  textInput: {
+    color: Colors.text.primary, fontSize: 14,
+    maxHeight: 100, paddingVertical: 8,
   },
-  sendButtonPressed: {
-    opacity: 0.8,
+  sendButton: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: Colors.primary.blue,
+    alignItems: 'center', justifyContent: 'center',
   },
+  sendButtonDisabled: { backgroundColor: Colors.background.cardLight },
+  sendButtonPressed: { opacity: 0.8 },
 });

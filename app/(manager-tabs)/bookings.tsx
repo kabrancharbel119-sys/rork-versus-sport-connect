@@ -2,6 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl, ActivityIndicator, Modal, Pressable, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams } from 'expo-router';
 import {
   Calendar, Check, X, Trophy, User, Users, CheckCircle, Clock, MapPin, DollarSign, FileText,
 } from 'lucide-react-native';
@@ -36,6 +37,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 export default function ManagerBookingsTab() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const params = useLocalSearchParams<{ bookingId?: string }>();
   const [refreshing, setRefreshing] = useState(false);
   const [bookingFilter, setBookingFilter] = useState<'all' | 'pending' | 'confirmed' | 'past'>('all');
   const [selectedBooking, setSelectedBooking] = useState<any | null>(null);
@@ -178,6 +180,13 @@ export default function ManagerBookingsTab() {
       .catch(() => setBookingUser(null))
       .finally(() => setLoadingUser(false));
   }, [selectedBooking?.id]);
+
+  // Auto-open booking detail when navigated with bookingId param
+  useEffect(() => {
+    if (!params.bookingId || !bookings.length) return;
+    const found = bookings.find(b => b.id === params.bookingId);
+    if (found) setSelectedBooking(found);
+  }, [params.bookingId, bookings]);
 
   const isLoading = bookingsQuery.isLoading;
 
