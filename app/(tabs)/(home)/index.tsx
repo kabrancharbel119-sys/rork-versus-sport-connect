@@ -830,6 +830,16 @@ export default function HomeScreen() {
         <View style={[styles.bgOrb2, { top: 300, left: -120 }]} />
       </View>
 
+      {/* Smooth gradient fade behind status bar — no hard edge */}
+      <LinearGradient
+        colors={['rgba(13,17,29,1)', 'rgba(13,17,29,0.85)', 'rgba(13,17,29,0.4)', 'rgba(13,17,29,0)']}
+        locations={[0, 0.3, 0.7, 1]}
+        style={[
+          styles.statusBarBlur,
+          { height: Math.max(insets.top, Platform.OS === 'ios' ? 50 : 35) + 60 },
+        ]}
+      />
+
       <View style={styles.safeArea}>
         <Animated.ScrollView
           style={[styles.scroll, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
@@ -1181,6 +1191,14 @@ export default function HomeScreen() {
 
 const styles: any = StyleSheet.create({
   container: { flex: 1 },
+  statusBarBlur: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 5,
+    overflow: 'hidden',
+  },
   safeArea: {
     flex: 1,
   },

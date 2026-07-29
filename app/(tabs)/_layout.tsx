@@ -164,10 +164,10 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   tabBarContainer: {
     position: 'absolute',
-    bottom: 16,
-    left: 16,
-    right: 16,
-    borderRadius: 30,
+    bottom: 12,
+    left: 70,
+    right: 70,
+    borderRadius: 24,
     overflow: 'hidden',
     ...Platform.select({
       ios: {
@@ -180,17 +180,17 @@ const styles = StyleSheet.create({
     }) as any,
   },
   blurView: {
-    borderRadius: 30,
+    borderRadius: 24,
     overflow: 'hidden',
   },
   tabBarInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingVertical: 8,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
-    minHeight: 60,
+    minHeight: 50,
   },
   tabItem: {
     flex: 1,
