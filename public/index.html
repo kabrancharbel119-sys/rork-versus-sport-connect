@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+
+    <!-- PWA: Fullscreen immersive viewport on all browsers -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="VS Connect" />
+    <meta name="application-name" content="VS Connect" />
+    <meta name="theme-color" content="#0b1120" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="description" content="La plateforme sportive amateur - matchs, tournois, équipes et lieux de jeu." />
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/assets/images/icon.png" />
+    <link rel="icon" href="/favicon.ico" />
+
+    <title>%WEB_TITLE%</title>
+
+    <!-- react-native-web style reset + PWA immersive styles -->
+    <style id="expo-reset">
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        min-height: 100dvh;
+        overflow: hidden;
+        overscroll-behavior: none;
+        background-color: #0b1120;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      #root {
+        display: flex;
+        flex: 1;
+        min-height: 100dvh;
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+        box-sizing: border-box;
+      }
+      @media (display-mode: standalone) {
+        html, body {
+          height: 100vh;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <div id="root"></div>
+  </body>
+</html>

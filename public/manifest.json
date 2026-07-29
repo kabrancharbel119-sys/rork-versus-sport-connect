@@ -1,0 +1,33 @@
+{
+  "name": "VERSUS-SPORT CONNECT",
+  "short_name": "VS Connect",
+  "description": "La plateforme sportive amateur - matchs, tournois, équipes et lieux de jeu.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1120",
+  "theme_color": "#0b1120",
+  "scope": "/",
+  "lang": "fr",
+  "categories": ["sports", "social", "lifestyle"],
+  "icons": [
+    {
+      "src": "/assets/images/icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/images/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/images/adaptive-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
