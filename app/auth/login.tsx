@@ -1,14 +1,15 @@
 import React, { useState, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, TextInput, Alert, Dimensions } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
-import { ArrowLeft, ArrowRight, Lock, Mail } from 'lucide-react-native';
+import { ArrowLeft, ArrowRight, Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
-import { Button } from '@/components/Button';
-import { Input } from '@/components/Input';
 import { useAuth } from '@/contexts/AuthContext';
+import * as Haptics from 'expo-haptics';
+
+const { width } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
   const handleEmailChange = (value: string) => {
@@ -50,18 +52,17 @@ export default function LoginScreen() {
     if (!validate()) return;
     
     setError('');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
     try {
-      console.log('[Login] Attempting login for:', email);
       const loggedInUser = await login({ email: email.trim(), password });
-      console.log('[Login] Login successful, role:', loggedInUser?.role);
       if (loggedInUser?.role === 'venue_manager') {
         router.replace('/(manager-tabs)/dashboard' as any);
       } else {
         router.replace('/(tabs)/(home)');
       }
     } catch (err: any) {
-      console.error('[Login] Error:', err);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       const errorMsg = err.message || 'Erreur de connexion';
       if (errorMsg.includes('Invalid login credentials') || errorMsg.includes('Email not confirmed')) {
         setError('Email ou mot de passe incorrect');
@@ -74,34 +75,51 @@ export default function LoginScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <LinearGradient
-        colors={[Colors.background.dark, '#0d111d']}
-        style={styles.container}
-      >
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['#0d111d', '#0f1422', '#0d111d']}
+          locations={[0, 0.5, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+        {/* Decorative orbs */}
+        <View style={[styles.bgOrb, { top: -100, right: -80 }]} />
+        <View style={[styles.bgOrb2, { bottom: -120, left: -100 }]} />
+
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 30}
         >
           <ScrollView
+            ref={scrollViewRef}
             contentContainerStyle={[styles.scrollContent, { paddingBottom: 280 }]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
+            bounces={false}
+            overScrollMode="never"
           >
             <TouchableOpacity
               style={styles.backButton}
               onPress={() => safeBack(router, '/auth/welcome')}
+              activeOpacity={0.7}
             >
-              <ArrowLeft size={24} color={Colors.text.primary} />
+              <ArrowLeft size={22} color={Colors.text.primary} strokeWidth={2.5} />
             </TouchableOpacity>
 
             <View style={styles.header}>
-              <Image
-                source={{ uri: 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/bb74j32pntaehgnts84r7' }}
-                style={styles.logo}
-                contentFit="contain"
-              />
+              <View style={styles.logoWrap}>
+                <LinearGradient
+                  colors={[Colors.primary.orange + '20', Colors.primary.orange + '05', 'transparent']}
+                  locations={[0, 0.6, 1]}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Image
+                  source={{ uri: 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/bb74j32pntaehgnts84r7' }}
+                  style={styles.logo}
+                  contentFit="contain"
+                />
+              </View>
               <Text style={styles.title}>Bon retour !</Text>
               <Text style={styles.subtitle}>
                 Connectez-vous pour retrouver votre équipe
@@ -109,61 +127,119 @@ export default function LoginScreen() {
             </View>
 
             <View style={styles.form}>
-              <Input
-                scrollViewRef={scrollViewRef}
-                testID="input-email"
-                label="Email"
-                placeholder="exemple@email.com"
-                value={email}
-                onChangeText={handleEmailChange}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                icon={<Mail size={20} color={Colors.text.muted} />}
-              />
+              {/* Email field */}
+              <View style={styles.field}>
+                <Text style={styles.fieldLabel}>Email</Text>
+                <View style={styles.inputWrap}>
+                  <View style={styles.inputIconWrap}>
+                    <Mail size={18} color={Colors.primary.orange} strokeWidth={2} />
+                  </View>
+                  <TextInput
+                    testID="input-email"
+                    style={styles.textInput}
+                    placeholder="exemple@email.com"
+                    placeholderTextColor={Colors.text.muted + '80'}
+                    value={email}
+                    onChangeText={handleEmailChange}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    textContentType="emailAddress"
+                    autoComplete="email"
+                  />
+                </View>
+              </View>
 
-              <Input
-                scrollViewRef={scrollViewRef}
-                testID="input-password"
-                label="Mot de passe"
-                placeholder="••••••••"
-                value={password}
-                onChangeText={handlePasswordChange}
-                secureTextEntry
-                icon={<Lock size={20} color={Colors.text.muted} />}
-              />
+              {/* Password field */}
+              <View style={styles.field}>
+                <Text style={styles.fieldLabel}>Mot de passe</Text>
+                <View style={styles.inputWrap}>
+                  <View style={styles.inputIconWrap}>
+                    <Lock size={18} color={Colors.primary.orange} strokeWidth={2} />
+                  </View>
+                  <TextInput
+                    testID="input-password"
+                    style={styles.textInput}
+                    placeholder="••••••••"
+                    placeholderTextColor={Colors.text.muted + '80'}
+                    value={password}
+                    onChangeText={handlePasswordChange}
+                    secureTextEntry={!showPassword}
+                    textContentType="password"
+                    autoComplete="password"
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowPassword(!showPassword)}
+                    style={styles.eyeBtn}
+                    activeOpacity={0.6}
+                  >
+                    {showPassword ? (
+                      <EyeOff size={18} color={Colors.text.muted} strokeWidth={2} />
+                    ) : (
+                      <Eye size={18} color={Colors.text.muted} strokeWidth={2} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
 
               <TouchableOpacity 
                 onPress={() => router.push('/auth/forgot-password')}
                 style={styles.forgotPassword}
+                activeOpacity={0.7}
               >
                 <Text style={styles.forgotPasswordText}>Mot de passe oublié ?</Text>
               </TouchableOpacity>
 
-              <Button
+              {/* Login button with gradient */}
+              <TouchableOpacity
                 testID="btn-login"
-                title="Se connecter"
                 onPress={handleLogin}
-                loading={isLoginLoading}
-                variant="primary"
-                size="large"
-                style={styles.loginButton}
-                icon={<ArrowRight size={20} color="#fff" />}
-              />
+                disabled={isLoginLoading}
+                activeOpacity={0.85}
+                style={styles.loginBtnWrap}
+              >
+                <LinearGradient
+                  colors={[Colors.primary.orange, Colors.primary.orangeDark]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.loginBtnGradient}
+                >
+                  {isLoginLoading ? (
+                    <View style={styles.loginBtnLoading}>
+                      <Text style={styles.loginBtnText}>Connexion...</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.loginBtnRow}>
+                      <Text style={styles.loginBtnText}>Se connecter</Text>
+                      <ArrowRight size={20} color="#fff" strokeWidth={2.5} />
+                    </View>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
 
               {(error || loginError) ? (
-                <Text style={styles.errorText}>{error || loginError}</Text>
+                <View style={styles.errorWrap}>
+                  <AlertCircle size={16} color={Colors.status.error} strokeWidth={2} />
+                  <Text style={styles.errorText}>{error || loginError}</Text>
+                </View>
               ) : null}
             </View>
 
             <View style={styles.footer}>
-              <Text style={styles.footerText}>Pas encore de compte ?</Text>
-              <TouchableOpacity onPress={() => router.replace('/auth/register')}>
-                <Text style={styles.footerLink}>Créer un compte</Text>
-              </TouchableOpacity>
+              <View style={styles.footerDivider}>
+                <View style={styles.footerLine} />
+                <Text style={styles.footerDividerText}>ou</Text>
+                <View style={styles.footerLine} />
+              </View>
+              <View style={styles.footerRow}>
+                <Text style={styles.footerText}>Pas encore de compte ?</Text>
+                <TouchableOpacity onPress={() => router.replace('/auth/register')} activeOpacity={0.7}>
+                  <Text style={styles.footerLink}>Créer un compte</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
-      </LinearGradient>
+      </View>
     </>
   );
 }
@@ -171,6 +247,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#0d111d',
   },
   keyboardView: {
     flex: 1,
@@ -181,52 +258,181 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 40,
   },
+  bgOrb: {
+    position: 'absolute',
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: Colors.primary.orange + '0A',
+  },
+  bgOrb2: {
+    position: 'absolute',
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: Colors.primary.blue + '08',
+  },
   backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.background.card,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: Colors.background.card + '99',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 40,
+  },
+  logoWrap: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    overflow: 'hidden',
   },
   logo: {
-    width: 80,
-    height: 80,
-    marginBottom: 16,
+    width: 76,
+    height: 76,
   },
   title: {
     color: Colors.text.primary,
-    fontSize: 28,
-    fontWeight: '700' as const,
+    fontSize: 32,
+    fontWeight: '800' as const,
+    letterSpacing: -0.8,
   },
   subtitle: {
-    color: Colors.text.secondary,
-    fontSize: 16,
-    marginTop: 8,
+    color: Colors.text.muted,
+    fontSize: 15,
+    marginTop: 10,
     textAlign: 'center',
+    lineHeight: 22,
   },
   form: {
-    gap: 4,
+    gap: 0,
   },
-  loginButton: {
+  field: {
+    marginBottom: 18,
+  },
+  fieldLabel: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    fontWeight: '600' as const,
+    marginBottom: 8,
+    marginLeft: 2,
+  },
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background.card + '80',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.text.muted + '15',
+  },
+  inputIconWrap: {
+    paddingLeft: 16,
+    paddingRight: 4,
+  },
+  textInput: {
+    flex: 1,
+    color: Colors.text.primary,
+    fontSize: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    fontWeight: '500' as const,
+  },
+  eyeBtn: {
+    padding: 14,
+  },
+  forgotPassword: {
+    alignSelf: 'flex-end',
+    marginTop: 4,
+    marginBottom: 24,
+    paddingHorizontal: 4,
+  },
+  forgotPasswordText: {
+    color: Colors.primary.orange,
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  loginBtnWrap: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: Colors.primary.orange,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+      },
+      android: { elevation: 8 },
+    }) as any,
+  },
+  loginBtnGradient: {
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loginBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loginBtnLoading: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loginBtnText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700' as const,
+    letterSpacing: 0.3,
+  },
+  errorWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: Colors.status.error + '15',
+    borderWidth: 1,
+    borderColor: Colors.status.error + '30',
   },
   errorText: {
     color: Colors.status.error,
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 12,
+    fontSize: 13,
+    fontWeight: '500' as const,
+    flex: 1,
   },
   footer: {
+    marginTop: 40,
+  },
+  footerDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 24,
+  },
+  footerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.text.muted + '15',
+  },
+  footerDividerText: {
+    color: Colors.text.muted,
+    fontSize: 12,
+    fontWeight: '500' as const,
+  },
+  footerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 32,
-    gap: 4,
+    gap: 6,
   },
   footerText: {
     color: Colors.text.secondary,
@@ -235,16 +441,6 @@ const styles = StyleSheet.create({
   footerLink: {
     color: Colors.primary.orange,
     fontSize: 14,
-    fontWeight: '600' as const,
-  },
-  forgotPassword: {
-    alignSelf: 'flex-end',
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  forgotPasswordText: {
-    color: Colors.primary.orange,
-    fontSize: 14,
-    fontWeight: '500' as const,
+    fontWeight: '700' as const,
   },
 });
