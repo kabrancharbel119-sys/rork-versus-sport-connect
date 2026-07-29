@@ -78,7 +78,7 @@
     },
     "web": {
       "favicon": "./assets/images/favicon.png",
-      "themeColor": "#0b1120",
+      "themeColor": "#0d111d",
       "description": "La plateforme sportive amateur - matchs, tournois, équipes et lieux de jeu.",
       "lang": "fr",
       "name": "VS Connect",
