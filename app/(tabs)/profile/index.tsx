@@ -748,7 +748,7 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#0d111d' },
   safeArea: { flex: 1, paddingTop: Platform.OS === 'ios' ? 50 : 35 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8, paddingVertical: 16, marginBottom: 8 },
   headerTitle: { color: Colors.text.primary, fontSize: 28, fontWeight: '700' as const },

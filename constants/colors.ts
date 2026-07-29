@@ -9,8 +9,8 @@ export const Colors = {
   },
   background: {
     dark: '#0d111d',
-    card: '#111726',
-    cardLight: '#1A2238',
+    card: '#121829',
+    cardLight: '#161d33',
     elevated: '#1A2340',
   },
   text: {
@@ -77,10 +77,10 @@ export const softShadow = {
 } as const;
 
 export const cardGlow = {
-  shadowColor: '#FFFFFF',
+  shadowColor: '#000000',
   shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.04,
-  shadowRadius: 10,
+  shadowOpacity: 0.2,
+  shadowRadius: 8,
   elevation: 1,
 } as const;
 

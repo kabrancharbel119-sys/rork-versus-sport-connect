@@ -658,7 +658,7 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#0d111d' },
   safeArea: { flex: 1, paddingTop: Platform.OS === 'ios' ? 50 : 35 },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 14 },
   headerInfo: { flex: 1, paddingRight: 12 },

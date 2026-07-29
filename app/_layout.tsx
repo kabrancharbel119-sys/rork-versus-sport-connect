@@ -97,12 +97,13 @@ const authStyles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#0d111d',
   },
 });
 
 function RootLayoutNav() {
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: '#0d111d' }}>
       <OfflineBanner />
       <PwaInstallPrompt />
       <Stack 
@@ -184,7 +185,7 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <GestureHandlerRootView style={{ flex: 1 }}>
+        <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#0d111d' }}>
           <AppAlertProvider>
             <I18nProvider>
               <OfflineProvider>

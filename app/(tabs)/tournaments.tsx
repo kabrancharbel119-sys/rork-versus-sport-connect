@@ -356,7 +356,7 @@ export default function TournamentsTabScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#0d111d' },
   safeArea: { flex: 1, paddingTop: Platform.OS === 'ios' ? 50 : 35 },
 
   header: {

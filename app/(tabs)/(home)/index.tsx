@@ -543,6 +543,11 @@ export default function HomeScreen() {
     .filter((t) => !hasLocation || !t.city || t.city.toLowerCase() === cityLower)
     .slice(0, 5);
 
+  const nearbyTeams = teams
+    .filter((t) => !userTeams.some((ut) => ut.id === t.id))
+    .filter((t) => !hasLocation || !t.city || t.city.toLowerCase() === cityLower)
+    .slice(0, 5);
+
   const allTournaments = [...getActiveTournaments(), ...tournaments.filter(t => t.status === 'completed')]
     .filter((t, i, arr) => arr.findIndex(x => x.id === t.id) === i)
     .filter((t) => !hasLocation || !t.venue?.city || t.venue.city.toLowerCase() === cityLower)
@@ -834,6 +839,7 @@ export default function HomeScreen() {
       <LinearGradient
         colors={['rgba(13,17,29,1)', 'rgba(13,17,29,0.85)', 'rgba(13,17,29,0.4)', 'rgba(13,17,29,0)']}
         locations={[0, 0.3, 0.7, 1]}
+        pointerEvents="none"
         style={[
           styles.statusBarBlur,
           { height: Math.max(insets.top, Platform.OS === 'ios' ? 50 : 35) + 60 },
@@ -844,6 +850,9 @@ export default function HomeScreen() {
         <Animated.ScrollView
           style={[styles.scroll, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
           showsVerticalScrollIndicator={false}
+          bounces={false}
+          alwaysBounceVertical={false}
+          overScrollMode="never"
           contentContainerStyle={[styles.scrollContent, { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 50 : 35) }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />}
         >
@@ -1064,58 +1073,53 @@ export default function HomeScreen() {
             </View>
           )}
 
-          {/* ════ MES ÉQUIPES — premium cards with progress ════ */}
+          {/* ════ ÉQUIPES — équipes aux alentours (horizontal) ════ */}
           <View style={styles.section}>
             <SectionHeader
-              title="Mes équipes"
-              subtitle={`${userTeams.length} équipe(s)`}
+              title="Équipes"
+              subtitle={hasLocation ? `Près de ${city}` : 'À découvrir'}
               onSeeAll={() => router.push('/(tabs)/teams')}
             />
-            {userTeams.length > 0 ? (
-              <View style={styles.teamList}>
-                {userTeams.slice(0, 3).map((team) => {
+            {nearbyTeams.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.discoverScroll}
+                decelerationRate="fast"
+              >
+                {nearbyTeams.map((team) => {
                   const spotsLeft = team.maxMembers - team.members.length;
-                  const isCaptain = team.captainId === user?.id;
                   return (
                     <PressableCard
                       key={team.id}
                       onPress={() => router.push(`/team/${team.id}`)}
-                      style={styles.teamRowCard}
+                      style={styles.discoverCard}
                     >
-                      <Avatar uri={team.logo} name={team.name} size="medium" />
-                      <View style={styles.teamRowInfo}>
-                        <View style={styles.teamRowNameRow}>
-                          <Text style={styles.teamRowName} numberOfLines={1}>{team.name}</Text>
-                          {isCaptain && (
-                            <View style={styles.captainBadge}>
-                              <Crown size={9} color="#FFD700" strokeWidth={2} />
-                              <Text style={styles.captainBadgeText}>Capitaine</Text>
-                            </View>
-                          )}
-                        </View>
-                        <View style={styles.teamRowChipRow}>
-                          <View style={styles.teamRowChip}><Text style={styles.teamRowChipText}>{sportLabels[team.sport]}</Text></View>
-                          {team.city ? <View style={styles.teamRowChip}><Text style={styles.teamRowChipText}>{team.city}</Text></View> : null}
-                        </View>
-                        <View style={styles.teamProgressWrap}>
-                          <View style={styles.teamProgressBg}>
-                            <View style={[styles.teamProgressFill, { width: `${(team.members.length / team.maxMembers) * 100}%` }]} />
-                          </View>
-                          <Text style={styles.teamProgressLabel}>
-                            {team.members.length}/{team.maxMembers} joueurs
-                            {spotsLeft > 0 ? ` · cherche ${spotsLeft} joueur${spotsLeft > 1 ? 's' : ''}` : ''}
-                          </Text>
-                        </View>
+                      <View style={styles.discoverAvatarWrap}>
+                        <Avatar uri={team.logo} name={team.name} size="medium" />
                       </View>
-                      <ChevronRight size={16} color={Colors.text.muted} strokeWidth={2} />
+                      <Text style={styles.discoverName} numberOfLines={1}>{team.name}</Text>
+                      <View style={styles.discoverChips}>
+                        <View style={styles.discoverChip}><Text style={styles.discoverChipText}>{sportLabels[team.sport]}</Text></View>
+                      </View>
+                      {team.isRecruiting && (
+                        <View style={[styles.captainBadge, { alignSelf: 'center' }]}>
+                          <UserPlus size={9} color={Colors.primary.orange} strokeWidth={2} />
+                          <Text style={styles.captainBadgeText}>Recrute</Text>
+                        </View>
+                      )}
+                      <View style={styles.discoverMembers}>
+                        <Users size={10} color={Colors.primary.orange} />
+                        <Text style={styles.discoverMembersText}>{team.members.length}/{team.maxMembers}</Text>
+                      </View>
                     </PressableCard>
                   );
                 })}
-              </View>
+              </ScrollView>
             ) : (
               <TouchableOpacity
                 activeOpacity={0.85}
-                onPress={() => router.push('/create-team')}
+                onPress={() => router.push('/(tabs)/teams')}
                 style={styles.emptyTeamCard}
               >
                 <LinearGradient
@@ -1123,12 +1127,12 @@ export default function HomeScreen() {
                   style={StyleSheet.absoluteFill}
                 />
                 <View style={styles.emptyTeamIconWrap}>
-                  <Plus size={28} color={Colors.primary.orange} strokeWidth={2} />
+                  <Users size={28} color={Colors.primary.orange} strokeWidth={2} />
                 </View>
-                <Text style={styles.emptyTeamTitle}>Crée ta première équipe</Text>
-                <Text style={styles.emptyTeamText}>Recrute des joueurs et lance-toi</Text>
+                <Text style={styles.emptyTeamTitle}>Aucune équipe près de chez vous</Text>
+                <Text style={styles.emptyTeamText}>Explorez toutes les équipes disponibles</Text>
                 <View style={styles.emptyTeamCta}>
-                  <Text style={styles.emptyTeamCtaText}>Créer une équipe</Text>
+                  <Text style={styles.emptyTeamCtaText}>Voir toutes les équipes</Text>
                   <ArrowRight size={14} color={Colors.primary.orange} strokeWidth={2.5} />
                 </View>
               </TouchableOpacity>
@@ -1190,7 +1194,7 @@ export default function HomeScreen() {
 }
 
 const styles: any = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#0d111d' },
   statusBarBlur: {
     position: 'absolute',
     top: 0,
@@ -1201,6 +1205,7 @@ const styles: any = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+    backgroundColor: '#0d111d',
   },
   bgDecor: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
   bgOrb: {
@@ -1217,8 +1222,8 @@ const styles: any = StyleSheet.create({
     borderRadius: 160,
     backgroundColor: Colors.primary.blue + '06',
   },
-  scroll: { flex: 1, width: '100%' },
-  scrollContent: { paddingTop: SPACING.sm, paddingBottom: 100 },
+  scroll: { flex: 1, width: '100%', backgroundColor: '#0d111d' },
+  scrollContent: { paddingTop: SPACING.sm, paddingBottom: 100, backgroundColor: '#0d111d' },
 
   /* ════ PREMIUM HEADER ════ */
   header: {
