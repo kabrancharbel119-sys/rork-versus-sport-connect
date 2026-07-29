@@ -7,6 +7,7 @@ import { View, ActivityIndicator, StyleSheet, Text } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { TeamsProvider } from "@/contexts/TeamsContext";
 import { MatchesProvider } from "@/contexts/MatchesContext";
@@ -103,6 +104,7 @@ function RootLayoutNav() {
   return (
     <View style={{ flex: 1 }}>
       <OfflineBanner />
+      <PwaInstallPrompt />
       <Stack 
         screenOptions={{ 
           headerShown: false, 

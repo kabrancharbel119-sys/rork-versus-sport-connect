@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Bell, Search, Trophy, Users, Swords, MapPin,
   ChevronRight, CheckCircle, Flame, ArrowRight, Plus,
@@ -479,6 +480,7 @@ const FeedCard = React.memo(function FeedCard({ item, router }: { item: FeedItem
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { getUnreadCount, refetchNotifications } = useNotifications();
   const { getTotalUnread: getChatUnread } = useChat();
@@ -828,7 +830,7 @@ export default function HomeScreen() {
         <View style={[styles.bgOrb2, { top: 300, left: -120 }]} />
       </View>
 
-      <View style={styles.safeArea}>
+      <View style={[styles.safeArea, { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 50 : 35) }]}>
         <Animated.ScrollView
           style={[styles.scroll, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
           showsVerticalScrollIndicator={false}
@@ -1179,7 +1181,9 @@ export default function HomeScreen() {
 
 const styles: any = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1, paddingTop: Platform.OS === 'ios' ? 50 : 35 },
+  safeArea: {
+    flex: 1,
+  },
   bgDecor: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
   bgOrb: {
     position: 'absolute',

@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import { Home, Users, Swords, Trophy, MapPin } from 'lucide-react-native';
 import { View, Text, StyleSheet, Platform, Pressable } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Colors } from '@/constants/colors';
 import { useChat } from '@/contexts/ChatContext';
@@ -19,8 +20,10 @@ function TabBarBadge({ count, label }: { count: number; label: string }) {
 }
 
 function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 16);
   return (
-    <View style={styles.tabBarContainer}>
+    <View style={[styles.tabBarContainer, { bottom: bottomInset }]}>
       <BlurView
         intensity={80}
         tint="dark"
