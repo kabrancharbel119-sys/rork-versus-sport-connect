@@ -4,10 +4,12 @@ import { useRouter, Stack } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 import { ArrowLeft, Trophy, Calendar, MapPin, Users, Plus, Shield, ChevronRight, AlertCircle, Clock, CheckCircle, Flame, Search } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
+import { Avatar } from '@/components/Avatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
 import { Skeleton } from '@/components/LoadingSkeleton';
@@ -92,6 +94,7 @@ export default function TournamentsScreen() {
     const regPct = tournament.maxTeams > 0 ? (tournament.registeredTeams ?? []).length / tournament.maxTeams : 0;
     const countdown = tournament.status === 'registration' ? getCountdown(tournament.startDate) : null;
     const isCompleted = tournament.status === 'completed';
+    const bannerSource = tournament.bannerImage || tournament.sponsorLogo || null;
 
     return (
       <TouchableOpacity
@@ -99,6 +102,20 @@ export default function TournamentsScreen() {
         onPress={() => router.push(`/tournament/${tournament.id}`)}
         style={styles.tournamentCard}
       >
+        {bannerSource && (
+          <View style={styles.bannerWrap}>
+            <Image
+              source={{ uri: bannerSource }}
+              style={styles.bannerImage}
+              contentFit="cover"
+              transition={200}
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.4)']}
+              style={styles.bannerOverlay}
+            />
+          </View>
+        )}
         <LinearGradient
           colors={gradient}
           start={{ x: 0, y: 0 }}
@@ -107,9 +124,14 @@ export default function TournamentsScreen() {
         >
           {/* Top badges */}
           <View style={styles.cardTopRow}>
-            <View style={[styles.statusBadge, { backgroundColor: cfg.color + '28' }]}>
-              <View style={[styles.statusDot, { backgroundColor: cfg.color }]} />
-              <Text style={[styles.statusText, { color: cfg.color }]}>{cfg.label}</Text>
+            <View style={styles.cardTopLeft}>
+              {tournament.sponsorLogo ? (
+                <Avatar uri={tournament.sponsorLogo} name={tournament.name} size="small" />
+              ) : null}
+              <View style={[styles.statusBadge, { backgroundColor: cfg.color + '28' }]}>
+                <View style={[styles.statusDot, { backgroundColor: cfg.color }]} />
+                <Text style={[styles.statusText, { color: cfg.color }]}>{cfg.label}</Text>
+              </View>
             </View>
             <View style={styles.cardTopRight}>
               {countdown && (
@@ -310,8 +332,12 @@ const styles = StyleSheet.create({
   scrollContent: { paddingHorizontal: 16, paddingBottom: 20 },
 
   tournamentCard: { backgroundColor: Colors.background.card, borderRadius: 16, overflow: 'hidden', marginBottom: 12 },
+  bannerWrap: { height: 140, position: 'relative' },
+  bannerImage: { width: '100%', height: '100%' },
+  bannerOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '50%' },
   tournamentGradient: { padding: 16, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
   cardTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  cardTopLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardTopRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },

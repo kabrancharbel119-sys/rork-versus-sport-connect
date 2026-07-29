@@ -7,7 +7,7 @@ import {
   Plus, MapPin, Calendar, DollarSign, Clock,
   ChevronRight, Users, AlertCircle, Settings,
   Star, Eye, Trophy, ScanLine, Bell, Wallet,
-  BarChart3, Users2, CheckCircle,
+  BarChart3, Users2, CheckCircle, Ticket as TicketIcon,
 } from 'lucide-react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
@@ -364,6 +364,24 @@ export default function ManagerDashboardTab() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.scanCtaTitle}>Scanner QR</Text>
                     <Text style={styles.scanCtaSub}>Valider les arrivées des joueurs</Text>
+                  </View>
+                  <ChevronRight size={18} color="rgba(255,255,255,0.7)" />
+                </LinearGradient>
+              </PressableCard>
+
+              {/* ════ TICKET SCAN ════ */}
+              <PressableCard onPress={() => router.push('/scan-tickets' as any)} style={styles.scanCtaWrap}>
+                <LinearGradient
+                  colors={['#4A90D9', '#357ABD', '#2A6BA8']}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  style={styles.scanCta}
+                >
+                  <View style={styles.scanIconCircle}>
+                    <TicketIcon size={20} color="#fff" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.scanCtaTitle}>Scanner billets</Text>
+                    <Text style={styles.scanCtaSub}>Valider les billets matchs & tournois</Text>
                   </View>
                   <ChevronRight size={18} color="rgba(255,255,255,0.7)" />
                 </LinearGradient>

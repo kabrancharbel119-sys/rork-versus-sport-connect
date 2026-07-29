@@ -5,7 +5,7 @@ import { safeBack } from '@/lib/navigation';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Calendar, Clock, MapPin, Users, Trophy, DollarSign, Share2, Edit2, Trash2, Play, Radio, Square, Circle } from 'lucide-react-native';
+import { ArrowLeft, Calendar, Clock, MapPin, Users, Trophy, DollarSign, Share2, Edit2, Trash2, Play, Radio, Square, Circle, Ticket as TicketIcon } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useI18n } from '@/contexts/I18nContext';
@@ -478,6 +478,28 @@ export default function MatchDetailScreen() {
                 />
               )}
             </View>
+
+            {/* Ticket buttons — only when match opted in to ticketing */}
+            {match.hasTickets && (
+              <View style={{ paddingHorizontal: 16, flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                <Button
+                  title="🎟️ Billets"
+                  onPress={() => router.push({ pathname: '/event-tickets/[eventId]', params: { eventId: match.id, type: 'match', eventName: `${sportLabels[match.sport] || 'Match'} — ${match.venue?.name || ''}` } } as any)}
+                  variant="outline"
+                  size="medium"
+                  style={{ flex: 1 }}
+                />
+                {isCreator && (
+                  <Button
+                    title="Gérer billetterie"
+                    onPress={() => router.push({ pathname: '/manage-tickets/[eventId]', params: { eventId: match.id, type: 'match', eventName: `${sportLabels[match.sport] || 'Match'} — ${match.venue?.name || ''}` } } as any)}
+                    variant="ghost"
+                    size="medium"
+                    style={{ flex: 1 }}
+                  />
+                )}
+              </View>
+            )}
 
             <View style={styles.bottomSpacer} />
           </ScrollView>

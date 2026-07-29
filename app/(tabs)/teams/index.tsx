@@ -5,9 +5,10 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Plus, Users, Trophy, MapPin, Star, Filter, X, Search, ChevronRight, Compass, UserPlus } from 'lucide-react-native';
-import { Colors } from '@/constants/colors';
+import { Colors, SPACING, CARD_RADIUS, CARD_INNER_PAD, OUTER_PAD, CARD_GAP, cardGlow } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
+import { useLocation } from '@/contexts/LocationContext';
 
 import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
@@ -20,6 +21,7 @@ export default function TeamsScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { getUserTeams, getAllTeams, getPendingRequests, getRecruitingTeams, refetchTeams, followTeam, unfollowTeam, isLoading, isError } = useTeams();
+  const { location, isWithinRadius } = useLocation();
   const [refreshing, setRefreshing] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [sportFilter, setSportFilter] = useState<Sport | 'all'>('all');
@@ -73,12 +75,13 @@ export default function TeamsScreen() {
   const recruitingOnly = useMemo(() => {
     const list = (getRecruitingTeams() ?? []).filter(team => {
       if (myTeam && team.id === myTeam.id) return false;
+      if (team.location && location) {
+        return isWithinRadius(team.location.latitude, team.location.longitude, 100);
+      }
       return true;
     });
-    const city = user?.city?.trim()?.toLowerCase();
-    if (city) return list.filter(t => t.city?.toLowerCase() === city);
     return list;
-  }, [getRecruitingTeams, myTeam, user?.city]);
+  }, [getRecruitingTeams, myTeam, location, isWithinRadius]);
 
   const pendingRequestsCount = myTeam && (myTeam.captainId === user?.id || myTeam.coCaptainIds.includes(user?.id || ''))
     ? getPendingRequests(myTeam.id).length
@@ -232,7 +235,8 @@ export default function TeamsScreen() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={[Colors.background.dark, '#0D1420']}
+        colors={['#070B12', '#0A0E16', Colors.background.dark, '#0B1018']}
+        locations={[0, 0.25, 0.6, 1]}
         style={StyleSheet.absoluteFill}
       />
       
@@ -436,13 +440,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: OUTER_PAD,
+    paddingVertical: SPACING.md,
+    paddingTop: SPACING.xs,
   },
   headerTitle: {
     color: Colors.text.primary,
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '700' as const,
+    letterSpacing: -0.6,
   },
   headerActions: {
     flexDirection: 'row',
@@ -451,33 +457,38 @@ const styles = StyleSheet.create({
   iconButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: 16,
     backgroundColor: Colors.background.card,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border.light,
   },
   addButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: 16,
     backgroundColor: Colors.primary.orange,
     alignItems: 'center',
     justifyContent: 'center',
   },
   tabs: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
+    paddingHorizontal: OUTER_PAD,
     gap: 12,
-    marginBottom: 16,
+    marginBottom: SPACING.md,
   },
   tab: {
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 20,
     backgroundColor: Colors.background.card,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
   },
   tabActive: {
-    backgroundColor: Colors.primary.blue,
+    backgroundColor: Colors.primary.orange,
+    borderColor: Colors.primary.orange,
   },
   tabText: {
     color: Colors.text.secondary,
@@ -488,8 +499,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   searchRow: {
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    paddingHorizontal: OUTER_PAD,
+    marginBottom: SPACING.sm,
     paddingTop: 4,
   },
   searchInputWrap: {
@@ -497,11 +508,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     backgroundColor: Colors.background.card,
-    borderRadius: 14,
+    borderRadius: 16,
     paddingHorizontal: 16,
     paddingVertical: 4,
     borderWidth: 1,
-    borderColor: Colors.primary.orange + '40',
+    borderColor: Colors.border.light,
     minHeight: 48,
   },
   searchInput: {
@@ -514,8 +525,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: OUTER_PAD,
+    paddingBottom: 100,
   },
   scrollContentGrow: { flexGrow: 1 },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60, minHeight: 200 },
@@ -527,7 +538,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   teamCard: {
-    marginBottom: 16,
+    marginBottom: CARD_GAP,
+    borderRadius: CARD_RADIUS,
+    overflow: 'hidden',
   },
   teamHeader: {
     flexDirection: 'row',
@@ -546,7 +559,8 @@ const styles = StyleSheet.create({
   teamName: {
     color: Colors.text.primary,
     fontSize: 18,
-    fontWeight: '600' as const,
+    fontWeight: '700' as const,
+    letterSpacing: -0.2,
   },
   roleBadge: {
     backgroundColor: Colors.background.cardLight,
@@ -638,9 +652,9 @@ const styles = StyleSheet.create({
   },
   requestsBadgeBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primary.orange, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 22, marginRight: 4 },
   requestsBadgeText: { color: '#FFF', fontSize: 13, fontWeight: '600' as const },
-  iconButtonActive: { backgroundColor: Colors.primary.blue },
+  iconButtonActive: { backgroundColor: Colors.primary.blue, borderColor: Colors.primary.blue },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%' },
+  modalContent: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%', borderWidth: 1, borderTopColor: Colors.border.light },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
   modalTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const },
   modalClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
@@ -659,7 +673,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   heroCard: {
-    borderRadius: 20,
+    borderRadius: CARD_RADIUS,
     overflow: 'hidden',
     minHeight: 120,
   },
@@ -716,7 +730,7 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   heroCardEmpty: {
-    borderRadius: 20,
+    borderRadius: CARD_RADIUS,
     backgroundColor: Colors.background.card,
     borderWidth: 1,
     borderColor: Colors.border.light,
@@ -795,6 +809,7 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
     fontSize: 18,
     fontWeight: '700' as const,
+    letterSpacing: -0.3,
   },
   exploreSubtitle: {
     color: Colors.text.muted,
@@ -808,10 +823,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.background.card,
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 14,
     marginBottom: 8,
     gap: 12,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
   },
   exploreRowTouch: {
     flex: 1,
@@ -826,7 +843,8 @@ const styles = StyleSheet.create({
   exploreRowName: {
     color: Colors.text.primary,
     fontSize: 16,
-    fontWeight: '600' as const,
+    fontWeight: '700' as const,
+    letterSpacing: -0.2,
   },
   exploreRowMeta: {
     color: Colors.text.muted,

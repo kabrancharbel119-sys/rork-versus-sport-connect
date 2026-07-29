@@ -55,6 +55,10 @@ function getStatusColor(status: string): string {
 function getTypeLabel(contextType: string): string {
   if (contextType === 'booking') return 'Reservation de terrain';
   if (contextType === 'tournament_registration') return 'Inscription tournoi';
+  if (contextType === 'ticket_purchase') return 'Achat de billets';
+  if (contextType === 'venue_advance') return 'Avance terrain';
+  if (contextType === 'logistics_advance') return 'Avance logistique';
+  if (contextType === 'organizer_release') return 'Versement organisateur';
   return 'Paiement';
 }
 
@@ -104,7 +108,7 @@ export default function MyInvoicesScreen() {
         <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backButton} onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)/(home)' as any); }}>
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Mes Factures</Text>
@@ -209,11 +213,13 @@ export default function MyInvoicesScreen() {
                 const payerName = inv.payerName || 'Utilisateur';
                 const teamName = inv.metadata?.team_name || null;
                 const payeeName = inv.payeeName || 'Organisateur';
-                const eventName = inv.eventName || inv.metadata?.venue_name || null;
+                const eventName = inv.eventName || inv.metadata?.venue_name || inv.metadata?.event_name || null;
                 const serviceDesc = inv.contextType === 'booking'
                   ? 'Reservation de terrain' + (eventName ? ' - ' + eventName : '')
                   : inv.contextType === 'tournament_registration'
                   ? 'Inscription au tournoi' + (eventName ? ' - ' + eventName : '')
+                  : inv.contextType === 'ticket_purchase'
+                  ? 'Achat de billets' + (eventName ? ' - ' + eventName : '')
                   : inv.description;
                 const paymentMethod = getPaymentMethodLabel(inv.paymentMethod);
 
@@ -277,6 +283,22 @@ export default function MyInvoicesScreen() {
                         <Text style={styles.detailVal}>{paymentMethod}</Text>
                       </View>
                     </Card>
+
+                    {/* Lignes de la facture (pour les billets) */}
+                    {inv.metadata?.items && Array.isArray(inv.metadata.items) && inv.metadata.items.length > 0 && (
+                      <Card style={styles.sectionCard}>
+                        <Text style={styles.sectionTitle}>Detail des billets</Text>
+                        {inv.metadata.items.map((item: any, idx: number) => (
+                          <View key={idx} style={styles.detailRow}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.detailVal}>{item.description || item.name || 'Billet'}</Text>
+                              <Text style={styles.detailKey}>x{item.quantity || 1}</Text>
+                            </View>
+                            <Text style={styles.detailVal}>{formatAmount((item.unit_price || item.price || 0) * (item.quantity || 1), inv.currency)}</Text>
+                          </View>
+                        ))}
+                      </Card>
+                    )}
 
                     {/* Bloc financier */}
                     <Card style={styles.financialCard}>

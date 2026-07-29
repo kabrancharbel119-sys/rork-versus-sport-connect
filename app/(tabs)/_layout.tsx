@@ -1,17 +1,87 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { Home, Users, Swords, MessageCircle, User } from 'lucide-react-native';
-import { View, Text, StyleSheet } from 'react-native';
+import { Home, Users, Swords, Trophy, MapPin } from 'lucide-react-native';
+import { View, Text, StyleSheet, Platform, Pressable } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Colors } from '@/constants/colors';
 import { useChat } from '@/contexts/ChatContext';
 import { useI18n } from '@/contexts/I18nContext';
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 function TabBarBadge({ count, label }: { count: number; label: string }) {
   if (count === 0) return null;
   return (
     <View style={styles.badge} accessibilityLabel={`${count} ${label}`}>
       <Text style={styles.badgeText}>{count > 9 ? '9+' : count}</Text>
+    </View>
+  );
+}
+
+function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  return (
+    <View style={styles.tabBarContainer}>
+      <BlurView
+        intensity={80}
+        tint="dark"
+        style={styles.blurView}
+      >
+        <View style={styles.tabBarInner}>
+          {state.routes.map((route, index) => {
+            const { options } = descriptors[route.key];
+            const isFocused = state.index === index;
+
+            const hiddenRoutes = ['chat', 'my-venues', 'profile'];
+            if (hiddenRoutes.includes(route.name)) return null;
+
+            const onPress = () => {
+              const event = navigation.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true,
+              });
+
+              if (!isFocused && !event.defaultPrevented) {
+                navigation.navigate(route.name as never);
+              }
+            };
+
+            const label =
+              typeof options.title === 'string'
+                ? options.title
+                : route.name;
+
+            const Icon = options.tabBarIcon;
+
+            return (
+              <Pressable
+                key={route.key}
+                accessibilityRole="button"
+                accessibilityState={isFocused ? { selected: true } : {}}
+                accessibilityLabel={label}
+                onPress={onPress}
+                style={styles.tabItem}
+              >
+                {Icon ? (
+                  <Icon
+                    color={isFocused ? Colors.primary.orange : Colors.text.muted}
+                    size={22}
+                    focused={isFocused}
+                  />
+                ) : null}
+                <Text
+                  style={[
+                    styles.tabLabel,
+                    { color: isFocused ? Colors.primary.orange : Colors.text.muted },
+                  ]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </BlurView>
     </View>
   );
 }
@@ -25,55 +95,50 @@ export default function TabLayout() {
     <ErrorBoundary>
       <Tabs
         key={locale}
+        tabBar={(props) => <CustomTabBar {...props} />}
         screenOptions={{
           headerShown: false,
-          tabBarStyle: {
-            backgroundColor: Colors.background.card,
-            borderTopColor: Colors.border.light,
-            borderTopWidth: 1,
-            height: 85,
-            paddingBottom: 25,
-            paddingTop: 10,
-          },
-          tabBarActiveTintColor: Colors.primary.orange,
-          tabBarInactiveTintColor: Colors.text.muted,
-          tabBarLabelStyle: {
-            fontSize: 11,
-            fontWeight: '500' as const,
-          },
         }}
       >
         <Tabs.Screen
           name="(home)"
           options={{
             title: t('tabs.home'),
-            tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
+            tabBarIcon: ({ color, size }) => <Home size={size} color={color} strokeWidth={2} />,
           }}
         />
         <Tabs.Screen
           name="matches"
           options={{
             title: t('tabs.matches'),
-            tabBarIcon: ({ color, size }) => <Swords size={size} color={color} />,
+            tabBarIcon: ({ color, size }) => <Swords size={size} color={color} strokeWidth={2} />,
           }}
         />
         <Tabs.Screen
           name="teams"
           options={{
             title: t('tabs.teams'),
-            tabBarIcon: ({ color, size }) => <Users size={size} color={color} />,
+            tabBarIcon: ({ color, size }) => <Users size={size} color={color} strokeWidth={2} />,
+          }}
+        />
+        <Tabs.Screen
+          name="tournaments"
+          options={{
+            title: 'Tournois',
+            tabBarIcon: ({ color, size }) => <Trophy size={size} color={color} strokeWidth={2} />,
+          }}
+        />
+        <Tabs.Screen
+          name="venues"
+          options={{
+            title: 'Terrains',
+            tabBarIcon: ({ color, size }) => <MapPin size={size} color={color} strokeWidth={2} />,
           }}
         />
         <Tabs.Screen
           name="chat"
           options={{
-            title: t('tabs.chat'),
-            tabBarIcon: ({ color, size }) => (
-              <View>
-                <MessageCircle size={size} color={color} />
-                <TabBarBadge count={unreadCount} label={t('chat.unreadMessages')} />
-              </View>
-            ),
+            href: null,
           }}
         />
         <Tabs.Screen
@@ -85,8 +150,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="profile"
           options={{
-            title: t('tabs.profile'),
-            tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
+            href: null,
           }}
         />
       </Tabs>
@@ -95,6 +159,49 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
+  tabBarContainer: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
+    borderRadius: 30,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.35,
+        shadowRadius: 16,
+      },
+      android: { elevation: 10 },
+    }) as any,
+  },
+  blurView: {
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    overflow: 'hidden',
+  },
+  tabBarInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    minHeight: 60,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  tabLabel: {
+    fontSize: 9,
+    fontWeight: '600' as const,
+    marginTop: 2,
+  },
   badge: {
     position: 'absolute',
     top: -4,
@@ -106,6 +213,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: 'rgba(8, 11, 20, 0.9)',
   },
   badgeText: {
     color: '#FFFFFF',

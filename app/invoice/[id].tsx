@@ -106,7 +106,7 @@ export default function InvoiceDetailScreen() {
       <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
 
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/my-invoices' as any); }}>
           <ChevronLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Détail de la facture</Text>

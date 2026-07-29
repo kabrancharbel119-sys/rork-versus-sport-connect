@@ -5,7 +5,7 @@ import type { User, UserSport, UserStats } from '@/types';
 
 /** Colonnes user sans password_hash : à utiliser pour tout select exposé au client */
 const USER_PUBLIC_COLUMNS =
-  'id,email,username,full_name,avatar,phone,city,country,bio,sports,stats,reputation,wallet_balance,teams,followers,following,is_verified,is_premium,is_banned,banned_until,ban_reason,role,location_lat,location_lng,location_city,location_country,availability,referral_code,created_at';
+  'id,email,username,full_name,avatar,banner_image,phone,city,country,bio,sports,stats,reputation,wallet_balance,teams,followers,following,is_verified,is_premium,is_banned,banned_until,ban_reason,role,location_lat,location_lng,location_city,location_country,availability,referral_code,created_at';
 
 function getAuthBaseUrl(): string {
   return getApiBaseUrl();
@@ -39,6 +39,7 @@ export interface UserRow {
   username: string;
   full_name: string;
   avatar: string | null;
+  banner_image: string | null;
   phone: string | null;
   city: string | null;
   country: string | null;
@@ -76,6 +77,7 @@ export const mapUserRowToUser = (row: UserRow): User => ({
   username: row.username,
   fullName: row.full_name,
   avatar: row.avatar ?? undefined,
+  bannerImage: row.banner_image ?? undefined,
   phone: row.phone ?? undefined,
   city: row.city ?? '',
   country: row.country ?? '',
@@ -319,6 +321,7 @@ export const usersApi = {
     country: string;
     bio: string;
     avatar: string;
+    bannerImage: string;
     sports: UserSport[];
   }>) {
     logger.debug('UsersAPI', 'Updating user profile:', id);
@@ -332,6 +335,7 @@ export const usersApi = {
     if (updates.country !== undefined) dbUpdates.country = updates.country;
     if (updates.bio !== undefined) dbUpdates.bio = updates.bio;
     if (updates.avatar !== undefined) dbUpdates.avatar = updates.avatar;
+    if (updates.bannerImage !== undefined) dbUpdates.banner_image = updates.bannerImage;
     if (updates.sports !== undefined) dbUpdates.sports = updates.sports;
     
     const { data, error } = await ((supabase.from('users') as any)
@@ -394,6 +398,7 @@ export const usersApi = {
     country: string;
     bio: string;
     avatar: string;
+    bannerImage: string;
     sports: UserSport[];
     stats: UserStats;
     teams: string[];
@@ -413,6 +418,7 @@ export const usersApi = {
     if (updates.country !== undefined) dbUpdates.country = updates.country;
     if (updates.bio !== undefined) dbUpdates.bio = updates.bio;
     if (updates.avatar !== undefined) dbUpdates.avatar = updates.avatar;
+    if (updates.bannerImage !== undefined) dbUpdates.banner_image = updates.bannerImage;
     if (updates.sports !== undefined) dbUpdates.sports = updates.sports;
     if (updates.stats !== undefined) dbUpdates.stats = updates.stats;
     if (updates.teams !== undefined) dbUpdates.teams = updates.teams;

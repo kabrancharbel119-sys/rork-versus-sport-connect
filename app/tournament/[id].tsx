@@ -4,8 +4,9 @@ import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Trophy, Calendar, MapPin, Users, Award, DollarSign, UserMinus, CheckCircle, ChevronRight, Settings, Clock, Shield, Zap, Target, Share2, Info, Flame, TrendingUp, Search, Star, CreditCard, FileText, AlertTriangle } from 'lucide-react-native';
+import { ArrowLeft, Trophy, Calendar, MapPin, Users, Award, DollarSign, UserMinus, CheckCircle, ChevronRight, Settings, Clock, Shield, Zap, Target, Share2, Info, Flame, TrendingUp, Search, Star, CreditCard, FileText, AlertTriangle, Ticket as TicketIcon } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
@@ -284,6 +285,10 @@ export default function TournamentDetailScreen() {
     || (tournament.managers ?? []).includes(user.id)
   );
   const canManage = isCreatorOrAdmin && !!tournament;
+  const canManageTickets = !!user && !!tournament && (
+    tournament.createdBy === user.id
+    || (tournament.managers ?? []).includes(user.id)
+  );
 
   const goBack = useCallback(() => {
     if (router.canGoBack()) {
@@ -596,10 +601,10 @@ export default function TournamentDetailScreen() {
   const descIsLong = (tournament.description?.length ?? 0) > 150;
 
   const heroGradient: [string, string] = tournament.status === 'completed'
-    ? ['#7C3AED', '#6366F1']
+    ? ['rgba(124,58,237,0.85)', 'rgba(99,102,241,0.85)']
     : tournament.status === 'in_progress'
-      ? ['#059669', '#10B981']
-      : ['#EA580C', '#FB923C'];
+      ? ['rgba(5,150,105,0.85)', 'rgba(16,185,129,0.85)']
+      : ['rgba(234,88,12,0.85)', 'rgba(251,146,60,0.85)'];
 
   const completedCount = tournamentMatches.filter(m => m.status === 'completed').length;
   const liveCount = tournamentMatches.filter(m => m.status === 'in_progress').length;
@@ -716,7 +721,23 @@ export default function TournamentDetailScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        <LinearGradient colors={['#0F1523', '#121A2B']} style={StyleSheet.absoluteFill} />
+        {(tournament.bannerImage || tournament.sponsorLogo) ? (
+          <>
+            <Image
+              source={{ uri: tournament.bannerImage || tournament.sponsorLogo! }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              transition={300}
+            />
+            <LinearGradient
+              colors={['rgba(7,11,18,0.55)', 'rgba(10,14,22,0.7)', 'rgba(10,14,22,0.88)', 'rgba(10,14,22,1)']}
+              locations={[0, 0.3, 0.6, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+          </>
+        ) : (
+          <LinearGradient colors={['#0F1523', '#121A2B']} style={StyleSheet.absoluteFill} />
+        )}
 
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
@@ -768,7 +789,7 @@ export default function TournamentDetailScreen() {
           >
             {/* ── HERO (always visible) ── */}
             <Animated.View style={{ transform: [{ scale: heroScale }], opacity: heroOpacity }}>
-              <LinearGradient colors={heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
+              <View style={styles.heroCard}>
                 <View style={styles.heroTopRow}>
                   <View style={[styles.statusBadge, { backgroundColor: 'rgba(0,0,0,0.3)' }]}>
                     <View style={[styles.statusDot, { backgroundColor: getStatusColor(tournament.status) }]} />
@@ -776,6 +797,11 @@ export default function TournamentDetailScreen() {
                   </View>
                   <Text style={styles.heroSport}>{(sportLabels?.[tournament.sport]) ?? tournament.sport ?? '–'}</Text>
                 </View>
+                {tournament.sponsorLogo ? (
+                  <View style={styles.heroLogoWrap}>
+                    <Avatar uri={tournament.sponsorLogo} name={tournament.name} size="large" />
+                  </View>
+                ) : null}
                 <Text style={styles.tournamentName}>{tournament?.name ?? t('tournamentDetail.fallbackTitle')}</Text>
                 <View style={styles.heroQuickInfo}>
                   <Text style={styles.heroQuickText}>{tournament.format ?? '–'} • {(levelLabels?.[tournament.level]) ?? tournament.level ?? '–'}</Text>
@@ -810,7 +836,7 @@ export default function TournamentDetailScreen() {
                   </View>
                 )}
                 {countdownText && <View style={styles.countdownBadge}><Clock size={13} color="#FFFFFF" /><Text style={styles.countdownText}>{countdownText}</Text></View>}
-              </LinearGradient>
+              </View>
             </Animated.View>
 
             {/* Winner banner */}
@@ -1201,7 +1227,7 @@ export default function TournamentDetailScreen() {
                   </Card>
                 )}
 
-                {tournament.sponsorName && <Card style={styles.sponsorCard}><Shield size={16} color={Colors.text.muted} /><View><Text style={styles.sponsorLabel}>{t('tournamentDetail.sponsoredBy')}</Text><Text style={styles.sponsorName}>{tournament.sponsorName}</Text></View></Card>}
+                {tournament.sponsorName && <Card style={styles.sponsorCard}>{tournament.sponsorLogo ? <Avatar uri={tournament.sponsorLogo} name={tournament.sponsorName} size="small" /> : <Shield size={16} color={Colors.text.muted} />}<View><Text style={styles.sponsorLabel}>{t('tournamentDetail.sponsoredBy')}</Text><Text style={styles.sponsorName}>{tournament.sponsorName}</Text></View></Card>}
               </Animated.View>
             )}
 
@@ -1630,10 +1656,31 @@ export default function TournamentDetailScreen() {
               </TouchableOpacity>
             )}
 
+            {/* Ticket buttons — inside scroll so they're always reachable */}
+            {tournament.hasTickets && (
+              <View style={{ marginTop: 16, marginBottom: 8, gap: 10 }}>
+                <Button
+                  title="🎟️ Acheter des billets"
+                  onPress={() => router.push({ pathname: '/event-tickets/[eventId]', params: { eventId: tournament.id, type: 'tournament', eventName: tournament.name } } as any)}
+                  variant="outline"
+                  size="medium"
+                />
+                {canManageTickets && (
+                  <Button
+                    title="Gérer la billetterie"
+                    onPress={() => router.push({ pathname: '/manage-tickets/[eventId]', params: { eventId: tournament.id, type: 'tournament', eventName: tournament.name } } as any)}
+                    variant="secondary"
+                    size="medium"
+                  />
+                )}
+              </View>
+            )}
+
             <View style={styles.bottomSpacer} />
           </ScrollView>
 
           {/* Footer CTA */}
+
           {tournament.status === 'venue_pending' && (
             <View style={styles.footer}>
               <View style={[styles.registerButton, { backgroundColor: Colors.background.card, borderRadius: 14, padding: 16, alignItems: 'center' }]}>
@@ -1717,9 +1764,10 @@ const styles = StyleSheet.create({
   tabUnderline: { position: 'absolute' as const, bottom: -6, left: 8, right: 8, height: 3, borderRadius: 2, backgroundColor: Colors.primary.orange },
 
   /* Hero */
-  heroCard: { borderRadius: 20, padding: 18, marginBottom: 14, alignItems: 'center' },
+  heroCard: { borderRadius: 20, padding: 18, marginBottom: 14, alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.25)' },
   heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 10 },
   heroSport: { color: 'rgba(255,255,255,0.9)', fontSize: 10, fontWeight: '700' as const, textTransform: 'uppercase' as const, letterSpacing: 1, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  heroLogoWrap: { marginBottom: 10, borderRadius: 32, overflow: 'hidden', borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)' },
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   statusText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' as const },

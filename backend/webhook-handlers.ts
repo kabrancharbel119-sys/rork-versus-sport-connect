@@ -30,6 +30,7 @@ function extractContext(event: ProviderWebhookEvent): {
   contextType: string | null;
   contextId: string | null;
   bookingId: string | null;
+  ticketPurchaseRef: string | null;
   tournamentPaymentId: string | null;
   tournamentEntryTournamentId: string | null;
   tournamentEntryTeamId: string | null;
@@ -47,6 +48,7 @@ function extractContext(event: ProviderWebhookEvent): {
     contextType,
     contextId,
     bookingId: contextType === "booking" ? contextId : raw.booking_id || null,
+    ticketPurchaseRef: contextType === "ticket_purchase" ? contextId : null,
     tournamentPaymentId: contextType === "tournament_registration" ? contextId : raw.tournament_payment_id || null,
     tournamentEntryTournamentId,
     tournamentEntryTeamId,
@@ -137,6 +139,35 @@ async function handlePaymentSucceeded(event: ProviderWebhookEvent) {
     }
   }
 
+  // Ticket purchase: confirm the pending tickets
+  if (ctx.ticketPurchaseRef) {
+    const { data: confirmedCount, error } = await sb.rpc("confirm_ticket_payment", {
+      p_payment_transaction_id: ctx.ticketPurchaseRef,
+    });
+
+    if (error) {
+      console.error("[WebhookHandlers] Failed to confirm tickets:", error.message);
+    } else {
+      console.log("[WebhookHandlers] Tickets confirmed:", confirmedCount, "for ref", ctx.ticketPurchaseRef);
+      // Notifier l'acheteur
+      const { data: ticketRows } = await sb
+        .from("tickets")
+        .select("buyer_id")
+        .eq("payment_transaction_id", ctx.ticketPurchaseRef)
+        .limit(1);
+      const buyerId = (ticketRows as { buyer_id: string }[] | null)?.[0]?.buyer_id;
+      if (buyerId) {
+        await sb.from("notifications").insert({
+          user_id: buyerId,
+          type: "system",
+          title: "\uD83C\uDF9F\uFE0F Billets confirm\u00e9s",
+          message: "Votre paiement est confirm\u00e9. Vos billets sont disponibles dans \"Mes billets\".",
+          data: { route: "/my-tickets" },
+        });
+      }
+    }
+  }
+
   // Generate invoice for this payment
   await generateInvoice(sb, event, ctx);
 }
@@ -176,6 +207,16 @@ async function handlePaymentFailed(event: ProviderWebhookEvent) {
 
     if (error) console.error("[WebhookHandlers] Failed to reject tournament team:", error.message);
     else console.log("[WebhookHandlers] Tournament team rejected due to payment failure:", ctx.tournamentEntryTournamentId, ctx.tournamentEntryTeamId);
+  }
+
+  // Ticket purchase failed: cancel pending tickets and restore stock
+  if (ctx.ticketPurchaseRef) {
+    const { data: cancelledCount, error } = await sb.rpc("cancel_pending_tickets", {
+      p_payment_transaction_id: ctx.ticketPurchaseRef,
+    });
+
+    if (error) console.error("[WebhookHandlers] Failed to cancel pending tickets:", error.message);
+    else console.log("[WebhookHandlers] Pending tickets cancelled:", cancelledCount, "for ref", ctx.ticketPurchaseRef);
   }
 }
 
@@ -281,6 +322,35 @@ async function generateInvoice(
       }
       reason = `Paiement d'inscription au tournoi "${eventName || 'Inconnu'}"`;
       description = `Paiement d'inscription au tournoi "${eventName || 'Inconnu'}"`;
+      if (payeeId) {
+        const { data: payee } = await sb.from("users").select("full_name, username").eq("id", payeeId).single();
+        payeeName = payee?.full_name || payee?.username || null;
+      }
+    } else if (ctx.ticketPurchaseRef) {
+      // Ticket purchase — use the RPC to create invoice with items
+      contextType = 'ticket_purchase';
+      const { data: ticketRows } = await sb
+        .from("tickets")
+        .select("buyer_id, event_type, event_id, price_paid, ticket_type_id")
+        .eq("payment_transaction_id", ctx.ticketPurchaseRef)
+        .eq("status", "valid")
+        .limit(1);
+
+      if (ticketRows && ticketRows.length > 0) {
+        const t = ticketRows[0] as any;
+        eventId = t.event_id;
+        if (t.event_type === 'tournament') {
+          const { data: tour } = await sb.from("tournaments").select("name, created_by").eq("id", t.event_id).single();
+          eventName = tour?.name || null;
+          payeeId = tour?.created_by || null;
+        } else if (t.event_type === 'match') {
+          const { data: match } = await sb.from("matches").select("name, created_by").eq("id", t.event_id).single();
+          eventName = match?.name || null;
+          payeeId = match?.created_by || null;
+        }
+      }
+      reason = `Achat de billets${eventName ? ` - "${eventName}"` : ''}`;
+      description = `Achat de billets${eventName ? ` - "${eventName}"` : ''}`;
       if (payeeId) {
         const { data: payee } = await sb.from("users").select("full_name, username").eq("id", payeeId).single();
         payeeName = payee?.full_name || payee?.username || null;

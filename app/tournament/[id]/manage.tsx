@@ -18,6 +18,8 @@ import {
 import { Colors } from '@/constants/colors';
 import { Button } from '@/components/Button';
 import { Skeleton } from '@/components/LoadingSkeleton';
+import { ConfirmModal } from '@/components/ConfirmModal';
+import { InfoModal } from '@/components/InfoModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useI18n } from '@/contexts/I18nContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
@@ -1499,47 +1501,49 @@ export default function ManageTournamentScreen() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [isSubmittingCancellation, setIsSubmittingCancellation] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+  const [infoModal, setInfoModal] = useState<{ title: string; message: string; variant: 'success' | 'error'; onClose?: () => void } | null>(null);
 
   const handleDelete = useCallback(() => {
     if (!tournament || !user) return;
 
     // Tournoi gratuit ou sans équipes confirmées: suppression directe
     if (tournament.entryFee === 0 || (tournament.registeredTeams?.length ?? 0) === 0) {
-      Alert.alert('Supprimer le tournoi', 'Cette action est irréversible.', [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Supprimer', style: 'destructive', onPress: async () => {
+      setConfirmModal({
+        title: 'Supprimer le tournoi',
+        message: 'Cette action est irréversible.',
+        onConfirm: async () => {
+          setConfirmModal(null);
           try {
             if ((tournament.registeredTeams?.length ?? 0) > 0) {
               await tournamentCancellationApi.notifyTeamsOfCancellation(tournament!.id, 'Tournoi supprimé par l\'organisateur');
             }
             await deleteTournament({ tournamentId: tournament!.id, userId: user!.id, isAdmin });
-            Alert.alert('Supprimé', '', [{ text: 'OK', onPress: () => router.replace('/tournaments' as any) }]);
+            router.replace('/(tabs)' as any);
           }
-          catch (e: unknown) { Alert.alert('Erreur', (e as Error).message); }
-        }},
-      ]);
+          catch (e: unknown) { setInfoModal({ title: 'Erreur', message: (e as Error).message, variant: 'error' }); }
+        },
+      });
       return;
     }
 
     // Admin: peut annuler directement
     if (isAdmin) {
-      Alert.alert(
-        'Annuler le tournoi',
-        'En tant qu\'administrateur, vous pouvez annuler ce tournoi directement. Les équipes confirmées seront remboursées.',
-        [
-          { text: 'Annuler', style: 'cancel' },
-          { text: 'Annuler le tournoi', style: 'destructive', onPress: async () => {
-            try {
-              await updateTournament({ tournamentId: tournament!.id, updates: { status: 'cancelled' as any } });
-              await tournamentCancellationApi.notifyTeamsOfCancellation(tournament!.id, 'Annulation par l\'administrateur');
-              await refetchAll();
-              Alert.alert('Tournoi annulé', 'Le tournoi a été annulé. Toutes les équipes inscrites ont été notifiées.');
-            } catch (e: unknown) {
-              Alert.alert('Erreur', (e as Error).message);
-            }
-          }},
-        ]
-      );
+      setConfirmModal({
+        title: 'Annuler le tournoi',
+        message: 'En tant qu\'administrateur, vous pouvez annuler ce tournoi directement. Les équipes confirmées seront remboursées.',
+        onConfirm: async () => {
+          setConfirmModal(null);
+          try {
+            await updateTournament({ tournamentId: tournament!.id, updates: { status: 'cancelled' as any } });
+            await tournamentCancellationApi.notifyTeamsOfCancellation(tournament!.id, 'Annulation par l\'administrateur');
+            await refetchAll();
+            setInfoModal({ title: 'Tournoi annulé', message: 'Le tournoi a été annulé. Toutes les équipes inscrites ont été notifiées.', variant: 'success' });
+          } catch (e: unknown) {
+            setInfoModal({ title: 'Erreur', message: (e as Error).message, variant: 'error' });
+          }
+        },
+      });
       return;
     }
 
@@ -1549,21 +1553,19 @@ export default function ManageTournamentScreen() {
 
   const handlePermanentDelete = useCallback(() => {
     if (!tournament || !user) return;
-    Alert.alert(
-      'Supprimer définitivement',
-      'Ce tournoi est annulé. Le supprimer le fera disparaître de toutes les listes. Cette action est irréversible.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Supprimer', style: 'destructive', onPress: async () => {
-          try {
-            await deleteTournament({ tournamentId: tournament!.id, userId: user!.id, isAdmin });
-            Alert.alert('Tournoi supprimé', '', [{ text: 'OK', onPress: () => router.replace('/tournaments' as any) }]);
-          } catch (e: unknown) {
-            Alert.alert('Erreur', (e as Error).message);
-          }
-        }},
-      ]
-    );
+    setConfirmModal({
+      title: 'Supprimer définitivement',
+      message: 'Ce tournoi est annulé. Le supprimer le fera disparaître de toutes les listes. Cette action est irréversible.',
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          await deleteTournament({ tournamentId: tournament!.id, userId: user!.id, isAdmin });
+          router.replace('/(tabs)' as any);
+        } catch (e: unknown) {
+          setInfoModal({ title: 'Erreur', message: (e as Error).message, variant: 'error' });
+        }
+      },
+    });
   }, [tournament, user, isAdmin, deleteTournament, router]);
 
   const handleSubmitCancellation = useCallback(async () => {
@@ -2949,6 +2951,28 @@ export default function ManageTournamentScreen() {
     </Modal>
 
     <ManagerSearchModal visible={showManagerModal} tournament={tournament} onClose={() => setShowManagerModal(false)} onAdded={handleManagerAdded} senderName={user?.username ?? 'Un administrateur'} />
+
+    <ConfirmModal
+      visible={confirmModal !== null}
+      title={confirmModal?.title ?? ''}
+      message={confirmModal?.message}
+      confirmText="Supprimer"
+      destructive
+      onConfirm={() => confirmModal?.onConfirm()}
+      onCancel={() => setConfirmModal(null)}
+    />
+
+    <InfoModal
+      visible={infoModal !== null}
+      title={infoModal?.title ?? ''}
+      message={infoModal?.message}
+      variant={infoModal?.variant ?? 'success'}
+      onClose={() => {
+        const onCloseFn = infoModal?.onClose;
+        setInfoModal(null);
+        if (onCloseFn) onCloseFn();
+      }}
+    />
     </>
   );
 }

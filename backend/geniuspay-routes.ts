@@ -212,6 +212,130 @@ geniusPayRoutes.post("/webhook", async (c) => {
   return c.json({ success: true });
 });
 
+/**
+ * POST /api/payments/geniuspay/confirm/:reference
+ * Vérifie le statut d'un paiement auprès de GeniusPay et confirme les billets
+ * si le paiement a réussi. Utilisé comme fallback quand le webhook GeniusPay
+ * ne peut pas atteindre le backend (ex: localhost en développement).
+ */
+geniusPayRoutes.post("/confirm/:reference", async (c) => {
+  if (!isGeniusPayConfigured()) {
+    throw new HTTPException(503, { message: "GeniusPay n'est pas configuré." });
+  }
+
+  const reference = c.req.param("reference");
+  if (!reference?.trim()) {
+    throw new HTTPException(422, { message: "Référence manquante." });
+  }
+
+  // Optional: client can pass the internal reference (TICKET-...) as a query param
+  // so we can confirm tickets even if GeniusPay doesn't return metadata in the status response
+  const internalRef = c.req.query("internal_ref") || null;
+
+  // 1. Vérifier le statut auprès de GeniusPay
+  const res = await fetch(`${GENIUSPAY_BASE_URL}/payments/${encodeURIComponent(reference)}`, {
+    method: "GET",
+    headers: geniusPayHeaders(),
+  });
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return c.json({ success: false, status: "unknown", error: body?.error?.message || `HTTP ${res.status}` }, res.status as any);
+  }
+
+  const gpStatus = body?.data?.status || body?.status;
+  const metadata = body?.data?.metadata || {};
+  const contextType = metadata.context_type || (internalRef ? "ticket_purchase" : null);
+  const contextId = metadata.context_id || internalRef;
+
+  console.log(`[GeniusPay Confirm] reference=${reference} status=${gpStatus} contextType=${contextType}`);
+
+  // 2. Si le paiement a réussi, confirmer les billets en base
+  if (gpStatus === "completed" || gpStatus === "success") {
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (supabaseUrl && supabaseKey) {
+      const { createClient } = await import("@supabase/supabase-js");
+      const sb = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
+
+      // Confirm tickets if this is a ticket purchase
+      if (contextType === "ticket_purchase" && contextId) {
+        const { data: confirmedCount, error: confirmError } = await sb.rpc("confirm_ticket_payment", {
+          p_payment_transaction_id: contextId,
+        });
+
+        if (confirmError) {
+          console.error("[GeniusPay Confirm] Failed to confirm tickets:", confirmError.message);
+        } else {
+          console.log("[GeniusPay Confirm] Tickets confirmed:", confirmedCount, "for ref", contextId);
+
+          // Notify buyer
+          const { data: ticketRows } = await sb
+            .from("tickets")
+            .select("buyer_id")
+            .eq("payment_transaction_id", contextId)
+            .limit(1);
+          const buyerId = (ticketRows as { buyer_id: string }[] | null)?.[0]?.buyer_id;
+          if (buyerId) {
+            await sb.from("notifications").insert({
+              user_id: buyerId,
+              type: "system",
+              title: "🎟️ Billets confirmés",
+              message: "Votre paiement est confirmé. Vos billets sont disponibles dans \"Mes billets\".",
+              data: { route: "/my-tickets" },
+            });
+          }
+        }
+      }
+
+      // Confirm bookings
+      if (contextType === "booking" && contextId) {
+        const { error: bookingError } = await sb
+          .from("bookings")
+          .update({
+            payment_status: "paid",
+            payment_transaction_id: reference,
+            paid_at: new Date().toISOString(),
+          })
+          .eq("id", contextId);
+
+        if (bookingError) {
+          console.error("[GeniusPay Confirm] Failed to update booking:", bookingError.message);
+        } else {
+          console.log("[GeniusPay Confirm] Booking updated to paid:", contextId);
+        }
+      }
+
+      // Confirm tournament entry
+      if (contextType === "tournament_entry" && contextId) {
+        const [tournamentId, teamId] = contextId.split(":");
+        if (tournamentId && teamId) {
+          const { error: teamError } = await sb
+            .from("tournament_teams")
+            .update({ status: "confirmed", confirmed_at: new Date().toISOString() })
+            .eq("tournament_id", tournamentId)
+            .eq("team_id", teamId);
+
+          if (teamError) {
+            console.error("[GeniusPay Confirm] Failed to confirm tournament team:", teamError.message);
+          } else {
+            console.log("[GeniusPay Confirm] Tournament team confirmed:", tournamentId, teamId);
+          }
+        }
+      }
+    } else {
+      console.warn("[GeniusPay Confirm] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing — cannot update DB");
+    }
+  }
+
+  return c.json({
+    success: true,
+    status: gpStatus,
+    confirmed: gpStatus === "completed" || gpStatus === "success",
+  });
+});
+
 /** Traduit un événement GeniusPay (payment.* / cashout.*) vers le type interne ProviderWebhookEvent. */
 function mapWebhookEventType(
   headerEvent: string | undefined,

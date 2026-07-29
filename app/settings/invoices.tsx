@@ -112,7 +112,7 @@ export default function UserInvoicesScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)/profile' as any); }}>
           <ChevronLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <View style={styles.headerText}>

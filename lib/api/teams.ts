@@ -14,6 +14,7 @@ export interface TeamRow {
   country: string;
   description: string | null;
   captain_id: string | null;
+  creator_id: string | null;
   co_captain_ids: string[];
   members: TeamMember[];
   fans: string[];
@@ -40,6 +41,7 @@ export const mapTeamRowToTeam = (row: TeamRow): Team => ({
   country: row.country,
   description: row.description ?? undefined,
   captainId: row.captain_id || '',
+  creatorId: row.creator_id || row.captain_id || undefined,
   coCaptainIds: (row.co_captain_ids as string[]) || [],
   members: ((row.members as unknown as TeamMember[]) || []).map(m => ({
     ...m,
@@ -84,14 +86,35 @@ export const teamsApi = {
       .order('created_at', { ascending: false }) as any);
     
     if (error) throw error;
-    const teams = ((data || []) as TeamRow[]).map(row => mapTeamRowToTeam(row));
-    logger.debug('TeamsAPI', 'All teams from DB:', teams.length);
+    let teams = ((data || []) as TeamRow[]).map(row => mapTeamRowToTeam(row));
+    const total = count ?? 0;
+
+    // If fetching the first page with default limit and there are more teams, fetch all remaining pages
+    if (!options?.page && !options?.limit && total > teams.length) {
+      const totalPages = Math.ceil(total / limit);
+      for (let p = 2; p <= totalPages; p++) {
+        const f = (p - 1) * limit;
+        const t = f + limit - 1;
+        const { data: moreData, error: moreError } = await (supabase
+          .from('teams')
+          .select('*')
+          .range(f, t)
+          .order('created_at', { ascending: false }) as any);
+        if (moreError) {
+          logger.error('TeamsAPI', `Error fetching page ${p}:`, moreError);
+          break;
+        }
+        teams = teams.concat(((moreData || []) as TeamRow[]).map(row => mapTeamRowToTeam(row)));
+      }
+    }
+
+    logger.debug('TeamsAPI', 'All teams from DB:', teams.length, 'total:', total);
     return {
       teams,
-      total: count ?? 0,
+      total,
       page,
       limit,
-      hasMore: count ? (page * limit) < count : false,
+      hasMore: !options?.page && !options?.limit ? false : (total ? (page * limit) < total : false),
     };
   },
 
@@ -147,6 +170,7 @@ export const teamsApi = {
         location_lng: teamData.locationLng,
         description: teamData.description,
         captain_id: userId,
+        creator_id: userId,
         max_members: teamData.maxMembers,
         is_recruiting: teamData.isRecruiting ?? true,
         members,
@@ -511,40 +535,131 @@ export const teamsApi = {
 
   async delete(teamId: string, userId: string, asAdmin: boolean = false) {
     console.log('[TeamsAPI] Deleting team:', teamId, asAdmin ? '(admin)' : '');
-    
-    if (!asAdmin) {
-      const team = await this.getById(teamId);
-      if (team.captainId !== userId) {
-        throw new Error('Seul le capitaine peut dissoudre l\'équipe');
-      }
+
+    const team = await this.getById(teamId);
+
+    // Admin can delete directly
+    if (asAdmin) {
+      return this._performDelete(teamId, team);
     }
-    
+
+    // Creator can delete directly
+    const isCreator = team.creatorId === userId;
+    if (isCreator) {
+      return this._performDelete(teamId, team);
+    }
+
+    // Current captain who is NOT the creator must request admin approval
+    if (team.captainId === userId) {
+      throw new Error('REQUIRES_ADMIN_APPROVAL: Seul le créateur peut dissoudre l\'équipe directement. En tant que capitaine non-créateur, vous devez soumettre une demande d\'approbation administrateur.');
+    }
+
+    throw new Error('Seul le créateur ou un administrateur peut dissoudre l\'équipe');
+  },
+
+  async _performDelete(teamId: string, team: Team) {
     // Delete from database
     const { error } = await supabase
       .from('teams')
       .delete()
       .eq('id', teamId);
-    
+
     if (error) throw error;
-    
+
     // Remove team from all members' team lists
-    const team = await this.getById(teamId).catch(() => null);
-    if (team) {
-      for (const member of team.members) {
-        const { data: user } = await (supabase
-          .from('users')
-          .select('teams')
-          .eq('id', member.userId)
-          .single() as any);
-        
-        if (user) {
-          const userTeams = user as { teams: string[] | null };
-          const teams = ((userTeams.teams as string[]) || []).filter(id => id !== teamId);
-          await ((supabase.from('users') as any).update({ teams }).eq('id', member.userId));
-        }
+    for (const member of team.members) {
+      const { data: user } = await (supabase
+        .from('users')
+        .select('teams')
+        .eq('id', member.userId)
+        .single() as any);
+
+      if (user) {
+        const userTeams = user as { teams: string[] | null };
+        const teams = ((userTeams.teams as string[]) || []).filter(id => id !== teamId);
+        await ((supabase.from('users') as any).update({ teams }).eq('id', member.userId));
       }
     }
-    
+
     return { success: true };
+  },
+
+  // ── Dissolution requests ──
+
+  async createDissolutionRequest(teamId: string, requesterId: string, reason: string) {
+    const team = await this.getById(teamId);
+    const { data, error } = await (supabase as any)
+      .from('team_dissolution_requests')
+      .insert({
+        team_id: teamId,
+        requester_id: requesterId,
+        team_name: team.name,
+        team_sport: team.sport,
+        reason,
+        status: 'pending',
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async getDissolutionRequests(status?: 'pending' | 'approved' | 'rejected') {
+    let query = (supabase as any).from('team_dissolution_requests').select('*').order('created_at', { ascending: false });
+    if (status) query = query.eq('status', status);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getMyDissolutionRequests(userId: string) {
+    const { data, error } = await (supabase as any)
+      .from('team_dissolution_requests')
+      .select('*')
+      .eq('requester_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async approveDissolutionRequest(requestId: string, adminId: string, adminNote?: string) {
+    // 1. Get the request
+    const { data: req, error: reqError } = await (supabase as any)
+      .from('team_dissolution_requests')
+      .select('*')
+      .eq('id', requestId)
+      .single();
+    if (reqError) throw reqError;
+
+    // 2. Mark request as approved
+    const { error: updateError } = await (supabase as any)
+      .from('team_dissolution_requests')
+      .update({ status: 'approved', admin_id: adminId, admin_note: adminNote || null, reviewed_at: new Date().toISOString() })
+      .eq('id', requestId);
+    if (updateError) throw updateError;
+
+    // 3. Delete the team
+    const team = await this.getById(req.team_id).catch(() => null);
+    if (team) {
+      await this._performDelete(req.team_id, team);
+    }
+
+    return { success: true, requesterId: req.requester_id, teamName: req.team_name };
+  },
+
+  async rejectDissolutionRequest(requestId: string, adminId: string, adminNote?: string) {
+    const { error } = await (supabase as any)
+      .from('team_dissolution_requests')
+      .update({ status: 'rejected', admin_id: adminId, admin_note: adminNote || null, reviewed_at: new Date().toISOString() })
+      .eq('id', requestId);
+    if (error) throw error;
+
+    const { data: req } = await (supabase as any)
+      .from('team_dissolution_requests')
+      .select('requester_id, team_name')
+      .eq('id', requestId)
+      .single();
+    return { success: true, requesterId: req?.requester_id, teamName: req?.team_name };
   },
 };

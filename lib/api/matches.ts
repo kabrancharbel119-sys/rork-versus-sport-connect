@@ -31,6 +31,7 @@ export interface MatchRow {
   created_at: string;
   tournament_id?: string | null;
   round_label?: string | null;
+  has_tickets?: boolean | null;
 }
 
 export const mapMatchRowToMatch = (row: MatchRow): Match => ({
@@ -77,6 +78,7 @@ export const mapMatchRowToMatch = (row: MatchRow): Match => ({
   createdAt: new Date(row.created_at),
   tournamentId: row.tournament_id ?? undefined,
   roundLabel: row.round_label ?? undefined,
+  hasTickets: row.has_tickets ?? false,
 });
 
 const getDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -142,6 +144,7 @@ export const matchesApi = {
     needsPlayers?: boolean;
     lat?: number;
     lng?: number;
+    hasTickets?: boolean;
   }, userId: string) {
     logger.debug('MatchesAPI', 'Creating match:', matchData);
     
@@ -222,6 +225,7 @@ export const matchesApi = {
     };
     if (matchData.tournamentId != null) insertPayload.tournament_id = matchData.tournamentId;
     if (matchData.roundLabel != null) insertPayload.round_label = matchData.roundLabel;
+    if (matchData.hasTickets === true) insertPayload.has_tickets = true;
 
     const { data, error } = await (supabase
       .from('matches')

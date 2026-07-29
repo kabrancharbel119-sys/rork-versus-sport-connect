@@ -11,6 +11,7 @@ import { ArrowLeft, Users, Swords, Shield, ShieldAlert, Ban, Search, ChevronRigh
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
+import { teamsApi } from '@/lib/api/teams';
 import { useMatches } from '@/contexts/MatchesContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { useNotifications } from '@/contexts/NotificationsContext';
@@ -26,13 +27,16 @@ import { tournamentPayoutRequestsApi, tournamentPaymentsApi } from '@/lib/api/to
 import { tournamentDisputesApi } from '@/lib/api/tournament-funds';
 import { tournamentCancellationApi, type CancellationRequestWithDetails } from '@/lib/api/tournament-cancellations';
 import { invoicesApi } from '@/lib/api/invoices';
+import { venuesApi } from '@/lib/api/venues';
+import { usersApi } from '@/lib/api/users';
+import { ticketsApi } from '@/lib/api/tickets';
 import { offlineManager } from '@/lib/offline';
 import { testEngine, testLogStore, reportRunner, type QaDomain, type QaRunResult, type QaRuntimeEvent, type ProductionReadinessResult } from '@/qa';
-import type { TournamentDispute, TournamentCancellationRequest, Invoice } from '@/types';
+import type { TournamentDispute, TournamentCancellationRequest, Invoice, User } from '@/types';
 
 const CACHE_KEYS_TO_PURGE = ['vs_tournaments', 'vs_teams', 'vs_matches', 'vs_all_users', 'vs_follows', 'vs_notifications', 'vs_offline_queue', 'vs_last_sync'];
 
-type AdminTab = 'overview' | 'users' | 'banned' | 'teams' | 'matches' | 'tournaments' | 'tickets' | 'verifications' | 'payments' | 'payouts' | 'invoices' | 'analytics' | 'activity' | 'qa' | 'prod_report' | 'settings';
+type AdminTab = 'overview' | 'users' | 'banned' | 'teams' | 'matches' | 'tournaments' | 'tickets' | 'verifications' | 'payments' | 'payouts' | 'invoices' | 'venues' | 'analytics' | 'activity' | 'qa' | 'prod_report' | 'settings';
 
 interface ActivityLog {
   id: string;
@@ -255,6 +259,7 @@ export default function AdminScreen() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [selectedUserDetail, setSelectedUserDetail] = useState<User | null>(null);
   const [selectedUserForBan, setSelectedUserForBan] = useState<{ id: string; name: string } | null>(null);
   const [banDuration, setBanDuration] = useState<'24h' | '7d' | '30d' | 'permanent'>('7d');
   const [banReason, setBanReason] = useState('');
@@ -292,6 +297,7 @@ export default function AdminScreen() {
       tournamentDisputesApi.updateDisputeStatus(disputeId, adminId, 'investigating'),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['open-disputes'] });
+      Alert.alert('Succès', 'Litige en cours d\'investigation.');
     },
     onError: (e) => Alert.alert('Erreur', (e as Error).message || 'Impossible de mettre à jour le litige.'),
   });
@@ -321,6 +327,14 @@ export default function AdminScreen() {
   const allCancellations = allCancellationsQuery.data ?? [];
   const processedCancellations = allCancellations.filter(r => r.status === 'approved' || r.status === 'rejected');
   const [cancellationNotes, setCancellationNotes] = useState<Record<string, { organizerResponse: string; internalComment: string }>>({});
+
+  // Dissolution requests
+  const dissolutionRequestsQuery = useQuery({
+    queryKey: ['team-dissolution-requests'],
+    queryFn: () => teamsApi.getDissolutionRequests('pending'),
+    enabled: !!isAdmin,
+  });
+  const pendingDissolutionRequests = dissolutionRequestsQuery.data ?? [];
 
   const handleOpenNoteModal = useCallback((reqId: string, currentNote: string) => {
     const existing = cancellationNotes[reqId] || { organizerResponse: '', internalComment: '' };
@@ -432,6 +446,7 @@ export default function AdminScreen() {
         queryClient.invalidateQueries({ queryKey: ['pending-payout-requests'] }),
         queryClient.invalidateQueries({ queryKey: ['pendingPayments'] }),
         queryClient.invalidateQueries({ queryKey: ['open-disputes'] }),
+        queryClient.invalidateQueries({ queryKey: ['team-dissolution-requests'] }),
       ]);
       setLastRefresh(new Date());
     } catch (e) {
@@ -470,7 +485,7 @@ export default function AdminScreen() {
       ) : (
         bannedUsers.map((u) => (
           <View key={u.id} style={styles.userItem}>
-            <TouchableOpacity style={styles.userItemContent} onPress={() => router.push(`/user/${u.id}`)}>
+            <TouchableOpacity style={styles.userItemContent} onPress={() => setSelectedUserDetail(u)}>
               <Avatar uri={u.avatar} name={u.fullName} size="medium" />
               <View style={styles.userInfo}>
                 <View style={styles.userNameRow}>
@@ -1005,6 +1020,73 @@ export default function AdminScreen() {
     }
   };
 
+  const handleApproveDissolution = async (requestId: string, teamName: string) => {
+    Alert.alert(
+      'Approuver la dissolution',
+      `L'équipe "${teamName}" sera définitivement dissoute. Cette action est irréversible.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Approuver',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await teamsApi.approveDissolutionRequest(requestId, user?.id ?? '');
+              // Notify the requester
+              if (result.requesterId) {
+                await notificationsApi.send(result.requesterId, {
+                  type: 'team',
+                  title: 'Demande de dissolution approuvée',
+                  message: `L'équipe "${teamName}" a été dissoute par un administrateur.`,
+                  data: { route: '/(tabs)/teams' },
+                });
+              }
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['team-dissolution-requests'] }),
+                queryClient.invalidateQueries({ queryKey: ['teams'] }),
+                refetchTeams(),
+              ]);
+              Alert.alert('Succès', 'Équipe dissoute avec succès.');
+            } catch (e) {
+              Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible d\'approuver la dissolution.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRejectDissolution = async (requestId: string, teamName: string) => {
+    Alert.alert(
+      'Rejeter la demande',
+      `La demande de dissolution de "${teamName}" sera rejetée. Le demandeur sera notifié.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Rejeter',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await teamsApi.rejectDissolutionRequest(requestId, user?.id ?? '');
+              if (result.requesterId) {
+                await notificationsApi.send(result.requesterId, {
+                  type: 'team',
+                  title: 'Demande de dissolution rejetée',
+                  message: `Votre demande de dissolution de "${teamName}" a été rejetée par un administrateur.`,
+                  data: { route: '/(tabs)/teams' },
+                });
+              }
+              await queryClient.invalidateQueries({ queryKey: ['team-dissolution-requests'] });
+              Alert.alert('Demande rejetée', 'Le demandeur a été notifié.');
+            } catch (e) {
+              Alert.alert('Erreur', (e as Error)?.message ?? 'Impossible de rejeter la demande.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleDeleteTeam = async (teamId: string, teamName: string) => {
     if (!teamId?.trim()) {
       Alert.alert('Erreur', 'Équipe invalide.');
@@ -1277,12 +1359,155 @@ export default function AdminScreen() {
     { key: 'payments', label: 'Paiements', icon: <DollarSign size={16} color={activeTab === 'payments' ? '#FFF' : Colors.text.secondary} />, badge: pendingPayments.length },
     { key: 'payouts', label: 'Avances', icon: <FileText size={16} color={activeTab === 'payouts' ? '#FFF' : Colors.text.secondary} />, badge: pendingPayoutRequests.length },
     { key: 'invoices', label: 'Factures', icon: <Receipt size={16} color={activeTab === 'invoices' ? '#FFF' : Colors.text.secondary} /> },
+    { key: 'venues', label: 'Terrains', icon: <MapPin size={16} color={activeTab === 'venues' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'activity', label: 'Activité', icon: <Activity size={16} color={activeTab === 'activity' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'qa', label: 'QA', icon: <Server size={16} color={activeTab === 'qa' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'prod_report', label: 'Rapport Prod', icon: <CheckCircle size={16} color={activeTab === 'prod_report' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'analytics', label: 'Analytiques', icon: <TrendingUp size={16} color={activeTab === 'analytics' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'settings', label: 'Paramètres', icon: <Settings size={16} color={activeTab === 'settings' ? '#FFF' : Colors.text.secondary} /> },
   ], [activeTab, pendingTickets, pendingVerifications, pendingPayments.length, pendingPayoutRequests.length, openDisputes.length]);
+
+  // Venues query with owner details
+  const [venueSearch, setVenueSearch] = useState('');
+  const [venueOwnerDetails, setVenueOwnerDetails] = useState<Record<string, { email?: string; phone?: string; fullName?: string; username?: string }>>({});
+  const venuesQuery = useQuery({
+    queryKey: ['adminVenues'],
+    queryFn: () => venuesApi.getAll(),
+    enabled: activeTab === 'venues',
+  });
+
+  useEffect(() => {
+    if (activeTab !== 'venues' || !venuesQuery.data) return;
+    const ownerIds = [...new Set(venuesQuery.data.map(v => v.ownerId).filter(Boolean))] as string[];
+    const missing = ownerIds.filter(id => !venueOwnerDetails[id]);
+    if (missing.length === 0) return;
+    Promise.all(missing.map(async (id) => {
+      try {
+        const u = await usersApi.getById(id);
+        return [id, { email: u.email, phone: u.phone, fullName: u.fullName, username: u.username }] as const;
+      } catch {
+        return [id, {}] as const;
+      }
+    })).then(results => {
+      setVenueOwnerDetails(prev => {
+        const next = { ...prev };
+        for (const [id, info] of results) next[id] = info;
+        return next;
+      });
+    });
+  }, [activeTab, venuesQuery.data]);
+
+  const filteredVenues = useMemo(() => {
+    const venues = venuesQuery.data ?? [];
+    if (!venueSearch) return venues;
+    const q = venueSearch.toLowerCase();
+    return venues.filter(v =>
+      v.name?.toLowerCase().includes(q) ||
+      v.city?.toLowerCase().includes(q) ||
+      v.address?.toLowerCase().includes(q)
+    );
+  }, [venuesQuery.data, venueSearch]);
+
+  const renderVenues = () => (
+    <>
+      <Card style={styles.settingsCard}>
+        <Text style={styles.cardTitle}>Recherche de terrain</Text>
+        <Text style={styles.cardDesc}>Recherchez un terrain par nom, ville ou adresse pour retrouver les identifiants du gestionnaire.</Text>
+        <View style={[styles.searchRow, { marginBottom: 12 }]}>
+          <Search size={16} color={Colors.text.muted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Nom du terrain, ville, adresse..."
+            placeholderTextColor={Colors.text.muted}
+            value={venueSearch}
+            onChangeText={setVenueSearch}
+          />
+        </View>
+
+        {venuesQuery.isLoading ? (
+          <Text style={styles.emptyText}>Chargement des terrains...</Text>
+        ) : filteredVenues.length === 0 ? (
+          <Text style={styles.emptyText}>Aucun terrain trouvé.</Text>
+        ) : (
+          filteredVenues.map(venue => {
+            const owner = venue.ownerId ? venueOwnerDetails[venue.ownerId] : null;
+            return (
+              <View key={venue.id} style={styles.venueAdminCard}>
+                <View style={styles.venueAdminHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.venueAdminName}>{venue.name}</Text>
+                    <Text style={styles.venueAdminLocation}>{venue.city} · {venue.address}</Text>
+                  </View>
+                  <View style={[styles.venueAdminStatus, { backgroundColor: venue.isActive !== false ? Colors.status.success + '20' : Colors.text.muted + '20' }]}>
+                    <Text style={{ color: venue.isActive !== false ? Colors.status.success : Colors.text.muted, fontSize: 11, fontWeight: '600' }}>
+                      {venue.isActive !== false ? 'Actif' : 'Inactif'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.venueAdminDetails}>
+                  <View style={styles.venueAdminRow}>
+                    <Text style={styles.venueAdminLabel}>Sport(s)</Text>
+                    <Text style={styles.venueAdminValue}>{venue.sport.join(', ')}</Text>
+                  </View>
+                  <View style={styles.venueAdminRow}>
+                    <Text style={styles.venueAdminLabel}>Prix/h</Text>
+                    <Text style={styles.venueAdminValue}>{venue.pricePerHour.toLocaleString()} FCFA</Text>
+                  </View>
+                  {venue.phone && (
+                    <View style={styles.venueAdminRow}>
+                      <Text style={styles.venueAdminLabel}>Téléphone terrain</Text>
+                      <Text style={styles.venueAdminValue}>{venue.phone}</Text>
+                    </View>
+                  )}
+                  {venue.email && (
+                    <View style={styles.venueAdminRow}>
+                      <Text style={styles.venueAdminLabel}>Email terrain</Text>
+                      <Text style={styles.venueAdminValue}>{venue.email}</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.venueOwnerSection}>
+                  <Text style={styles.venueOwnerTitle}>Gestionnaire</Text>
+                  {!venue.ownerId ? (
+                    <Text style={styles.venueOwnerMissing}>Aucun gestionnaire assigné</Text>
+                  ) : !owner ? (
+                    <Text style={styles.venueOwnerLoading}>Chargement...</Text>
+                  ) : (
+                    <>
+                      <View style={styles.venueAdminRow}>
+                        <Text style={styles.venueAdminLabel}>Nom</Text>
+                        <Text style={styles.venueAdminValue}>{owner.fullName || owner.username || 'N/A'}</Text>
+                      </View>
+                      {owner.email && (
+                        <View style={styles.venueAdminRow}>
+                          <Text style={styles.venueAdminLabel}>Email</Text>
+                          <Text style={[styles.venueAdminValue, { color: Colors.primary.orange, fontWeight: '600' }]}>{owner.email}</Text>
+                        </View>
+                      )}
+                      {owner.phone && (
+                        <View style={styles.venueAdminRow}>
+                          <Text style={styles.venueAdminLabel}>Téléphone</Text>
+                          <Text style={styles.venueAdminValue}>{owner.phone}</Text>
+                        </View>
+                      )}
+                      {owner.username && (
+                        <View style={styles.venueAdminRow}>
+                          <Text style={styles.venueAdminLabel}>Username</Text>
+                          <Text style={styles.venueAdminValue}>@{owner.username}</Text>
+                        </View>
+                      )}
+                    </>
+                  )}
+                </View>
+              </View>
+            );
+          })
+        )}
+      </Card>
+    </>
+  );
 
   const renderQa = () => (
     <>
@@ -1511,7 +1736,7 @@ export default function AdminScreen() {
   );
 
   const [invoiceSearch, setInvoiceSearch] = useState('');
-  const [invoiceFilter, setInvoiceFilter] = useState<'all' | 'booking' | 'tournament_registration'>('all');
+  const [invoiceFilter, setInvoiceFilter] = useState<'all' | 'booking' | 'tournament_registration' | 'ticket_purchase'>('all');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
 
   const invoicesQuery = useQuery({
@@ -1564,14 +1789,14 @@ export default function AdminScreen() {
         </View>
 
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 8 }}>
-          {(['all', 'booking', 'tournament_registration'] as const).map(f => (
+          {(['all', 'booking', 'tournament_registration', 'ticket_purchase'] as const).map(f => (
             <TouchableOpacity
               key={f}
               style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: invoiceFilter === f ? Colors.primary.orange : Colors.border.light, backgroundColor: invoiceFilter === f ? Colors.primary.orange + '15' : 'transparent' }}
               onPress={() => setInvoiceFilter(f)}
             >
               <Text style={{ textAlign: 'center', fontSize: 12, fontWeight: '600', color: invoiceFilter === f ? Colors.primary.orange : Colors.text.muted }}>
-                {f === 'all' ? 'Toutes' : f === 'booking' ? 'Reservations' : 'Tournois'}
+                {f === 'all' ? 'Toutes' : f === 'booking' ? 'Reservations' : f === 'tournament_registration' ? 'Tournois' : 'Billets'}
               </Text>
             </TouchableOpacity>
           ))}
@@ -2063,7 +2288,7 @@ export default function AdminScreen() {
                 <Square size={20} color={Colors.text.muted} />
               }
             </TouchableOpacity>
-            <TouchableOpacity style={styles.userItemContent} onPress={() => router.push(`/user/${u.id}`)}>
+            <TouchableOpacity style={styles.userItemContent} onPress={() => setSelectedUserDetail(u)}>
               <Avatar uri={u.avatar} name={u.fullName} size="medium" />
               <View style={styles.userInfo}>
               <View style={styles.userNameRow}>
@@ -2094,6 +2319,52 @@ export default function AdminScreen() {
   );
 
   const renderTeams = () => (
+    <>
+    {pendingDissolutionRequests.length > 0 && (
+      <Card style={styles.listCard}>
+        <Text style={styles.cardTitle}>Demandes de dissolution ({pendingDissolutionRequests.length})</Text>
+        {pendingDissolutionRequests.map((req: any) => (
+          <View key={req.id} style={{
+            backgroundColor: 'rgba(239,68,68,0.06)',
+            borderRadius: 10,
+            padding: 14,
+            marginBottom: 10,
+            borderWidth: 1,
+            borderColor: 'rgba(239,68,68,0.2)',
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+              <AlertTriangle size={16} color={Colors.status.error} />
+              <Text style={{ flex: 1, color: Colors.text.primary, fontSize: 15, fontWeight: '700', marginLeft: 8 }}>
+                {req.team_name || 'Équipe inconnue'}
+              </Text>
+            </View>
+            <Text style={{ color: Colors.text.secondary, fontSize: 13, marginBottom: 4 }}>
+              Sport: {req.team_sport || '-'}
+            </Text>
+            <Text style={{ color: Colors.text.secondary, fontSize: 13, marginBottom: 4 }}>
+              Raison: {req.reason}
+            </Text>
+            <Text style={{ color: Colors.text.muted, fontSize: 12, marginBottom: 10 }}>
+              Soumise le {formatDate(req.created_at)}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity
+                style={{ flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center' }}
+                onPress={() => handleRejectDissolution(req.id, req.team_name)}
+              >
+                <Text style={{ color: Colors.text.secondary, fontSize: 14, fontWeight: '600' }}>Rejeter</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: Colors.status.error, alignItems: 'center' }}
+                onPress={() => handleApproveDissolution(req.id, req.team_name)}
+              >
+                <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700' }}>Approuver</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))}
+      </Card>
+    )}
     <Card style={styles.listCard}>
       <Text style={styles.cardTitle}>Équipes ({filteredTeams.length})</Text>
       {filteredTeams.map((team) => (
@@ -2120,6 +2391,7 @@ export default function AdminScreen() {
         </View>
       ))}
     </Card>
+    </>
   );
 
   const renderMatches = () => (
@@ -3262,6 +3534,7 @@ export default function AdminScreen() {
             {activeTab === 'payments' && renderPaymentsTab()}
             {activeTab === 'payouts' && renderPayoutsTab()}
             {activeTab === 'invoices' && renderInvoicesTab()}
+            {activeTab === 'venues' && renderVenues()}
             {activeTab === 'activity' && renderActivity()}
             {activeTab === 'qa' && renderQa()}
             {activeTab === 'prod_report' && renderProdReport()}
@@ -3743,6 +4016,233 @@ export default function AdminScreen() {
             </View>
           </KeyboardAvoidingView>
         </Modal>
+
+        {/* Modal de détail utilisateur (monitoring admin) */}
+        <Modal visible={selectedUserDetail !== null} animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>👤 Monitoring utilisateur</Text>
+                <TouchableOpacity onPress={() => setSelectedUserDetail(null)}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              {selectedUserDetail && (() => {
+                const u = selectedUserDetail;
+                const userMatches = matches.filter(m => m.registeredPlayers.includes(u.id) || m.createdBy === u.id);
+                const userTeams = teams.filter(t => t.captainId === u.id || t.members?.some(m => m.userId === u.id) || (u.teams ?? []).includes(t.id));
+                const winRate = u.stats ? Math.round((u.stats.wins / (u.stats.matchesPlayed || 1)) * 100) : 0;
+                return (
+                  <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: '70%' }}>
+                    {/* En-tête profil */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+                      <Avatar uri={u.avatar} name={u.fullName} size="xlarge" />
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <Text style={{ color: Colors.text.primary, fontSize: 18, fontWeight: '700' }}>{u.fullName}</Text>
+                          {u.isVerified && <CheckCircle size={16} color={Colors.primary.blue} />}
+                          {u.isPremium && <Star size={16} color={Colors.primary.orange} />}
+                          {u.isBanned && <Ban size={16} color={Colors.status.error} />}
+                        </View>
+                        <Text style={{ color: Colors.text.muted, fontSize: 14, marginTop: 2 }}>@{u.username}</Text>
+                        <Text style={{ color: Colors.text.muted, fontSize: 12, marginTop: 2 }}>🆔 {u.id}</Text>
+                      </View>
+                    </View>
+
+                    {/* Badges de statut */}
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                      <View style={{ backgroundColor: u.isBanned ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
+                        <Text style={{ color: u.isBanned ? Colors.status.error : Colors.status.success, fontSize: 12, fontWeight: '600' }}>
+                          {u.isBanned ? 'Banni' : 'Actif'}
+                        </Text>
+                      </View>
+                      <View style={{ backgroundColor: u.isVerified ? 'rgba(59,130,246,0.15)' : 'rgba(156,163,175,0.15)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
+                        <Text style={{ color: u.isVerified ? Colors.primary.blue : Colors.text.muted, fontSize: 12, fontWeight: '600' }}>
+                          {u.isVerified ? 'Vérifié' : 'Non vérifié'}
+                        </Text>
+                      </View>
+                      {u.isPremium && (
+                        <View style={{ backgroundColor: 'rgba(245,158,11,0.15)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
+                          <Text style={{ color: '#F59E0B', fontSize: 12, fontWeight: '600' }}>Premium</Text>
+                        </View>
+                      )}
+                      <View style={{ backgroundColor: 'rgba(156,163,175,0.15)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
+                        <Text style={{ color: Colors.text.muted, fontSize: 12, fontWeight: '600' }}>Rôle: {u.role || 'user'}</Text>
+                      </View>
+                    </View>
+
+                    {/* Infos compte */}
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailLabel}>Informations du compte</Text>
+                      <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 14, gap: 6 }}>
+                        <Text style={{ color: Colors.text.primary, fontSize: 14 }}>📧 {u.email || '-'}</Text>
+                        {u.phone && <Text style={{ color: Colors.text.primary, fontSize: 14 }}>📱 {u.phone}</Text>}
+                        <Text style={{ color: Colors.text.primary, fontSize: 14 }}>📍 {u.city || '-'}, {u.country || '-'}</Text>
+                        <Text style={{ color: Colors.text.muted, fontSize: 13 }}>📅 Inscrit le {formatDate(u.createdAt)}</Text>
+                        {u.memberSince && <Text style={{ color: Colors.text.muted, fontSize: 13 }}>📅 Membre depuis {formatDate(u.memberSince)}</Text>}
+                      </View>
+                    </View>
+
+                    {/* Bannissement */}
+                    {u.isBanned && (
+                      <View style={styles.detailSection}>
+                        <Text style={styles.detailLabel}>Bannissement</Text>
+                        <View style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderRadius: 10, padding: 14, gap: 4 }}>
+                          {u.bannedUntil && <Text style={{ color: Colors.status.error, fontSize: 14 }}>⏰ Jusqu'au {formatDate(u.bannedUntil)}</Text>}
+                          {u.banReason && <Text style={{ color: Colors.status.error, fontSize: 14 }}>📝 Motif: {u.banReason}</Text>}
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Statistiques sportives */}
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailLabel}>Statistiques sportives</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', minWidth: 70, flex: 1 }}>
+                          <Text style={{ color: Colors.primary.orange, fontSize: 20, fontWeight: '700' }}>{u.stats?.matchesPlayed ?? 0}</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Matchs</Text>
+                        </View>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', minWidth: 70, flex: 1 }}>
+                          <Text style={{ color: Colors.status.success, fontSize: 20, fontWeight: '700' }}>{winRate}%</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Victoires</Text>
+                        </View>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', minWidth: 70, flex: 1 }}>
+                          <Text style={{ color: '#F59E0B', fontSize: 20, fontWeight: '700' }}>{u.stats?.mvpAwards ?? 0}</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>MVP</Text>
+                        </View>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', minWidth: 70, flex: 1 }}>
+                          <Text style={{ color: Colors.primary.blue, fontSize: 20, fontWeight: '700' }}>{u.stats?.goalsScored ?? 0}</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Buts</Text>
+                        </View>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', minWidth: 70, flex: 1 }}>
+                          <Text style={{ color: Colors.primary.blue, fontSize: 20, fontWeight: '700' }}>{u.stats?.assists ?? 0}</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Passes D</Text>
+                        </View>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', minWidth: 70, flex: 1 }}>
+                          <Text style={{ color: Colors.status.success, fontSize: 20, fontWeight: '700' }}>{u.stats?.fairPlayScore?.toFixed(1) ?? '5.0'}</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Fair-Play</Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Sports pratiqués */}
+                    {(u.sports ?? []).length > 0 && (
+                      <View style={styles.detailSection}>
+                        <Text style={styles.detailLabel}>Sports pratiqués ({u.sports.length})</Text>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 14, gap: 6 }}>
+                          {u.sports.map((s, i) => (
+                            <Text key={i} style={{ color: Colors.text.primary, fontSize: 14 }}>
+                              {sportLabels[s.sport] || s.sport} — {s.level} {s.position ? `(${s.position})` : ''} — {s.yearsPlaying} ans
+                            </Text>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Compteur social et financier */}
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailLabel}>Social & Financier</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', minWidth: 80, flex: 1 }}>
+                          <Text style={{ color: Colors.text.primary, fontSize: 18, fontWeight: '700' }}>{u.followers}</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Abonnés</Text>
+                        </View>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', minWidth: 80, flex: 1 }}>
+                          <Text style={{ color: Colors.text.primary, fontSize: 18, fontWeight: '700' }}>{u.following}</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Abonnements</Text>
+                        </View>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', minWidth: 80, flex: 1 }}>
+                          <Text style={{ color: Colors.text.primary, fontSize: 18, fontWeight: '700' }}>{userTeams.length}</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Équipes</Text>
+                        </View>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', minWidth: 80, flex: 1 }}>
+                          <Text style={{ color: Colors.text.primary, fontSize: 18, fontWeight: '700' }}>{userMatches.length}</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Matchs</Text>
+                        </View>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', minWidth: 80, flex: 1 }}>
+                          <Text style={{ color: Colors.status.success, fontSize: 14, fontWeight: '700' }}>{u.walletBalance?.toLocaleString() ?? 0}</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Solde (F)</Text>
+                        </View>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', minWidth: 80, flex: 1 }}>
+                          <Text style={{ color: Colors.text.primary, fontSize: 18, fontWeight: '700' }}>{u.reputation}</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Réputation</Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Compteurs QR / No-show */}
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailLabel}>Activité terrain</Text>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', flex: 1 }}>
+                          <Text style={{ color: Colors.status.success, fontSize: 18, fontWeight: '700' }}>{u.completedBookingsCount ?? 0}</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>Réservations terminées</Text>
+                        </View>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 10, alignItems: 'center', flex: 1 }}>
+                          <Text style={{ color: Colors.status.error, fontSize: 18, fontWeight: '700' }}>{u.noShowCount ?? 0}</Text>
+                          <Text style={{ color: Colors.text.muted, fontSize: 11 }}>No-shows</Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Équipes */}
+                    {userTeams.length > 0 && (
+                      <View style={styles.detailSection}>
+                        <Text style={styles.detailLabel}>Équipes ({userTeams.length})</Text>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 14, gap: 6 }}>
+                          {userTeams.slice(0, 5).map(t => (
+                            <Text key={t.id} style={{ color: Colors.text.primary, fontSize: 14 }}>
+                              🏆 {t.name} — {t.sport} ({t.format}) {t.captainId === u.id ? '👑 Capitaine' : ''}
+                            </Text>
+                          ))}
+                          {userTeams.length > 5 && <Text style={{ color: Colors.text.muted, fontSize: 13 }}>+{userTeams.length - 5} autres</Text>}
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Matchs récents */}
+                    {userMatches.length > 0 && (
+                      <View style={styles.detailSection}>
+                        <Text style={styles.detailLabel}>Matchs ({userMatches.length})</Text>
+                        <View style={{ backgroundColor: Colors.background.card, borderRadius: 10, padding: 14, gap: 6 }}>
+                          {userMatches.slice(0, 5).map(m => (
+                            <Text key={m.id} style={{ color: Colors.text.primary, fontSize: 14 }}>
+                              ⚔️ {m.sport} — {formatDate(m.dateTime)} {m.venue?.name ? `@ ${m.venue.name}` : ''}
+                            </Text>
+                          ))}
+                          {userMatches.length > 5 && <Text style={{ color: Colors.text.muted, fontSize: 13 }}>+{userMatches.length - 5} autres</Text>}
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Bio */}
+                    {u.bio && (
+                      <View style={styles.detailSection}>
+                        <Text style={styles.detailLabel}>Bio</Text>
+                        <Text style={styles.detailDescription}>{u.bio}</Text>
+                      </View>
+                    )}
+
+                    {/* Actions admin */}
+                    <View style={styles.detailActions}>
+                      {u.isBanned ? (
+                        <Button title="Débannir" onPress={() => { handleUnbanUser(u.id, u.fullName); }} variant="outline" style={[styles.detailActionBtn, { borderColor: Colors.status.success }]} textStyle={{ color: Colors.status.success }} />
+                      ) : (
+                        <Button title="Bannir" onPress={() => { setSelectedUserDetail(null); handleBanUser(u.id, u.fullName); }} variant="outline" style={[styles.detailActionBtn, { borderColor: Colors.status.error }]} textStyle={{ color: Colors.status.error }} />
+                      )}
+                      {u.isVerified ? (
+                        <Button title="Retirer vérification" onPress={() => { handleUnverifyUser(u.id, u.fullName); }} variant="outline" style={styles.detailActionBtn} />
+                      ) : (
+                        <Button title="Vérifier" onPress={() => { handleVerifyUser(u.id, u.fullName); }} variant="primary" style={styles.detailActionBtn} />
+                      )}
+                      <Button title="Fermer" onPress={() => setSelectedUserDetail(null)} variant="outline" style={styles.detailActionBtn} />
+                    </View>
+                  </ScrollView>
+                );
+              })()}
+            </View>
+          </View>
+        </Modal>
       </View>
     </>
   );
@@ -4034,4 +4534,18 @@ const styles = StyleSheet.create({
   qaEventError: { color: Colors.status.error, fontSize: 12, marginTop: 2 },
   qaLogItem: { borderTopWidth: 1, borderTopColor: Colors.border.light, paddingTop: 10, marginTop: 10 },
   qaLogTitle: { color: Colors.text.primary, fontSize: 13, fontWeight: '600' as const },
+  searchRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.card, borderRadius: 12, paddingHorizontal: 16, height: 48, gap: 12 },
+  venueAdminCard: { backgroundColor: Colors.background.cardLight, borderRadius: 14, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.border.light },
+  venueAdminHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  venueAdminName: { color: Colors.text.primary, fontSize: 16, fontWeight: '700' as const },
+  venueAdminLocation: { color: Colors.text.muted, fontSize: 13, marginTop: 2 },
+  venueAdminStatus: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  venueAdminDetails: { backgroundColor: Colors.background.dark, borderRadius: 10, padding: 12, marginBottom: 12, gap: 8 },
+  venueAdminRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  venueAdminLabel: { color: Colors.text.muted, fontSize: 12, fontWeight: '500' as const },
+  venueAdminValue: { color: Colors.text.primary, fontSize: 13, fontWeight: '500' as const },
+  venueOwnerSection: { backgroundColor: 'rgba(255,165,0,0.06)', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: 'rgba(255,165,0,0.15)' },
+  venueOwnerTitle: { color: Colors.primary.orange, fontSize: 12, fontWeight: '700' as const, marginBottom: 8, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  venueOwnerMissing: { color: Colors.text.muted, fontSize: 13, fontStyle: 'italic' as const },
+  venueOwnerLoading: { color: Colors.text.muted, fontSize: 13 },
 });

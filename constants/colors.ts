@@ -8,15 +8,15 @@ export const Colors = {
     orangeDark: '#E65100',
   },
   background: {
-    dark: '#0A0E1A',
-    card: '#141B2D',
-    cardLight: '#1E2A45',
+    dark: '#080B14',
+    card: '#111726',
+    cardLight: '#1A2238',
     elevated: '#1A2340',
   },
   text: {
     primary: '#FFFFFF',
-    secondary: '#A0AEC0',
-    muted: '#64748B',
+    secondary: '#C4D0E0',
+    muted: '#8B98AC',
     accent: '#FF9100',
   },
   status: {
@@ -34,9 +34,54 @@ export const Colors = {
     cardEnd: 'rgba(20, 27, 45, 0.9)',
   },
   border: {
-    light: 'rgba(255, 255, 255, 0.1)',
-    medium: 'rgba(255, 255, 255, 0.2)',
+    light: 'rgba(255, 255, 255, 0.08)',
+    medium: 'rgba(255, 255, 255, 0.16)',
   },
 };
+
+/* ════ Design System — Spacing & Radius ════ */
+export const SPACING = {
+  xs: 4,
+  sm: 8,
+  md: 16,
+  lg: 24,
+  xl: 32,
+  xxl: 48,
+} as const;
+
+export const RADIUS = {
+  sm: 12,
+  md: 16,
+  lg: 20,
+  xl: 24,
+  pill: 999,
+} as const;
+
+export const CARD_RADIUS = 24;
+export const BUTTON_RADIUS = 18;
+export const TAG_RADIUS = 15;
+export const TAG_HEIGHT = 30;
+export const BUTTON_HEIGHT = 56;
+export const CARD_INNER_PAD = 20;
+export const OUTER_PAD = 24;
+export const SECTION_GAP = 32;
+export const CARD_GAP = 16;
+
+/* Soft glow shadow — never black */
+export const softShadow = {
+  shadowColor: '#FF6B00',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.06,
+  shadowRadius: 12,
+  elevation: 1,
+} as const;
+
+export const cardGlow = {
+  shadowColor: '#FFFFFF',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.04,
+  shadowRadius: 10,
+  elevation: 1,
+} as const;
 
 export default Colors;

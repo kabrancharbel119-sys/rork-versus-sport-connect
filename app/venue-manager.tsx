@@ -67,9 +67,11 @@ export default function VenueManagerScreen() {
   const updateBookingMutation = useMutation({
     mutationFn: ({ bookingId, status }: { bookingId: string; status: BookingStatus }) =>
       venuesApi.updateBookingStatus(bookingId, status),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['ownerBookings'] });
       queryClient.invalidateQueries({ queryKey: ['userBookings'] });
+      const msg = variables.status === 'confirmed' ? 'Réservation approuvée.' : variables.status === 'rejected' ? 'Réservation refusée.' : 'Réservation mise à jour.';
+      Alert.alert('Succès', msg);
     },
     onError: (error: any) => {
       Alert.alert('Erreur', error?.message || 'Impossible de mettre à jour la réservation.');
@@ -81,6 +83,10 @@ export default function VenueManagerScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myVenues'] });
       queryClient.invalidateQueries({ queryKey: ['ownerBookings'] });
+      Alert.alert('Succès', 'Terrain supprimé.');
+    },
+    onError: (error: any) => {
+      Alert.alert('Erreur', error?.message || 'Impossible de supprimer le terrain.');
     },
   });
 

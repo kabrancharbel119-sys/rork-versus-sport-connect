@@ -28,8 +28,10 @@ interface CreateTournamentData {
   createdBy: string;
   sponsorName?: string;
   sponsorLogo?: string;
+  bannerImage?: string;
   selectedSlots?: Record<string, number[]>;
   entryPaymentMode?: VenuePaymentMode;
+  hasTickets?: boolean;
 }
 
 export const [TournamentsProvider, useTournaments] = createContextHook(() => {
@@ -112,8 +114,10 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
           endDate: data.endDate.toISOString(),
           sponsorName: data.sponsorName,
           sponsorLogo: data.sponsorLogo,
+          bannerImage: data.bannerImage,
           selectedSlots: data.selectedSlots,
           entryPaymentMode: data.entryPaymentMode,
+          hasTickets: data.hasTickets,
         });
         await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
         return result;
@@ -141,7 +145,9 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
           createdBy: data.createdBy,
           sponsorName: data.sponsorName,
           sponsorLogo: data.sponsorLogo,
+          bannerImage: data.bannerImage,
           createdAt: new Date(),
+          hasTickets: data.hasTickets,
         };
         await saveTournaments([...current, newTournament]);
         return newTournament;
@@ -228,7 +234,7 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
   });
 
   const updateTournamentMutation = useMutation({
-    mutationFn: async ({ tournamentId, updates }: { tournamentId: string; updates: Partial<Pick<Tournament, 'name' | 'description' | 'startDate' | 'endDate' | 'entryFee' | 'prizePool' | 'prizes' | 'status' | 'winnerId' | 'managers'>> }) => {
+    mutationFn: async ({ tournamentId, updates }: { tournamentId: string; updates: Partial<Pick<Tournament, 'name' | 'description' | 'startDate' | 'endDate' | 'entryFee' | 'prizePool' | 'prizes' | 'status' | 'winnerId' | 'managers' | 'sponsorLogo' | 'bannerImage'>> }) => {
       console.log('[Tournaments] Updating tournament:', tournamentId);
       const current = (queryClient.getQueryData(['tournaments']) as Tournament[] | undefined) ?? [];
       const tournamentIndex = current.findIndex(t => t.id === tournamentId);
@@ -246,6 +252,8 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
           status: updates.status,
           winnerId: updates.winnerId,
           managers: updates.managers,
+          sponsorLogo: updates.sponsorLogo,
+          bannerImage: updates.bannerImage,
         });
         await queryClient.invalidateQueries({ queryKey: ['tournaments'] });
         return next;

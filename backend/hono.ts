@@ -29,7 +29,7 @@ app.use(
     endpoint: "/api/trpc",
     router: appRouter,
     createContext,
-  }),
+  })
 );
 
 app.get("/", (c) => {

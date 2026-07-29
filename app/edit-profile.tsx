@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Modal } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Modal, Image } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X, Camera, User, Mail, Phone, MapPin, FileText, Plus, Trash2, Check } from 'lucide-react-native';
+import { X, Camera, User, Mail, Phone, MapPin, FileText, Plus, Trash2, Check, ImagePlus } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar } from '@/components/Avatar';
@@ -17,7 +17,7 @@ import { Sport, SkillLevel, UserSport } from '@/types';
 
 export default function EditProfileScreen() {
   const router = useRouter();
-  const { user, updateProfile, isUpdateLoading, pickAvatar, isPickingAvatar, addSport, removeSport, refreshUser } = useAuth();
+  const { user, updateProfile, isUpdateLoading, pickAvatar, isPickingAvatar, pickBanner, isPickingBanner, addSport, removeSport, refreshUser } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
   const [formData, setFormData] = useState({ fullName: '', username: '', phone: '', city: '', country: '', latitude: undefined as number | undefined, longitude: undefined as number | undefined, bio: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -86,6 +86,11 @@ export default function EditProfileScreen() {
   const handlePickAvatar = async () => {
     try { await pickAvatar(); Alert.alert('Succès', 'Photo mise à jour'); } 
     catch (err: any) { if (err.message !== 'Annulé') Alert.alert('Erreur', err.message || 'Impossible de changer la photo'); }
+  };
+
+  const handlePickBanner = async () => {
+    try { await pickBanner(); Alert.alert('Succès', 'Bannière mise à jour'); }
+    catch (err: any) { if (err.message !== 'Annulé') Alert.alert('Erreur', err.message || 'Impossible de changer la bannière'); }
   };
 
   const alreadyHasSport = (s: Sport) => user?.sports?.some(us => us.sport === s) ?? false;
@@ -203,6 +208,22 @@ export default function EditProfileScreen() {
           </View>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 30}>
             <ScrollView ref={scrollViewRef} testID="edit-profile-scroll" style={styles.scrollView} contentContainerStyle={[styles.scrollContent, { paddingBottom: 320 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+              <View style={styles.bannerSection}>
+                <View style={styles.bannerContainer}>
+                  {user?.bannerImage ? (
+                    <Image source={{ uri: user.bannerImage }} style={styles.bannerImage} />
+                  ) : (
+                    <LinearGradient colors={['#1E3A8A', '#0F1F3F']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.bannerPlaceholder} />
+                  )}
+                  <TouchableOpacity style={styles.bannerCameraButton} onPress={handlePickBanner} disabled={isPickingBanner}>
+                    <ImagePlus size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity onPress={handlePickBanner} disabled={isPickingBanner}>
+                  <Text style={styles.changePhotoText}>{isPickingBanner ? 'Chargement...' : 'Changer la bannière'}</Text>
+                </TouchableOpacity>
+              </View>
+
               <View style={styles.avatarSection}>
                 <View style={styles.avatarContainer}>
                   <Avatar uri={user?.avatar} name={user?.fullName} size="xlarge" />
@@ -406,6 +427,11 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
   avatarSection: { alignItems: 'center', marginBottom: 32 },
+  bannerSection: { marginBottom: 24, alignItems: 'center' },
+  bannerContainer: { position: 'relative', width: '100%', height: 140, borderRadius: 16, overflow: 'hidden' },
+  bannerImage: { width: '100%', height: '100%' },
+  bannerPlaceholder: { width: '100%', height: '100%' },
+  bannerCameraButton: { position: 'absolute', bottom: 8, right: 8, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
   avatarContainer: { position: 'relative' },
   cameraButton: { position: 'absolute', bottom: 0, right: 0, width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary.blue, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: Colors.background.dark },
   changePhotoText: { color: Colors.primary.blue, fontSize: 14, fontWeight: '500' as const, marginTop: 12 },

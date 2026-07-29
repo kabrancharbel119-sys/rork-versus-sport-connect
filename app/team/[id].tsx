@@ -24,6 +24,9 @@ import { StatCard } from '@/components/StatCard';
 import { sportLabels, levelLabels, ambianceLabels, TEAM_ROLES, DEFAULT_POSITIONS } from '@/mocks/data';
 import { SkillLevel, PlayStyle } from '@/types';
 import type { Team, User } from '@/types';
+import { suggestionsApi, type PlayerSuggestion } from '@/lib/api/suggestions';
+import { notificationsApi } from '@/lib/api/notifications';
+import { useQuery } from '@tanstack/react-query';
 
 const pickImageFromLibrary = async (): Promise<string | null> => {
   const result = await ImagePicker.launchImageLibraryAsync({
@@ -75,11 +78,15 @@ export default function TeamDetailScreen() {
   const [showAddRoleModal, setShowAddRoleModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showSuggestedRecruits, setShowSuggestedRecruits] = useState(false);
   const [memberUsers, setMemberUsers] = useState<Record<string, User>>({});
   const hydratedTeamMembersRef = useRef<Record<string, boolean>>({});
   const [selectedMember, setSelectedMember] = useState<string | null>(null);
   const [newRoleName, setNewRoleName] = useState('');
   const [showPendingAlert, setShowPendingAlert] = useState(false);
+  const [showDissolveModal, setShowDissolveModal] = useState(false);
+  const [dissolveReason, setDissolveReason] = useState('');
+  const [dissolving, setDissolving] = useState(false);
 
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -162,6 +169,49 @@ export default function TeamDetailScreen() {
   const positions = team ? (DEFAULT_POSITIONS[team.sport] || DEFAULT_POSITIONS.default) : DEFAULT_POSITIONS.default;
   const resolveMemberUser = (memberUserId: string) => memberUsers[memberUserId] || users.find((u) => u.id === memberUserId);
 
+  const excludeIds = team ? [
+    ...team.members.map(m => m.userId),
+    ...team.joinRequests.filter(r => r.status === 'pending').map(r => r.userId),
+    ...(user?.id ? [user.id] : []),
+  ] : [];
+
+  const recruitSuggestions = useQuery<PlayerSuggestion[]>({
+    queryKey: ['recruitSuggestions', team?.id],
+    queryFn: () => suggestionsApi.suggestPlayersForTeam(team!.id, {
+      sport: team!.sport,
+      level: team!.level,
+      city: team!.city,
+      excludeUserIds: excludeIds,
+      limit: 5,
+    }),
+    enabled: !!team && isCaptain && team.isRecruiting && team.members.length < team.maxMembers,
+    staleTime: 60_000,
+  });
+
+  const handleInvitePlayer = async (playerId: string, playerName: string) => {
+    if (!team || !user) return;
+    Alert.alert(
+      'Inviter à rejoindre',
+      `Envoyer une invitation à ${playerName} pour rejoindre ${team.name} ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Inviter', onPress: async () => {
+          try {
+            await notificationsApi.send(playerId, {
+              type: 'team',
+              title: 'Invitation à rejoindre une équipe',
+              message: `${user.fullName || user.username} vous invite à rejoindre l'équipe "${team.name}".`,
+              data: { route: `/team/${team.id}` },
+            });
+            Alert.alert('Invitation envoyée', `${playerName} a été notifié.`);
+          } catch (e: any) {
+            Alert.alert('Erreur', e?.message || 'Impossible d\'envoyer l\'invitation.');
+          }
+        }},
+      ]
+    );
+  };
+
   useEffect(() => {
     if (team) {
       console.log('[Team] Team object loaded:', {
@@ -220,8 +270,10 @@ export default function TeamDetailScreen() {
     loadMissingUsers();
   }, [team?.id, users, memberUsers, addUser]);
 
+  // Initialize edit fields only when the settings modal opens,
+  // not on every team change (which would overwrite user input)
   useEffect(() => {
-    if (team) {
+    if (team && showSettingsModal) {
       setEditName(team.name);
       setEditDescription(team.description || '');
       setEditLogo(team.logo || '');
@@ -230,7 +282,7 @@ export default function TeamDetailScreen() {
       setEditLevel(team.level);
       setEditAmbiance(team.ambiance);
     }
-  }, [team]);
+  }, [showSettingsModal]);
 
   useEffect(() => {
     if (team && canHandleRequests && pendingRequests.length > 0 && !showPendingAlert) {
@@ -418,37 +470,104 @@ export default function TeamDetailScreen() {
   };
 
   const handleDeleteTeam = () => {
-    Alert.alert(
-      t('teamDetail.dissolveTeamTitle'),
-      t('teamDetail.dissolveTeamMessage', { team: team.name }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('teamDetail.dissolveAction'),
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const memberIds = team.members.map((m) => m.userId).filter((id) => id !== user!.id);
-              await deleteTeam({ teamId: team.id, userId: user!.id });
-              for (const uid of memberIds) {
-                await addNotification({
-                  userId: uid,
-                  type: 'team',
-                  title: 'Équipe dissoute',
-                  message: `L'équipe ${team.name} a été dissoute.`,
-                  data: { route: '/(tabs)/teams' },
-                });
-              }
-              setShowSettingsModal(false);
-              safeBack(router, '/(tabs)/teams');
-              Alert.alert(t('common.success'), t('teamDetail.dissolvedSuccess'));
-            } catch (e: any) {
-              Alert.alert(t('common.error'), e.message);
-            }
-          },
-        },
-      ]
-    );
+    // Close settings modal first — Alert.alert inside a Modal can fail on Android
+    setShowSettingsModal(false);
+
+    const isCreator = team.creatorId === user?.id;
+    const isAdminUser = user?.role === 'admin';
+
+    // Creator or admin can dissolve directly
+    if (isCreator || isAdminUser) {
+      setTimeout(() => {
+        Alert.alert(
+          isCreator ? 'Dissoudre l\'équipe' : 'Supprimer l\'équipe (Admin)',
+          isCreator
+            ? `Êtes-vous sûr de vouloir dissoudre "${team.name}" ? Cette action est irréversible.`
+            : `Êtes-vous sûr de vouloir supprimer l'équipe "${team.name}" en tant qu'administrateur ?`,
+          [
+            { text: 'Annuler', style: 'cancel' },
+            {
+              text: 'Dissoudre',
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  setDissolving(true);
+                  const memberIds = team.members.map((m) => m.userId).filter((id) => id !== user!.id);
+                  await deleteTeam({ teamId: team.id, userId: user!.id, asAdmin: isAdminUser });
+                  for (const uid of memberIds) {
+                    await addNotification({
+                      userId: uid,
+                      type: 'team',
+                      title: 'Équipe dissoute',
+                      message: `L'équipe ${team.name} a été dissoute.`,
+                      data: { route: '/(tabs)/teams' },
+                    });
+                  }
+                  safeBack(router, '/(tabs)/teams');
+                  Alert.alert('Succès', 'L\'équipe a été dissoute avec succès.');
+                } catch (e: any) {
+                  Alert.alert('Erreur', e.message);
+                } finally {
+                  setDissolving(false);
+                }
+              },
+            },
+          ]
+        );
+      }, 100);
+      return;
+    }
+
+    // Non-creator captain must submit a dissolution request
+    if (team.captainId === user?.id) {
+      setTimeout(() => {
+        Alert.alert(
+          'Approbation administrateur requise',
+          `En tant que capitaine non-créateur de "${team.name}", vous ne pouvez pas dissoudre l'équipe directement.\n\nSouhaitez-vous soumettre une demande de dissolution qui sera examinée par un administrateur ?`,
+          [
+            { text: 'Annuler', style: 'cancel' },
+            {
+              text: 'Soumettre une demande',
+              onPress: () => {
+                setDissolveReason('');
+                setShowDissolveModal(true);
+              },
+            },
+          ]
+        );
+      }, 100);
+      return;
+    }
+
+    // Not captain or creator
+    setTimeout(() => {
+      Alert.alert(
+        'Action non autorisée',
+        'Seul le créateur de l\'équipe ou un administrateur peut dissoudre l\'équipe.',
+        [{ text: 'OK' }]
+      );
+    }, 100);
+  };
+
+  const handleSubmitDissolutionRequest = async () => {
+    if (!dissolveReason.trim()) {
+      Alert.alert('Raison requise', 'Veuillez expliquer pourquoi vous souhaitez dissoudre cette équipe.');
+      return;
+    }
+    try {
+      setDissolving(true);
+      await teamsApi.createDissolutionRequest(team.id, user!.id, dissolveReason.trim());
+      setShowDissolveModal(false);
+      setDissolveReason('');
+      Alert.alert(
+        'Demande envoyée',
+        'Votre demande de dissolution a été envoyée aux administrateurs. Vous serez notifié de la décision.'
+      );
+    } catch (e: any) {
+      Alert.alert('Erreur', e.message);
+    } finally {
+      setDissolving(false);
+    }
   };
 
   const handleTransferCaptaincy = async (newCaptainId: string) => {
@@ -597,6 +716,40 @@ export default function TeamDetailScreen() {
                 </Card>
               ))}
             </View>
+
+            {/* ════ SUGGESTED RECRUITS — for captains ════ */}
+            {isCaptain && team.isRecruiting && team.members.length < team.maxMembers && (recruitSuggestions.data ?? []).length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Joueurs suggérés</Text>
+                  <TouchableOpacity onPress={() => setShowSuggestedRecruits(!showSuggestedRecruits)}>
+                    <Text style={styles.toggleText}>{showSuggestedRecruits ? 'Masquer' : 'Voir'}</Text>
+                  </TouchableOpacity>
+                </View>
+                {showSuggestedRecruits && (
+                  <View>
+                    {(recruitSuggestions.data ?? []).map((p) => (
+                      <Card key={p.id} style={styles.memberCard}>
+                        <View style={styles.memberRow}>
+                          <Avatar uri={p.avatar} name={p.fullName} size="medium" />
+                          <View style={styles.memberInfo}>
+                            <Text style={styles.memberName}>{p.fullName}</Text>
+                            <Text style={styles.memberPosition}>{p.matchReasons.join(' • ')}</Text>
+                          </View>
+                          <TouchableOpacity
+                            style={styles.inviteBtn}
+                            onPress={() => handleInvitePlayer(p.id, p.fullName)}
+                          >
+                            <UserPlus size={16} color="#FFFFFF" />
+                            <Text style={styles.inviteBtnText}>Inviter</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </Card>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
 
             {(team.fans ?? []).length > 0 && (
               <View style={styles.section}>
@@ -885,7 +1038,11 @@ export default function TeamDetailScreen() {
                     <Trash2 size={20} color={Colors.status.error} />
                     <View style={styles.advancedRowText}>
                       <Text style={[styles.advancedRowTitle, { color: Colors.status.error }]}>Dissoudre l&apos;équipe</Text>
-                      <Text style={styles.advancedRowDesc}>Cette action est irréversible</Text>
+                      <Text style={styles.advancedRowDesc}>
+                        {team.creatorId === user?.id || user?.role === 'admin'
+                          ? 'Cette action est irréversible'
+                          : 'Demande à approuver par un administrateur'}
+                      </Text>
                     </View>
                     <AlertTriangle size={20} color={Colors.status.error} />
                   </TouchableOpacity>
@@ -941,6 +1098,45 @@ export default function TeamDetailScreen() {
             </View>
           </View>
         </Modal>
+
+        {/* Dissolution request modal */}
+        <Modal visible={showDissolveModal} animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Demande de dissolution</Text>
+                <TouchableOpacity onPress={() => setShowDissolveModal(false)} disabled={dissolving}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              <View style={{ padding: 16 }}>
+                <Text style={{ color: Colors.text.secondary, fontSize: 14, marginBottom: 12 }}>
+                  Vous n'êtes pas le créateur de cette équipe. Votre demande sera examinée par un administrateur.
+                </Text>
+                <Text style={{ color: Colors.text.primary, fontSize: 14, fontWeight: '600', marginBottom: 8 }}>
+                  Raison de la dissolution
+                </Text>
+                <TextInput
+                  style={[styles.roleInput, { minHeight: 80, textAlignVertical: 'top' }]}
+                  placeholder="Expliquez pourquoi vous souhaitez dissoudre cette équipe..."
+                  placeholderTextColor={Colors.text.muted}
+                  value={dissolveReason}
+                  onChangeText={setDissolveReason}
+                  multiline
+                  numberOfLines={4}
+                  editable={!dissolving}
+                />
+                <Button
+                  title="Soumettre la demande"
+                  onPress={handleSubmitDissolutionRequest}
+                  variant="primary"
+                  loading={dissolving}
+                  disabled={!dissolveReason.trim()}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </>
   );
@@ -993,6 +1189,9 @@ const styles = StyleSheet.create({
   organizerBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.primary.orange + '25', alignItems: 'center', justifyContent: 'center' },
   addRoleBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.primary.blue, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
   addRoleBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '500' as const },
+  toggleText: { color: Colors.primary.blue, fontSize: 13, fontWeight: '500' as const },
+  inviteBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.primary.orange, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16 },
+  inviteBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' as const },
   memberCard: { marginBottom: 8 },
   memberRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   memberInfo: { flex: 1 },

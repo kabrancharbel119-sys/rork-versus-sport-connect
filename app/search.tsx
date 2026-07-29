@@ -69,8 +69,14 @@ export default function SearchScreen() {
     if (filters.level) result = result.filter(t => t.level === filters.level);
     if (filters.city) result = result.filter(t => t.city?.toLowerCase().includes(filters.city.toLowerCase()));
     if (filters.recruiting) result = result.filter(t => t.isRecruiting && t.members.length < t.maxMembers);
+    if (location && filters.maxDistance < 100) {
+      result = result.filter(t => {
+        if (!t.location) return true;
+        return getDistance(location.latitude, location.longitude, t.location.latitude, t.location.longitude) <= filters.maxDistance;
+      });
+    }
     return result.slice(0, 50);
-  }, [teams, query, filters]);
+  }, [teams, query, filters, location, getDistance]);
 
   const filteredMatches = useMemo(() => {
     let result = matches.filter(m => m.status === 'open' || m.status === 'confirmed');

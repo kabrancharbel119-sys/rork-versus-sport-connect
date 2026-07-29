@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, TextInput } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X } from 'lucide-react-native';
+import { X, Plus, Image as ImageIcon } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
+import { Avatar } from '@/components/Avatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
 import { tournamentsApi } from '@/lib/api/tournaments';
+import { uploadTournamentImage } from '@/lib/uploadImage';
 import type { Tournament } from '@/types';
 
 export default function EditTournamentScreen() {
@@ -29,6 +32,7 @@ export default function EditTournamentScreen() {
   const [status, setStatus] = useState<Tournament['status']>('registration');
   const [startDateStr, setStartDateStr] = useState('');
   const [endDateStr, setEndDateStr] = useState('');
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
 
   const tournament = fromContext ?? fetched;
@@ -47,6 +51,7 @@ export default function EditTournamentScreen() {
           setStatus(t.status);
           setStartDateStr(t.startDate ? new Date(t.startDate).toISOString().split('T')[0] : '');
           setEndDateStr(t.endDate ? new Date(t.endDate).toISOString().split('T')[0] : '');
+          setLogoUrl(t.sponsorLogo ?? null);
         })
         .catch(() => setFetched(null))
         .finally(() => setLoading(false));
@@ -58,6 +63,7 @@ export default function EditTournamentScreen() {
       setStatus(fromContext.status);
       setStartDateStr(fromContext.startDate ? new Date(fromContext.startDate).toISOString().split('T')[0] : '');
       setEndDateStr(fromContext.endDate ? new Date(fromContext.endDate).toISOString().split('T')[0] : '');
+      setLogoUrl(fromContext.sponsorLogo ?? null);
     }
   }, [id, fromContext]);
 
@@ -84,6 +90,17 @@ export default function EditTournamentScreen() {
       Alert.alert('Erreur', 'La date de fin doit être après la date de début.');
       return;
     }
+    let finalLogoUrl = logoUrl;
+    const shouldUploadLogo = !!finalLogoUrl && !finalLogoUrl.startsWith('http://') && !finalLogoUrl.startsWith('https://');
+    if (shouldUploadLogo && finalLogoUrl) {
+      try {
+        finalLogoUrl = await uploadTournamentImage(finalLogoUrl, tournament.id);
+      } catch {
+        Alert.alert('Erreur', 'Impossible d\'uploader le logo. Vérifiez votre connexion.');
+        setSaving(false);
+        return;
+      }
+    }
     setSaving(true);
     try {
       await updateTournament({
@@ -96,6 +113,7 @@ export default function EditTournamentScreen() {
           status,
           ...(startDate && !isNaN(startDate.getTime()) && { startDate }),
           ...(endDate && !isNaN(endDate.getTime()) && { endDate }),
+          sponsorLogo: finalLogoUrl || undefined,
         },
       });
       await refetchTournaments();
@@ -178,6 +196,36 @@ export default function EditTournamentScreen() {
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
             >
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Logo du tournoi (optionnel)</Text>
+                <TouchableOpacity
+                  style={styles.logoSelector}
+                  onPress={async () => {
+                    const result = await ImagePicker.launchImageLibraryAsync({
+                      mediaTypes: ['images'],
+                      allowsEditing: true,
+                      aspect: [1, 1],
+                      quality: 0.8,
+                    });
+                    if (!result.canceled && result.assets[0]) {
+                      setLogoUrl(result.assets[0].uri);
+                    }
+                  }}
+                  activeOpacity={0.8}
+                >
+                  {logoUrl ? (
+                    <Avatar uri={logoUrl} name={name || 'Tournoi'} size="large" />
+                  ) : (
+                    <View style={styles.logoPlaceholder}>
+                      <ImageIcon size={28} color={Colors.text.muted} />
+                      <Text style={styles.logoPlaceholderText}>Ajouter</Text>
+                    </View>
+                  )}
+                  <View style={styles.logoEditBadge}>
+                    <Plus size={14} color="#FFF" />
+                  </View>
+                </TouchableOpacity>
+              </View>
               <Input label="Nom du tournoi" value={name} onChangeText={setName} placeholder="Nom" maxLength={50} />
               <Input
                 scrollViewRef={scrollViewRef}
@@ -270,4 +318,38 @@ const styles = StyleSheet.create({
   statusChipTextActive: { color: '#FFFFFF' },
   dateInput: { backgroundColor: Colors.background.card, borderRadius: 10, padding: 14, color: Colors.text.primary, fontSize: 15, borderWidth: 1, borderColor: Colors.border.light },
   saveBtn: { marginTop: 24 },
+  logoSelector: {
+    alignSelf: 'flex-start',
+    position: 'relative',
+    marginTop: 8,
+  },
+  logoPlaceholder: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: Colors.background.cardLight,
+    borderWidth: 1,
+    borderColor: Colors.border.light + '60',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  logoPlaceholderText: {
+    color: Colors.text.muted,
+    fontSize: 11,
+    fontWeight: '500' as const,
+  },
+  logoEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.primary.orange,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.background.dark,
+  },
 });

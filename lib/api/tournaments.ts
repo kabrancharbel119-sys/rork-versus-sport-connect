@@ -27,11 +27,13 @@ export interface TournamentRow {
   winner_id: string | null;
   sponsor_name: string | null;
   sponsor_logo: string | null;
+  banner_image: string | null;
   managers: string[] | null;
   created_by: string | null;
   created_at: string;
   is_demo?: boolean;
   entry_payment_mode?: string | null;
+  has_tickets?: boolean | null;
 }
 
 const defaultVenue: Venue = {
@@ -83,11 +85,13 @@ export function mapTournamentRowToTournament(row: TournamentRow): Tournament {
     winnerId: row.winner_id ?? undefined,
     sponsorName: row.sponsor_name ?? undefined,
     sponsorLogo: row.sponsor_logo ?? undefined,
+    bannerImage: row.banner_image ?? undefined,
     managers: (row.managers as string[]) || [],
     createdBy: row.created_by ?? '',
     createdAt: new Date(row.created_at),
     isDemo: row.is_demo ?? false,
     entryPaymentMode: (row.entry_payment_mode as VenuePaymentMode | null) ?? 'in_app_immediate',
+    hasTickets: row.has_tickets ?? false,
   };
 }
 
@@ -156,8 +160,10 @@ export const tournamentsApi = {
     endDate: string;
     sponsorName?: string;
     sponsorLogo?: string;
+    bannerImage?: string;
     selectedSlots?: Record<string, number[]>;
     entryPaymentMode?: VenuePaymentMode;
+    hasTickets?: boolean;
   }) {
     console.log('[TournamentsAPI] Creating tournament:', data.name);
 
@@ -230,7 +236,9 @@ export const tournamentsApi = {
         created_by: userId,
         sponsor_name: data.sponsorName ?? null,
         sponsor_logo: data.sponsorLogo ?? null,
+        banner_image: data.bannerImage ?? null,
         entry_payment_mode: data.entryPaymentMode ?? 'in_app_immediate',
+        ...(data.hasTickets ? { has_tickets: true } : {}),
       } as any)
       .select()
       .single() as any);
@@ -239,7 +247,6 @@ export const tournamentsApi = {
     let createdTournament = mapTournamentRowToTournament(row as TournamentRow);
 
     // Create a single booking covering the full tournament period to notify the venue manager
-    // Non-blocking: a tournament reserves the whole period, individual match bookings handle slots
     if (data.venue?.id && venueRowForBooking) {
       try {
         const v = venueRowForBooking;
@@ -249,29 +256,146 @@ export const tournamentsApi = {
 
         const startDate = new Date(data.startDate);
         const endDate = new Date(data.endDate);
+        const pricePerHour = v.price_per_hour ?? 0;
+        const openingHours: any[] = Array.isArray(v.opening_hours) ? v.opening_hours : [];
+
+        // Determine venue payment mode for payment_status
+        const venuePaymentMode = (v as any).payment_mode ?? 'cash_off_app';
+        const initialPaymentStatus = venuePaymentMode === 'cash_off_app' ? 'not_required' : 'pending';
+
         const dateStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
         const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
 
-        // Calculate total price: sum of all selected slots × pricePerHour
-        const pricePerHour = v.price_per_hour ?? 0;
-        const totalHours = Object.values(data.selectedSlots ?? {}).reduce((sum, slots) => sum + slots.length, 0);
+        // Compute overall time range from selectedSlots or venue opening hours
+        const slots = data.selectedSlots ?? {};
+        const slotDates = Object.keys(slots);
+        let overallStartHour = 9;
+        let overallEndHour = 18;
+        let totalHours = 0;
+
+        if (slotDates.length > 0) {
+          let minHour = 24, maxHour = 0;
+          for (const [, hours] of Object.entries(slots)) {
+            if (!hours || hours.length === 0) continue;
+            minHour = Math.min(minHour, ...hours);
+            maxHour = Math.max(maxHour, ...hours);
+            totalHours += hours.length;
+          }
+          if (minHour < 24 && maxHour > 0) {
+            overallStartHour = minHour;
+            overallEndHour = maxHour + 1;
+          }
+        } else {
+          // No specific slots: use earliest opening and latest closing across all tournament days
+          let minOpen = 24, maxClose = 0;
+          const cur = new Date(startDate);
+          while (cur <= endDate) {
+            const dow = cur.getDay();
+            const dh = openingHours.find((d: any) => Number(d?.dayOfWeek) === dow);
+            if (dh && !dh.isClosed) {
+              const po = parseInt(String(dh.openTime || '').split(':')[0], 10);
+              const pc = parseInt(String(dh.closeTime || '').split(':')[0], 10);
+              if (!isNaN(po) && !isNaN(pc) && po < pc) {
+                minOpen = Math.min(minOpen, po);
+                maxClose = Math.max(maxClose, pc);
+              }
+            }
+            cur.setDate(cur.getDate() + 1);
+          }
+          if (minOpen < 24 && maxClose > 0) {
+            overallStartHour = minOpen;
+            overallEndHour = maxClose;
+          }
+          // Estimate total hours: days × hours per day
+          const dayCount = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+          totalHours = dayCount * (overallEndHour - overallStartHour);
+        }
+
+        // Validate opening hours for each day of the tournament
+        const conflictErrors: string[] = [];
+        const cur = new Date(startDate);
+        while (cur <= endDate) {
+          const dow = cur.getDay();
+          const dh = openingHours.find((d: any) => Number(d?.dayOfWeek) === dow);
+          if (dh?.isClosed === true) {
+            const dStr = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+            conflictErrors.push(`${dStr}: terrain fermé ce jour`);
+          }
+          cur.setDate(cur.getDate() + 1);
+        }
+
+        // Check existing bookings for conflicts on each day
+        if (conflictErrors.length === 0) {
+          const cur2 = new Date(startDate);
+          while (cur2 <= endDate) {
+            const dStr = `${cur2.getFullYear()}-${String(cur2.getMonth() + 1).padStart(2, '0')}-${String(cur2.getDate()).padStart(2, '0')}`;
+            const { data: existing } = await (supabase
+              .from('bookings')
+              .select('start_time, end_time')
+              .eq('venue_id', data.venue.id)
+              .eq('date', dStr)
+              .neq('status', 'cancelled')
+              .neq('status', 'rejected') as any);
+            const bookedHours = new Set<number>();
+            for (const b of (existing || []) as { start_time: string; end_time: string }[]) {
+              const bStart = parseInt(b.start_time?.split('T')[1]?.split(':')[0] ?? '0', 10) || 0;
+              const bEnd = parseInt(b.end_time?.split('T')[1]?.split(':')[0] ?? '0', 10) || 0;
+              for (let h = bStart; h < bEnd; h++) bookedHours.add(h);
+            }
+            const conflicts: number[] = [];
+            for (let h = overallStartHour; h < overallEndHour; h++) {
+              if (bookedHours.has(h)) conflicts.push(h);
+            }
+            if (conflicts.length > 0) {
+              conflictErrors.push(`${dStr}: créneaux ${conflicts.map(h => `${h}h`).join(', ')} déjà réservés`);
+            }
+            cur2.setDate(cur2.getDate() + 1);
+          }
+        }
+
+        if (conflictErrors.length > 0 && !isOwnVenue) {
+          throw new Error(`Conflits de réservation détectés:\n${conflictErrors.join('\n')}`);
+        }
+
         const totalAmount = totalHours * pricePerHour;
 
-        const { data: bookingRow } = await (supabase
+        // Create a single booking for the entire tournament period
+        const { data: bookingRow, error: bookingErr } = await (supabase
           .from('bookings')
           .insert({
             venue_id: data.venue.id,
             user_id: userId,
             date: dateStr,
-            start_time: `${dateStr}T09:00:00`,
-            end_time: `${endDateStr}T22:00:00`,
+            start_time: `${dateStr}T${String(overallStartHour).padStart(2, '0')}:00:00`,
+            end_time: `${endDateStr}T${String(overallEndHour).padStart(2, '0')}:00:00`,
             total_amount: totalAmount,
             match_id: null,
             tournament_id: (row as any).id,
             status: bookingStatus,
+            payment_status: initialPaymentStatus,
           } as any)
           .select()
           .single() as any);
+
+        if (bookingErr) {
+          console.warn('[TournamentsAPI] Booking insert failed:', bookingErr?.message);
+        }
+
+        // Build slot summary for notification
+        const slotSummary = slotDates.length > 0
+          ? Object.entries(slots).map(([d, hrs]) => `${d}: ${Math.min(...hrs)}h-${Math.max(...hrs) + 1}h`).join(' | ')
+          : `${dateStr} → ${endDateStr}: ${overallStartHour}h-${overallEndHour}h`;
+
+        // Get organizer display name
+        let organizerName = 'Organisateur';
+        try {
+          const { data: orgRow } = await (supabase
+            .from('users')
+            .select('full_name, username')
+            .eq('id', userId)
+            .single() as any);
+          organizerName = orgRow?.full_name || orgRow?.username || 'Organisateur';
+        } catch {}
 
         // Notify venue owner
         if (v.owner_id) {
@@ -281,13 +405,24 @@ export const tournamentsApi = {
             title: bookingStatus === 'pending'
               ? '🏟️ Demande de réservation (Tournoi)'
               : '✅ Réservation confirmée (Tournoi)',
-            message: `${v.name} — Tournoi "${data.name}" du ${dateStr} au ${endDateStr}`,
+            message: `${v.name} — Tournoi "${data.name}" du ${dateStr} au ${endDateStr}` +
+              `\nOrganisateur: ${organizerName}` +
+              `\nSport: ${data.sport} · ${data.format} · ${data.maxTeams} équipes max` +
+              `\nInscription: ${data.entryFee.toLocaleString()} FCFA` +
+              `\nCréneaux: ${slotSummary}` +
+              `\nTotal: ${totalAmount.toLocaleString()} FCFA`,
             data: {
               bookingId: bookingRow?.id ?? '',
               venueId: data.venue.id,
               tournamentId: (row as any).id,
               date: dateStr,
               status: bookingStatus,
+              organizerName,
+              sport: data.sport,
+              maxTeams: String(data.maxTeams),
+              entryFee: String(data.entryFee),
+              totalAmount: String(totalAmount),
+              slotSummary,
             },
           });
         }
@@ -310,6 +445,7 @@ export const tournamentsApi = {
     status?: 'registration' | 'in_progress' | 'completed' | 'venue_pending' | 'cancelled';
     sponsorName?: string;
     sponsorLogo?: string;
+    bannerImage?: string;
     matchIds?: string[];
     winnerId?: string | null;
     managers?: string[];
@@ -336,6 +472,7 @@ export const tournamentsApi = {
     if (data.status != null) payload.status = data.status;
     if (data.sponsorName != null) payload.sponsor_name = data.sponsorName;
     if (data.sponsorLogo != null) payload.sponsor_logo = data.sponsorLogo;
+    if (data.bannerImage != null) payload.banner_image = data.bannerImage;
     if (data.matchIds != null) payload.match_ids = data.matchIds;
     if (data.winnerId !== undefined) payload.winner_id = data.winnerId;
     if (data.managers != null) payload.managers = data.managers;

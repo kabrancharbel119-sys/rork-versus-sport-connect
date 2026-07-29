@@ -11,7 +11,7 @@ import { signUp, signIn, signOut, getCurrentUser } from '@/lib/api/auth';
 import { supabase } from '@/lib/supabase';
 import { usersApi } from '@/lib/api/users';
 import { logger } from '@/lib/logger';
-import { uploadAvatarImage } from '@/lib/uploadImage';
+import { uploadAvatarImage, uploadBannerImage } from '@/lib/uploadImage';
 
 const AUTH_STORAGE_KEY = 'vs_auth';
 const USER_STORAGE_KEY = 'vs_user';
@@ -54,6 +54,7 @@ interface UpdateProfileData {
   country?: string;
   bio?: string;
   avatar?: string;
+  bannerImage?: string;
   sports?: UserSport[];
   isProfileVisible?: boolean;
   location?: {
@@ -214,6 +215,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setAuthState({ isAuthenticated: true, isLoading: false, user });
       queryClient.invalidateQueries({ queryKey: ['auth'] });
       registerPushToken(user.id);
+      if (user.role === 'venue_manager') {
+        notificationsApi.send(user.id, {
+          type: 'system',
+          title: 'Bienvenue Gestionnaire !',
+          message: 'Votre compte gestionnaire a été créé. Vous pouvez maintenant ajouter vos terrains et gérer vos réservations depuis votre espace dédié.',
+          data: { route: '/(manager-tabs)' },
+        }).catch(() => {});
+      }
     },
   });
 
@@ -351,6 +360,50 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     return avatarUrl;
   }, [pickAvatarMutation, updateProfileMutation, authState.user?.id]);
 
+  const pickBanner = useCallback(async () => {
+    if (Platform.OS === 'web') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      const localUri = await new Promise<string>((resolve, reject) => {
+        input.onchange = (e) => {
+          const file = (e.target as HTMLInputElement). files?.[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          } else reject(new Error('No file selected'));
+        };
+        input.click();
+      });
+      const userId = authState.user?.id;
+      let bannerUrl = localUri;
+      if (userId && (localUri.startsWith('file://') || localUri.startsWith('blob:') || localUri.startsWith('data:') || localUri.startsWith('ph://'))) {
+        bannerUrl = await uploadBannerImage(localUri, userId);
+      }
+      await updateProfileMutation.mutateAsync({ bannerImage: bannerUrl });
+      return bannerUrl;
+    }
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') throw new Error('Permission refusée');
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.8,
+    });
+    if (result.canceled) throw new Error('Annulé');
+    const localUri = result.assets[0].uri;
+    const userId = authState.user?.id;
+    let bannerUrl = localUri;
+    if (userId && (localUri.startsWith('file://') || localUri.startsWith('ph://'))) {
+      bannerUrl = await uploadBannerImage(localUri, userId);
+    }
+    await updateProfileMutation.mutateAsync({ bannerImage: bannerUrl });
+    return bannerUrl;
+  }, [updateProfileMutation, authState.user?.id]);
+
   const addSport = useCallback(async (sport: UserSport) => {
     if (!authState.user) return;
     const existing = (authState.user.sports ?? []).filter(s => s.sport !== sport.sport);
@@ -406,6 +459,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     setAuthState(prev => ({ ...prev, user: updatedUser }));
     queryClient.invalidateQueries({ queryKey: ['auth'] });
     logger.debug('Auth', 'User upgraded to venue_manager');
+    notificationsApi.send(authState.user.id, {
+      type: 'system',
+      title: 'Vous êtes maintenant Gestionnaire',
+      message: 'Félicitations ! Vous êtes maintenant gestionnaire de terrain. Accédez à votre espace pour ajouter vos terrains et gérer vos réservations.',
+      data: { route: '/(manager-tabs)' },
+    }).catch(() => {});
   }, [authState.user, queryClient]);
 
   return {
@@ -419,6 +478,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     addSport,
     removeSport,
     pickAvatar,
+    pickBanner,
     refreshUser,
     makeAdmin,
     upgradeToVenueManager,
@@ -428,6 +488,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     isRegisterLoading: registerMutation.isPending,
     isUpdateLoading: updateProfileMutation.isPending,
     isPickingAvatar: pickAvatarMutation.isPending,
+    isPickingBanner: updateProfileMutation.isPending,
     isDeleteLoading: deleteAccountMutation.isPending,
     loginError: loginMutation.error?.message,
     registerError: registerMutation.error?.message,

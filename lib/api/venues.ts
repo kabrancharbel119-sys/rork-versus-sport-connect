@@ -706,7 +706,42 @@ export const venuesApi = {
     }));
 
     console.log('[VenuesAPI] Mapped bookings:', enriched.length);
-    return enriched;
+
+    // Consolidate legacy per-day tournament bookings into a single display entry.
+    // This is a read-only, in-memory merge — no database rows are modified or deleted.
+    const byTournament = new Map<string, typeof enriched>();
+    const standalone: typeof enriched = [];
+    for (const b of enriched) {
+      const tId = (b as any).tournamentId as string | undefined;
+      if (!tId) { standalone.push(b); continue; }
+      const group = byTournament.get(tId) ?? [];
+      group.push(b);
+      byTournament.set(tId, group);
+    }
+
+    const consolidated: typeof enriched = [...standalone];
+    for (const group of byTournament.values()) {
+      if (group.length === 1) { consolidated.push(group[0]); continue; }
+      const sortedByCreated = [...group].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const base = sortedByCreated[0];
+      const minDate = group.reduce((min, b) => b.date < min ? b.date : min, group[0].date);
+      const minStart = group.reduce((min, b) => b.startTime < min ? b.startTime : min, group[0].startTime);
+      const maxEnd = group.reduce((max, b) => b.endTime > max ? b.endTime : max, group[0].endTime);
+      const totalPrice = group.reduce((sum, b) => sum + (b.totalPrice || 0), 0);
+      const status = group.some(b => b.status === 'confirmed') ? 'confirmed'
+        : group.some(b => b.status === 'pending') ? 'pending'
+        : base.status;
+      consolidated.push({
+        ...base,
+        date: minDate,
+        startTime: minStart,
+        endTime: maxEnd,
+        totalPrice,
+        status,
+      });
+    }
+
+    return consolidated;
   },
 
   async getUserBookings(userId: string) {

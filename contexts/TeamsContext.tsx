@@ -69,8 +69,8 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
         await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(merged));
         if (__DEV__) console.log('[Teams] All teams from DB:', serverParsed.length, '| Merged (À découvrir):', merged.length, '| local only:', localOnly.length);
         return merged;
-      } catch {
-        if (__DEV__) console.log('[Teams] Server fetch failed, using local storage');
+      } catch (err: any) {
+        if (__DEV__) console.log('[Teams] Server fetch failed, using local storage:', err?.message ?? err);
         if (localTeams.length > 0) return localTeams;
         throw new Error('Network error');
       }
@@ -96,8 +96,7 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
     mutationFn: async (data: CreateTeamData) => {
       console.log('[Teams] Creating team:', data.name, 'for captain:', data.captainId);
       
-      const currentTeams = await AsyncStorage.getItem(TEAMS_STORAGE_KEY);
-      const existingTeams: Team[] = currentTeams ? parseTeamDates(JSON.parse(currentTeams)) : [];
+      const existingTeams = teams;
       console.log('[Teams] Current teams count:', existingTeams.length);
       
       try {
@@ -113,10 +112,9 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
           maxMembers: data.maxMembers,
           isRecruiting: data.isRecruiting ?? true,
           logo: data.logo,
+          locationLat: data.location?.latitude,
+          locationLng: data.location?.longitude,
         });
-        const updatedTeams = [...existingTeams, result];
-        await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(updatedTeams));
-        setTeams(updatedTeams);
         queryClient.invalidateQueries({ queryKey: ['teams'] });
         console.log('[Teams] Team created successfully via API:', result.id);
         return result;
@@ -149,6 +147,7 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
         const updatedTeams = [...existingTeams, newTeam];
         await AsyncStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(updatedTeams));
         setTeams(updatedTeams);
+        queryClient.invalidateQueries({ queryKey: ['teams'] });
         console.log('[Teams] Team created locally:', newTeam.id, 'Total teams:', updatedTeams.length);
         return newTeam;
       }

@@ -25,7 +25,7 @@ export type DisputeSeverity = 'minor' | 'major';
 export type DisputeStatus = 'open' | 'investigating' | 'resolved';
 // Factures
 export type InvoiceDocumentType = 'invoice' | 'credit_note' | 'payout_receipt';
-export type InvoiceContextType = 'booking' | 'tournament_registration' | 'venue_advance' | 'logistics_advance' | 'organizer_release';
+export type InvoiceContextType = 'booking' | 'tournament_registration' | 'venue_advance' | 'logistics_advance' | 'organizer_release' | 'ticket_purchase';
 export type InvoiceStatus = 'issued' | 'paid' | 'refunded' | 'cancelled';
 
 export const DEFAULT_ROLES = ['Capitaine', 'Co-Capitaine', 'Coach', 'Gardien', 'Défenseur', 'Milieu', 'Attaquant', 'Ailier', 'Pivot', 'Meneur', 'Arrière', 'Libero', 'Passeur', 'Central', 'Remplaçant'] as const;
@@ -44,6 +44,7 @@ export interface User {
   username: string;
   fullName: string;
   avatar?: string;
+  bannerImage?: string;
   phone?: string;
   city?: string;
   country?: string;
@@ -118,6 +119,7 @@ export interface Team {
   country: string;
   description?: string;
   captainId: string;
+  creatorId?: string; // ID du créateur de l'équipe (peut différer du capitaine actuel)
   coCaptainIds: string[];
   members: TeamMember[];
   fans: string[]; // IDs des fans/abonnés (pas de membres, juste abonnés)
@@ -193,6 +195,7 @@ export interface Match {
   tournamentId?: string;
   /** Phase / round (ex: "Poule A", "Quart 1", "Demi-finale", "Finale") */
   roundLabel?: string;
+  hasTickets?: boolean;
 }
 
 export interface MatchPlayerStats {
@@ -283,6 +286,73 @@ export interface Booking {
   paidAt?: Date;
 }
 
+// ============================================
+// BILLETTERIE
+// ============================================
+
+export type TicketEventType = 'match' | 'tournament';
+export type TicketStatus = 'pending_payment' | 'valid' | 'used' | 'cancelled' | 'refunded';
+
+export interface TicketType {
+  id: string;
+  eventType: TicketEventType;
+  eventId: string;
+  name: string;
+  description?: string;
+  price: number;
+  quantityTotal: number;
+  quantitySold: number;
+  salesStart?: Date;
+  salesEnd?: Date;
+  maxPerUser: number;
+  isActive: boolean;
+  validDays?: string[] | null;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Ticket {
+  id: string;
+  ticketTypeId: string;
+  ticketType?: TicketType;
+  eventType: TicketEventType;
+  eventId: string;
+  buyerId: string;
+  holderName?: string;
+  pricePaid: number;
+  status: TicketStatus;
+  ticketCode: string;
+  qrToken: string;
+  paymentTransactionId?: string;
+  purchasedAt: Date;
+  paidAt?: Date;
+  usedAt?: Date;
+  validatedBy?: string;
+  cancelledAt?: Date;
+  createdAt: Date;
+  eventInfo?: {
+    name: string;
+    date: string;
+    location?: string;
+    sport?: string;
+  };
+}
+
+export interface TicketSalesStats {
+  totalSold: number;
+  totalUsed: number;
+  totalRevenue: number;
+  byType: {
+    ticketTypeId: string;
+    name: string;
+    sold: number;
+    total: number;
+    used: number;
+    revenue: number;
+  }[];
+}
+
 export interface Tournament {
   id: string;
   name: string;
@@ -304,11 +374,13 @@ export interface Tournament {
   winnerId?: string;
   sponsorName?: string;
   sponsorLogo?: string;
+  bannerImage?: string;
   managers?: string[];
   createdBy: string;
   createdAt: Date;
   isDemo?: boolean;
   entryPaymentMode?: VenuePaymentMode;
+  hasTickets?: boolean;
 }
 
 export type CancellationRequestStatus = 'pending' | 'approved' | 'rejected';
@@ -452,6 +524,8 @@ export interface Invoice {
   payerName?: string;
   payeeName?: string;
   eventName?: string;
+  eventType?: string;
+  eventId?: string;
   reason?: string;
   createdAt: Date;
 }

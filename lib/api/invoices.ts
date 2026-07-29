@@ -30,6 +30,8 @@ interface InvoiceRow {
   payer_name: string | null;
   payee_name: string | null;
   event_name: string | null;
+  event_type: string | null;
+  event_id: string | null;
   reason: string | null;
   created_at: string;
 }
@@ -59,6 +61,8 @@ function mapInvoiceRow(row: InvoiceRow): Invoice {
     payerName: row.payer_name || undefined,
     payeeName: row.payee_name || undefined,
     eventName: row.event_name || undefined,
+    eventType: row.event_type || undefined,
+    eventId: row.event_id || undefined,
     reason: row.reason || undefined,
     createdAt: new Date(row.created_at),
   };

@@ -72,9 +72,11 @@ export default function ManagerBookingsTab() {
   const updateBookingMutation = useMutation({
     mutationFn: ({ bookingId, status }: { bookingId: string; status: BookingStatus }) =>
       venuesApi.updateBookingStatus(bookingId, status),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['ownerBookings'] });
       queryClient.invalidateQueries({ queryKey: ['userBookings'] });
+      const msg = variables.status === 'confirmed' ? 'Réservation approuvée.' : variables.status === 'rejected' ? 'Réservation refusée.' : variables.status === 'cancelled' ? 'Réservation annulée.' : 'Réservation mise à jour.';
+      Alert.alert('Succès', msg);
     },
     onError: (error: any) => {
       Alert.alert('Erreur', error?.message || 'Impossible de mettre à jour la réservation.');
@@ -268,7 +270,9 @@ export default function ManagerBookingsTab() {
                         <Text style={styles.tournamentName}>🏆 {b.tournamentName}</Text>
                       ) : null}
                       <Text style={styles.bookingDate}>
-                        {booking.date}{isTournament ? ` → fin de tournoi` : ` • ${startH}h - ${endH}h`}
+                        {isTournament
+                          ? `${booking.date} → ${booking.endTime?.split('T')[0] ?? booking.date}`
+                          : ` • ${startH}h - ${endH}h`}
                       </Text>
                     </View>
                     <View style={[styles.bookingStatusBadge, { backgroundColor: sc.color + '20' }]}>

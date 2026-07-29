@@ -151,10 +151,10 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background.card,
+    backgroundColor: Colors.background.cardLight,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.border.light,
+    borderColor: Colors.border.medium,
   },
   focused: {
     borderColor: Colors.primary.blue,

@@ -62,6 +62,10 @@ export default function ManagerVenuesTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myVenues'] });
       queryClient.invalidateQueries({ queryKey: ['ownerBookings'] });
+      Alert.alert('Succès', 'Terrain supprimé.');
+    },
+    onError: (error: any) => {
+      Alert.alert('Erreur', error?.message || 'Impossible de supprimer le terrain.');
     },
   });
 

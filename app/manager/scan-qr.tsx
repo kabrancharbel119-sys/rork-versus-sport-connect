@@ -164,7 +164,7 @@ export default function ScanQRScreen() {
         Alert.alert(
           '✅ Validation réussie',
           'La réservation a été marquée comme complétée.',
-          [{ text: 'OK', onPress: () => router.back() }]
+          [{ text: 'OK', onPress: () => { if (router.canGoBack()) router.back(); else router.replace('/(manager-tabs)/bookings' as any); } }]
         );
       }, 400);
     } catch (error: any) {
@@ -305,14 +305,15 @@ export default function ScanQRScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       
       {/* Camera */}
-      <CameraView
-        style={styles.camera}
-        facing="back"
-        barcodeScannerSettings={{
-          barcodeTypes: ['qr'],
-        }}
-        onBarcodeScanned={scanning && !scanned ? handleBarCodeScanned : undefined}
-      >
+      <View style={styles.cameraContainer}>
+        <CameraView
+          style={styles.camera}
+          facing="back"
+          barcodeScannerSettings={{
+            barcodeTypes: ['qr'],
+          }}
+          onBarcodeScanned={scanning && !scanned ? handleBarCodeScanned : undefined}
+        />
         {/* Overlay */}
         <LinearGradient
           colors={['rgba(0,0,0,0.7)', 'transparent', 'rgba(0,0,0,0.7)']}
@@ -320,7 +321,7 @@ export default function ScanQRScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <TouchableOpacity onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/(manager-tabs)/bookings' as any); }} style={styles.backButton}>
               <ArrowLeft size={24} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Scan QR Code</Text>
@@ -361,7 +362,7 @@ export default function ScanQRScreen() {
             </Text>
           </View>
         </LinearGradient>
-      </CameraView>
+      </View>
 
       {/* Manual Entry Button — positioned absolutely so it's always visible */}
       <TouchableOpacity
@@ -585,10 +586,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background.dark,
   },
+  cameraContainer: {
+    flex: 1,
+  },
   camera: {
     flex: 1,
   },
   overlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
     flex: 1,
     padding: 20,
   },

@@ -92,3 +92,23 @@ export async function uploadTeamImage(localUri: string, teamId: string): Promise
 
   return uploadToStorage('team-logos', filePath, data, contentType);
 }
+
+export async function uploadTournamentImage(localUri: string, tournamentId: string): Promise<string> {
+  const { data, contentType } = await uriToFileData(localUri);
+  const fileExtension = mimeToExt[contentType] || 'jpg';
+
+  const fileName = `tournament-${tournamentId}-${Date.now()}.${fileExtension}`;
+  const filePath = `tournaments/${fileName}`;
+
+  return uploadToStorage('team-logos', filePath, data, contentType);
+}
+
+export async function uploadBannerImage(localUri: string, userId: string): Promise<string> {
+  const { data, contentType } = await uriToFileData(localUri);
+  const fileExtension = mimeToExt[contentType] || 'jpg';
+
+  const fileName = `banner-${userId}-${Date.now()}.${fileExtension}`;
+  const filePath = `banners/${fileName}`;
+
+  return uploadToStorage('avatars', filePath, data, contentType);
+}

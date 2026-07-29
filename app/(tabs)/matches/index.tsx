@@ -3,8 +3,8 @@ import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, M
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Swords, Calendar, MapPin, Users, Filter, Clock, Trophy, UserPlus, X, Check, History } from 'lucide-react-native';
-import { Colors } from '@/constants/colors';
+import { Plus, Swords, Calendar, MapPin, Users, Filter, Clock, Trophy, UserPlus, X, Check, History, ChevronRight, MapPinned, Crown } from 'lucide-react-native';
+import { Colors, SPACING, CARD_RADIUS, CARD_INNER_PAD, OUTER_PAD, SECTION_GAP, CARD_GAP, cardGlow } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMatches } from '@/contexts/MatchesContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
@@ -98,78 +98,139 @@ export default function MatchesScreen() {
     if (__DEV__) console.log('[Matches] Rendering match:', match.id, match.sport, match.format);
     const creator = getUserByIdSync(match.createdBy);
     const isRanked = match.type === 'ranked';
+    const isTournament = match.type === 'tournament';
+    const playerCount = (match.registeredPlayers ?? []).length;
+    const playerPct = match.maxPlayers > 0 ? playerCount / match.maxPlayers : 0;
+    const sportEmoji: Record<string, string> = { football: '⚽', basketball: '🏀', volleyball: '🏐', tennis: '🎾', padel: '🏓', handball: '🤾', rugby: '🏉', running: '🏃', cycling: '🚴', swimming: '🏊' };
+
     return (
-      <Card
+      <TouchableOpacity
         key={match.id}
-        style={[styles.matchCard, isRanked && styles.matchCardRanked]}
+        activeOpacity={0.85}
         onPress={() => router.push(`/match/${match.id}`)}
-        variant="gradient"
+        style={styles.matchCard}
       >
-        <View style={styles.matchHeader}>
-          <View style={styles.matchTypeRow}>
-            <View style={[styles.typeBadge, styles.typeBadgeRow, { backgroundColor: isRanked ? Colors.primary.orange : Colors.primary.blue }]}>
-              {isRanked && <Trophy size={12} color="#FFFFFF" />}
-              <Text style={styles.typeText}>{match.type === 'friendly' ? 'Amical' : isRanked ? 'Classé' : 'Tournoi'}</Text>
-            </View>
-            {isRanked && (
-              <View style={styles.rankedStakeBadge}>
-                <Text style={styles.rankedStakeText}>Rang & stats</Text>
+        {/* Top accent bar */}
+        <View style={[styles.matchAccentBar, { backgroundColor: isRanked ? Colors.primary.orange : isTournament ? '#8B5CF6' : Colors.primary.blue }]} />
+
+        <View style={styles.matchCardBody}>
+          {/* Header row */}
+          <View style={styles.matchHeaderRow}>
+            <View style={styles.matchHeaderLeft}>
+              <View style={[styles.matchTypePill, { backgroundColor: isRanked ? 'rgba(249,115,22,0.15)' : isTournament ? 'rgba(139,92,246,0.15)' : 'rgba(21,101,192,0.15)' }]}>
+                {isRanked && <Crown size={11} color={Colors.primary.orange} strokeWidth={2.5} />}
+                {!isRanked && !isTournament && <Swords size={11} color={Colors.primary.blue} strokeWidth={2.5} />}
+                {isTournament && <Trophy size={11} color="#8B5CF6" strokeWidth={2.5} />}
+                <Text style={[styles.matchTypePillText, { color: isRanked ? Colors.primary.orange : isTournament ? '#8B5CF6' : Colors.primary.blue }]}>
+                  {match.type === 'friendly' ? 'Amical' : isRanked ? 'Classé' : 'Tournoi'}
+                </Text>
               </View>
-            )}
-            <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(match.status)}20` }]}>
-              <View style={[styles.statusDot, { backgroundColor: getStatusColor(match.status) }]} />
-              <Text style={[styles.statusText, { color: getStatusColor(match.status) }]}>{getStatusLabel(match.status)}</Text>
+              <View style={[styles.matchStatusPill, { backgroundColor: `${getStatusColor(match.status)}20` }]}>
+                <View style={[styles.matchStatusDot, { backgroundColor: getStatusColor(match.status) }]} />
+                <Text style={[styles.matchStatusText, { color: getStatusColor(match.status) }]}>{getStatusLabel(match.status)}</Text>
+              </View>
             </View>
             {showNeedsPlayers && match.needsPlayers && (
-              <View style={styles.needsPlayersBadge}><UserPlus size={12} color="#FFFFFF" /><Text style={styles.needsPlayersText}>Cherche joueurs</Text></View>
+              <View style={styles.needsPlayersBadge}>
+                <UserPlus size={11} color="#FFFFFF" strokeWidth={2.5} />
+                <Text style={styles.needsPlayersText}>Cherche joueurs</Text>
+              </View>
             )}
           </View>
-        </View>
-        {isRanked && <Text style={styles.rankedTagline}>Compte pour le classement et la réputation</Text>}
-        <Text style={styles.matchTitle}>{(sportLabels as Record<string, string>)[match.sport] || match.sport} • {match.format}</Text>
-        <Text style={styles.matchLevel}>{levelLabels[match.level]} • {ambianceLabels[match.ambiance]}</Text>
-        <View style={styles.matchDetails}>
-          <View style={styles.matchDetail}><Calendar size={16} color={Colors.text.muted} /><Text style={styles.matchDetailText}>{formatDate(match.dateTime)}</Text></View>
-          <View style={styles.matchDetail}><Clock size={16} color={Colors.text.muted} /><Text style={styles.matchDetailText}>{formatTime(match.dateTime)}</Text></View>
-        </View>
-        {match.venue && (
-          <View style={styles.matchDetail}><MapPin size={16} color={Colors.text.muted} /><Text style={styles.matchDetailText}>{match.venue.name}</Text></View>
-        )}
-        {match.status === 'venue_pending' && (
-          <View style={styles.venuePendingBanner}>
-            <Clock size={13} color={Colors.status.warning} />
-            <Text style={styles.venuePendingText}>En attente de confirmation du gestionnaire du terrain</Text>
+
+          {/* Title + sport emoji */}
+          <View style={styles.matchTitleRow}>
+            <View style={styles.matchTitleLeft}>
+              <Text style={styles.matchEmoji}>{sportEmoji[match.sport] ?? '🏆'}</Text>
+              <View style={styles.matchTitleInfo}>
+                <Text style={styles.matchTitle}>{(sportLabels as Record<string, string>)[match.sport] || match.sport} • {match.format}</Text>
+                <Text style={styles.matchLevel}>{levelLabels[match.level]} • {ambianceLabels[match.ambiance]}</Text>
+              </View>
+            </View>
           </View>
-        )}
-        {creator && <Text style={styles.organizerText}>Organisé par {creator.fullName || creator.username}</Text>}
-        <View style={styles.matchFooter}>
-          <View style={styles.playersInfo}><Users size={16} color={Colors.primary.blue} /><Text style={styles.playersText}>{(match.registeredPlayers ?? []).length}/{match.maxPlayers} joueurs</Text></View>
-          {!isRanked && match.prize && <View style={styles.prizeInfo}><Text style={styles.prizeText}>💰 {match.prize.toLocaleString()} FCFA</Text></View>}
-          {isRanked && <View style={styles.rankedFooterBadge}><Text style={styles.rankedFooterText}>Compte pour le classement</Text></View>}
+
+          {/* Info pills */}
+          <View style={styles.matchInfoPills}>
+            <View style={styles.matchInfoPill}>
+              <Calendar size={12} color={Colors.text.muted} strokeWidth={2} />
+              <Text style={styles.matchInfoPillText}>{formatDate(match.dateTime)}</Text>
+            </View>
+            <View style={styles.matchInfoPill}>
+              <Clock size={12} color={Colors.text.muted} strokeWidth={2} />
+              <Text style={styles.matchInfoPillText}>{formatTime(match.dateTime)}</Text>
+            </View>
+            {match.venue && (
+              <View style={styles.matchInfoPill}>
+                <MapPin size={12} color={Colors.text.muted} strokeWidth={2} />
+                <Text style={styles.matchInfoPillText} numberOfLines={1}>{match.venue.name}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Venue pending banner */}
+          {match.status === 'venue_pending' && (
+            <View style={styles.venuePendingBanner}>
+              <Clock size={12} color={Colors.status.warning} strokeWidth={2} />
+              <Text style={styles.venuePendingText}>En attente de confirmation du terrain</Text>
+            </View>
+          )}
+
+          {/* Players progress */}
+          <View style={styles.matchProgressSection}>
+            <View style={styles.matchProgressHeader}>
+              <View style={styles.matchProgressLeft}>
+                <Users size={12} color={Colors.primary.blue} strokeWidth={2.5} />
+                <Text style={styles.matchProgressLabel}>{playerCount}/{match.maxPlayers} joueurs</Text>
+              </View>
+              {match.prize && !isRanked && (
+                <View style={styles.matchPrizePill}>
+                  <Text style={styles.matchPrizeText}>{match.prize.toLocaleString()} FCFA</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.matchProgressBg}>
+              <View style={[styles.matchProgressFill, { width: `${Math.min(playerPct * 100, 100)}%`, backgroundColor: isRanked ? Colors.primary.orange : Colors.primary.blue }]} />
+            </View>
+          </View>
+
+          {/* Footer */}
+          {(creator || isRanked) && (
+            <View style={styles.matchFooterRow}>
+              {creator && <Text style={styles.organizerText}>par {creator.fullName || creator.username}</Text>}
+              {isRanked && <Text style={styles.rankedTag}>Compte pour le classement</Text>}
+            </View>
+          )}
         </View>
-      </Card>
+      </TouchableOpacity>
     );
   };
 
   const renderTournamentCard = (tournament: typeof openTournaments[0]) => (
-    <TouchableOpacity key={tournament.id} activeOpacity={0.8} onPress={() => router.push(`/tournament/${tournament.id}`)}>
-      <LinearGradient colors={[Colors.gradient.orangeStart, Colors.gradient.orangeEnd]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.tournamentCard}>
-        <View style={styles.tournamentHeader}><Trophy size={20} color="#FFFFFF" /><Text style={styles.tournamentPrize}>{tournament.prizePool.toLocaleString()} FCFA</Text></View>
+    <TouchableOpacity key={tournament.id} activeOpacity={0.85} onPress={() => router.push(`/tournament/${tournament.id}`)} style={styles.tournamentCardWrap}>
+      <LinearGradient colors={['#7C3AED', '#5B21B6']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.tournamentCard}>
+        <View style={styles.tournamentHeaderRow}>
+          <View style={styles.tournamentIconWrap}><Trophy size={18} color="#FFFFFF" strokeWidth={2.5} /></View>
+          <View style={styles.tournamentPrizeWrap}><Crown size={14} color="#FBBF24" strokeWidth={2} /><Text style={styles.tournamentPrize}>{tournament.prizePool.toLocaleString()} FCFA</Text></View>
+        </View>
         <Text style={styles.tournamentName}>{tournament.name}</Text>
         <Text style={styles.tournamentInfo}>{sportLabels[tournament.sport]} • {tournament.format} • {levelLabels[tournament.level]}</Text>
-        <View style={styles.tournamentMeta}>
-          <View style={styles.tournamentMetaItem}><Calendar size={14} color="rgba(255,255,255,0.8)" /><Text style={styles.tournamentMetaText}>{formatDate(tournament.startDate)}</Text></View>
-          <View style={styles.tournamentMetaItem}><Users size={14} color="rgba(255,255,255,0.8)" /><Text style={styles.tournamentMetaText}>{(tournament.registeredTeams ?? []).length}/{tournament.maxTeams}</Text></View>
+        <View style={styles.tournamentMetaRow}>
+          <View style={styles.tournamentMetaPill}><Calendar size={12} color="rgba(255,255,255,0.8)" /><Text style={styles.tournamentMetaText}>{formatDate(tournament.startDate)}</Text></View>
+          <View style={styles.tournamentMetaPill}><Users size={12} color="rgba(255,255,255,0.8)" /><Text style={styles.tournamentMetaText}>{(tournament.registeredTeams ?? []).length}/{tournament.maxTeams} éq.</Text></View>
         </View>
-        <View style={styles.tournamentFee}><Text style={styles.tournamentFeeText}>Inscription: {tournament.entryFee.toLocaleString()} FCFA</Text></View>
-        <View style={styles.teamOnlyBadge}><Users size={12} color="#FFFFFF" /><Text style={styles.teamOnlyText}>Équipes uniquement</Text></View>
+        <View style={styles.tournamentFooterRow}>
+          <View style={styles.tournamentFeePill}><Text style={styles.tournamentFeeText}>{tournament.entryFee.toLocaleString()} FCFA</Text></View>
+          <View style={styles.teamOnlyBadge}><Users size={11} color="#FFFFFF" strokeWidth={2} /><Text style={styles.teamOnlyText}>Équipes</Text></View>
+        </View>
       </LinearGradient>
     </TouchableOpacity>
   );
 
   const renderEmptyState = (icon: React.ReactNode, title: string, text: string, action?: { title: string; onPress: () => void }) => (
     <View style={styles.emptyState}>
-      {icon}<Text style={styles.emptyTitle}>{title}</Text><Text style={styles.emptyText}>{text}</Text>
+      <View style={styles.emptyIconWrap}>{icon}</View>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptyText}>{text}</Text>
       {action && <Button title={action.title} onPress={action.onPress} variant="orange" style={styles.emptyButton} />}
     </View>
   );
@@ -183,25 +244,41 @@ export default function MatchesScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={['#070B12', '#0A0E16', Colors.background.dark, '#0B1018']} locations={[0, 0.25, 0.6, 1]} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Matchs</Text>
+          <View>
+            <Text style={styles.headerTitle}>Matchs</Text>
+            <Text style={styles.headerSubtitle}>{filteredMatches.length} match{filteredMatches.length > 1 ? 's' : ''}{activeTab === 'all' ? ' à venir' : activeTab === 'history' ? ' joués' : ''}</Text>
+          </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={[styles.iconButton, hasActiveFilters && styles.iconButtonActive]} onPress={() => setShowFilterModal(true)}>
-              <Filter size={20} color={hasActiveFilters ? '#FFFFFF' : Colors.text.primary} />
+            <TouchableOpacity style={[styles.iconButton, hasActiveFilters && styles.iconButtonActive]} onPress={() => setShowFilterModal(true)} activeOpacity={0.7}>
+              <Filter size={20} color={hasActiveFilters ? '#FFFFFF' : Colors.text.primary} strokeWidth={2} />
               {hasActiveFilters && <View style={styles.filterDot} />}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.addButton} onPress={() => router.push('/create-match')}><Plus size={20} color="#FFFFFF" /></TouchableOpacity>
+            <TouchableOpacity style={styles.addButton} onPress={() => router.push('/create-match')} activeOpacity={0.7}>
+              <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
+            </TouchableOpacity>
           </View>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll} contentContainerStyle={styles.tabs}>
-          {([['all', 'Tous', <Swords key="s" size={16} />], ['my-matches', 'Mes matchs', <Calendar key="c" size={16} />], ['need-players', 'Cherche joueurs', <UserPlus key="u" size={16} />], ['history', 'Historique', <History key="h" size={16} />], ['tournaments', 'Tournois', <Trophy key="t" size={16} />]] as const).map(([key, label, icon]) => (
-            <TouchableOpacity key={key} style={[styles.tab, activeTab === key && styles.tabActive]} onPress={() => setActiveTab(key)}>
-              {React.cloneElement(icon, { color: activeTab === key ? '#FFFFFF' : Colors.text.secondary })}
-              <Text style={[styles.tabText, activeTab === key && styles.tabTextActive]}>{label}</Text>
-            </TouchableOpacity>
-          ))}
+
+        {/* Segmented tabs */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll} contentContainerStyle={styles.tabsContent}>
+          {([['all', 'Tous'], ['my-matches', 'Mes matchs'], ['need-players', 'Cherche joueurs'], ['history', 'Historique'], ['tournaments', 'Tournois']] as const).map(([key, label]) => {
+            const active = activeTab === key;
+            const activeColor = key === 'tournaments' ? '#8B5CF6' : key === 'need-players' ? '#10B981' : key === 'history' ? '#64748B' : key === 'my-matches' ? Colors.primary.blue : Colors.primary.orange;
+            const count = key === 'all' ? allMatches.length : key === 'my-matches' ? myMatches.length : key === 'need-players' ? matchesNeedingPlayers.length : key === 'history' ? completedMatches.length : openTournaments.length;
+            return (
+              <TouchableOpacity key={key} style={[styles.tab, active && { backgroundColor: activeColor, borderColor: activeColor }]} onPress={() => setActiveTab(key)} activeOpacity={0.7}>
+                <Text style={[styles.tabText, active && styles.tabTextActive]} numberOfLines={1}>{label}</Text>
+                {count > 0 && (
+                  <View style={[styles.tabCount, active && styles.tabCountActive]}>
+                    <Text style={[styles.tabCountText, active && styles.tabCountTextActive]}>{count}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />}>
           {isError && !matchesList.length ? (
@@ -232,22 +309,28 @@ export default function MatchesScreen() {
             completedMatches.length > 0 ? (
               <View style={styles.historyList}>
                 <Text style={styles.historySectionTitle}>Matchs joués avec résultat</Text>
-                {completedMatches.map((m) => (
-                  <TouchableOpacity key={m.id} style={styles.historyRow} onPress={() => router.push(`/match/${m.id}`)} activeOpacity={0.7}>
-                    <View style={styles.historyRowLeft}>
-                      <Text style={styles.historyRowSport}>{(sportLabels as Record<string, string>)[m.sport] || m.sport} • {m.format}</Text>
-                      <Text style={styles.historyRowVenue}>{m.venue?.name || 'Lieu non spécifié'} • {formatDate(m.dateTime)}</Text>
-                    </View>
-                    <View style={styles.historyScoreBadge}>
-                      <Text style={styles.historyScoreText}>{m.score ? `${m.score.home ?? 0} - ${m.score.away ?? 0}` : '–'}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                {completedMatches.map((m) => {
+                  const sportEmoji: Record<string, string> = { football: '⚽', basketball: '🏀', volleyball: '🏐', tennis: '🎾', padel: '🏓', handball: '🤾', rugby: '🏉', running: '🏃', cycling: '🚴', swimming: '🏊' };
+                  return (
+                    <TouchableOpacity key={m.id} style={styles.historyRow} onPress={() => router.push(`/match/${m.id}`)} activeOpacity={0.7}>
+                      <View style={styles.historyRowLeft}>
+                        <Text style={styles.historyRowEmoji}>{sportEmoji[m.sport] ?? '🏆'}</Text>
+                        <View style={styles.historyRowInfo}>
+                          <Text style={styles.historyRowSport}>{(sportLabels as Record<string, string>)[m.sport] || m.sport} • {m.format}</Text>
+                          <Text style={styles.historyRowVenue}>{m.venue?.name || 'Lieu non spécifié'} • {formatDate(m.dateTime)}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.historyScoreBadge}>
+                        <Text style={styles.historyScoreText}>{m.score ? `${m.score.home ?? 0} - ${m.score.away ?? 0}` : '–'}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
-            ) : renderEmptyState(<History size={64} color={Colors.text.muted} />, 'Aucun match joué', 'Vos matchs terminés avec résultat apparaîtront ici.')
+            ) : renderEmptyState(<History size={32} color={Colors.text.muted} />, 'Aucun match joué', 'Vos matchs terminés avec résultat apparaîtront ici.')
           )}
-          {activeTab !== 'tournaments' && activeTab !== 'history' && (filteredMatches.length > 0 ? filteredMatches.map(m => renderMatchCard(m, activeTab === 'need-players')) : renderEmptyState(<Swords size={64} color={Colors.text.muted} />, hasActiveFilters ? 'Aucun match trouvé' : 'Aucun match', hasActiveFilters ? 'Essayez de modifier vos filtres' : activeTab === 'need-players' ? 'Aucun match ne cherche de joueurs dans votre zone' : 'Soyez le premier à créer un match !', { title: hasActiveFilters ? 'Effacer les filtres' : 'Créer un match', onPress: hasActiveFilters ? () => setFilters({ sport: 'all', level: 'all', ambiance: 'all', maxDistance: 50, matchType: 'all' }) : () => router.push('/create-match') }))}
-          {activeTab === 'tournaments' && (openTournaments.length > 0 ? openTournaments.map(renderTournamentCard) : renderEmptyState(<Trophy size={64} color={Colors.text.muted} />, 'Aucun tournoi', 'Tirez pour actualiser ou créez un tournoi.', { title: 'Créer un tournoi', onPress: () => router.navigate('/create-tournament' as any) }))}
+          {activeTab !== 'tournaments' && activeTab !== 'history' && (filteredMatches.length > 0 ? filteredMatches.map(m => renderMatchCard(m, activeTab === 'need-players')) : renderEmptyState(<Swords size={32} color={Colors.text.muted} />, hasActiveFilters ? 'Aucun match trouvé' : 'Aucun match', hasActiveFilters ? 'Essayez de modifier vos filtres' : activeTab === 'need-players' ? 'Aucun match ne cherche de joueurs dans votre zone' : 'Soyez le premier à créer un match !', { title: hasActiveFilters ? 'Effacer les filtres' : 'Créer un match', onPress: hasActiveFilters ? () => setFilters({ sport: 'all', level: 'all', ambiance: 'all', maxDistance: 50, matchType: 'all' }) : () => router.push('/create-match') }))}
+          {activeTab === 'tournaments' && (openTournaments.length > 0 ? openTournaments.map(renderTournamentCard) : renderEmptyState(<Trophy size={32} color={Colors.text.muted} />, 'Aucun tournoi', 'Tirez pour actualiser ou créez un tournoi.', { title: 'Créer un tournoi', onPress: () => router.navigate('/create-tournament' as any) }))}
           </>
           )}
         </ScrollView>
@@ -311,24 +394,37 @@ export default function MatchesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16 },
-  headerTitle: { color: Colors.text.primary, fontSize: 28, fontWeight: '700' as const },
+
+  // Header
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: OUTER_PAD, paddingVertical: SPACING.md, paddingTop: SPACING.xs },
+  headerTitle: { color: Colors.text.primary, fontSize: 28, fontWeight: '800' as const, letterSpacing: -0.8 },
+  headerSubtitle: { color: Colors.text.muted, fontSize: 13, fontWeight: '500' as const, marginTop: 2 },
   headerActions: { flexDirection: 'row', gap: 8 },
-  iconButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
-  iconButtonActive: { backgroundColor: Colors.primary.blue },
+  iconButton: { width: 46, height: 46, borderRadius: 16, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border.light },
+  iconButtonActive: { backgroundColor: Colors.primary.blue, borderColor: Colors.primary.blue },
   filterDot: { position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.primary.orange },
-  addButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.primary.orange, alignItems: 'center', justifyContent: 'center' },
-  tabsScroll: { maxHeight: 50, marginBottom: 16 },
-  tabs: { paddingHorizontal: 20, gap: 10 },
-  tab: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20, backgroundColor: Colors.background.card },
-  tabActive: { backgroundColor: Colors.primary.blue },
-  tabText: { color: Colors.text.secondary, fontSize: 14, fontWeight: '500' as const },
-  tabTextActive: { color: '#FFFFFF' },
+  addButton: {
+    width: 46, height: 46, borderRadius: 16, backgroundColor: Colors.primary.orange,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: Colors.primary.orange, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
+  },
+
+  // Tabs
+  tabsScroll: { maxHeight: 52, marginBottom: SPACING.md },
+  tabsContent: { paddingHorizontal: OUTER_PAD, gap: 8 },
+  tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 22, backgroundColor: Colors.background.card, borderWidth: 1, borderColor: Colors.border.light },
+  tabText: { color: Colors.text.secondary, fontSize: 12, fontWeight: '600' as const },
+  tabTextActive: { color: '#FFFFFF', fontWeight: '700' as const },
+  tabCount: { backgroundColor: Colors.background.cardLight, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8, minWidth: 18, alignItems: 'center' },
+  tabCountActive: { backgroundColor: 'rgba(255,255,255,0.25)' },
+  tabCountText: { color: Colors.text.muted, fontSize: 10, fontWeight: '700' as const },
+  tabCountTextActive: { color: '#FFFFFF' },
+
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 20, flexGrow: 1 },
+  scrollContent: { paddingHorizontal: OUTER_PAD, paddingBottom: 100, flexGrow: 1 },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
   loadingText: { color: Colors.text.muted, fontSize: 14, marginTop: 12 },
-  infoCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(21, 101, 192, 0.1)', padding: 14, borderRadius: 12, marginBottom: 16 },
+  infoCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(21, 101, 192, 0.1)', padding: 14, borderRadius: 14, marginBottom: 16 },
   infoText: { flex: 1, color: Colors.text.secondary, fontSize: 13 },
   activeFiltersRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 8 },
   activeFiltersLabel: { color: Colors.text.muted, fontSize: 12 },
@@ -336,50 +432,90 @@ const styles = StyleSheet.create({
   activeFilterChip: { backgroundColor: Colors.primary.blue, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   activeFilterText: { color: '#FFFFFF', fontSize: 12 },
   clearFilters: { color: Colors.primary.orange, fontSize: 12, fontWeight: '500' as const },
-  matchCard: { marginBottom: 16 },
-  matchCardRanked: { borderLeftWidth: 4, borderLeftColor: Colors.primary.orange },
-  matchHeader: { marginBottom: 12 },
-  matchTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
-  typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  typeBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  typeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' as const },
-  rankedStakeBadge: { backgroundColor: Colors.primary.orange + '30', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  rankedStakeText: { color: Colors.primary.orange, fontSize: 11, fontWeight: '600' as const },
-  rankedTagline: { color: Colors.primary.orange, fontSize: 11, fontWeight: '500' as const, marginBottom: 8 },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 11, fontWeight: '500' as const },
-  needsPlayersBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.status.success, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  needsPlayersText: { color: '#FFFFFF', fontSize: 10, fontWeight: '600' as const },
-  matchTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const, marginBottom: 4 },
-  matchLevel: { color: Colors.text.secondary, fontSize: 13, marginBottom: 12 },
-  matchDetails: { flexDirection: 'row', gap: 20, marginBottom: 8 },
-  matchDetail: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
-  matchDetailText: { color: Colors.text.secondary, fontSize: 13 },
-  organizerText: { color: Colors.text.muted, fontSize: 12, marginTop: 4, fontStyle: 'italic' as const },
-  matchFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border.light },
-  playersInfo: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  playersText: { color: Colors.text.secondary, fontSize: 13 },
-  prizeInfo: { backgroundColor: 'rgba(255, 107, 0, 0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  prizeText: { color: Colors.primary.orange, fontSize: 13, fontWeight: '600' as const },
-  rankedFooterBadge: { backgroundColor: Colors.primary.orange + '25', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  rankedFooterText: { color: Colors.primary.orange, fontSize: 12, fontWeight: '600' as const },
-  tournamentCard: { padding: 20, borderRadius: 16, marginBottom: 16 },
-  tournamentHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  tournamentPrize: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' as const },
-  tournamentName: { color: '#FFFFFF', fontSize: 20, fontWeight: '700' as const, marginBottom: 4 },
-  tournamentInfo: { color: 'rgba(255,255,255,0.8)', fontSize: 14, marginBottom: 12 },
-  tournamentMeta: { flexDirection: 'row', gap: 20, marginBottom: 12 },
-  tournamentMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  tournamentMetaText: { color: 'rgba(255,255,255,0.8)', fontSize: 13 },
-  tournamentFee: { backgroundColor: 'rgba(0,0,0,0.2)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, alignSelf: 'flex-start', marginBottom: 8 },
-  tournamentFeeText: { color: '#FFFFFF', fontSize: 13, fontWeight: '500' as const },
-  teamOnlyBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, alignSelf: 'flex-start' },
-  teamOnlyText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' as const },
-  emptyState: { alignItems: 'center', paddingVertical: 60 },
-  emptyTitle: { color: Colors.text.primary, fontSize: 20, fontWeight: '600' as const, marginTop: 20 },
-  emptyText: { color: Colors.text.muted, fontSize: 14, textAlign: 'center', marginTop: 8 },
-  emptyButton: { marginTop: 24 },
+
+  // Match card
+  matchCard: {
+    backgroundColor: Colors.background.card,
+    borderRadius: 18,
+    marginBottom: CARD_GAP,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+  },
+  matchAccentBar: { height: 3, width: '100%' },
+  matchCardBody: { padding: 14 },
+
+  matchHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  matchHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1 },
+
+  matchTypePill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12 },
+  matchTypePillText: { fontSize: 11, fontWeight: '700' as const },
+
+  matchStatusPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12 },
+  matchStatusDot: { width: 6, height: 6, borderRadius: 3 },
+  matchStatusText: { fontSize: 11, fontWeight: '600' as const },
+
+  needsPlayersBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#10B981', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
+  needsPlayersText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' as const },
+
+  // Title row
+  matchTitleRow: { marginBottom: 12 },
+  matchTitleLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  matchEmoji: { fontSize: 28 },
+  matchTitleInfo: { flex: 1 },
+  matchTitle: { color: Colors.text.primary, fontSize: 16, fontWeight: '700' as const, marginBottom: 2, letterSpacing: -0.2 },
+  matchLevel: { color: Colors.text.muted, fontSize: 12, fontWeight: '500' as const },
+
+  // Info pills
+  matchInfoPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  matchInfoPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.background.cardLight, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
+  matchInfoPillText: { color: Colors.text.muted, fontSize: 11, fontWeight: '500' as const },
+
+  // Venue pending
+  venuePendingBanner: { flexDirection: 'row' as const, alignItems: 'center' as const, backgroundColor: `${Colors.status.warning}15`, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, marginBottom: 12, gap: 6 },
+  venuePendingText: { color: Colors.status.warning, fontSize: 11, fontWeight: '500' as const, flex: 1 },
+
+  // Progress
+  matchProgressSection: { marginBottom: 4 },
+  matchProgressHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  matchProgressLeft: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  matchProgressLabel: { color: Colors.text.muted, fontSize: 12, fontWeight: '500' as const },
+  matchPrizePill: { backgroundColor: 'rgba(249,115,22,0.12)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  matchPrizeText: { color: Colors.primary.orange, fontSize: 11, fontWeight: '700' as const },
+  matchProgressBg: { height: 5, borderRadius: 3, backgroundColor: Colors.background.cardLight, overflow: 'hidden' },
+  matchProgressFill: { height: '100%', borderRadius: 3 },
+
+  // Footer
+  matchFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.border.light },
+  organizerText: { color: Colors.text.muted, fontSize: 11, fontWeight: '500' as const },
+  rankedTag: { color: Colors.primary.orange, fontSize: 11, fontWeight: '600' as const },
+
+  // Tournament card
+  tournamentCardWrap: { marginBottom: CARD_GAP, borderRadius: 18, overflow: 'hidden' },
+  tournamentCard: { padding: 16, borderRadius: 18, overflow: 'hidden' },
+  tournamentHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  tournamentIconWrap: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+  tournamentPrizeWrap: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.3)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(251,191,36,0.3)' },
+  tournamentPrize: { color: '#FBBF24', fontSize: 13, fontWeight: '700' as const },
+  tournamentName: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' as const, marginBottom: 4, letterSpacing: -0.3 },
+  tournamentInfo: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginBottom: 12 },
+  tournamentMetaRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  tournamentMetaPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+  tournamentMetaText: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '500' as const },
+  tournamentFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  tournamentFeePill: { backgroundColor: 'rgba(0,0,0,0.25)', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10 },
+  tournamentFeeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' as const },
+  teamOnlyBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+  teamOnlyText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' as const },
+
+  // Empty state
+  emptyState: { alignItems: 'center', paddingVertical: 60, gap: 12, paddingHorizontal: 24 },
+  emptyIconWrap: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.background.cardLight, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  emptyTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '700' as const },
+  emptyText: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' as const, lineHeight: 20 },
+  emptyButton: { marginTop: 8 },
+
+  // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '85%' },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
@@ -398,14 +534,16 @@ const styles = StyleSheet.create({
   distanceTextActive: { color: '#FFFFFF' },
   modalActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
   modalBtn: { flex: 1 },
+
+  // History
   historyList: { marginBottom: 20 },
-  historySectionTitle: { color: Colors.text.primary, fontSize: 16, fontWeight: '600' as const, marginBottom: 12 },
-  historyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.background.card, padding: 16, borderRadius: 12, marginBottom: 10 },
-  historyRowLeft: { flex: 1 },
-  historyRowSport: { color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const },
-  historyRowVenue: { color: Colors.text.muted, fontSize: 13, marginTop: 4 },
-  historyScoreBadge: { backgroundColor: Colors.primary.blue, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
-  historyScoreText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' as const },
-  venuePendingBanner: { flexDirection: 'row' as const, alignItems: 'center' as const, backgroundColor: `${Colors.status.warning}18`, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 5, marginTop: 6, gap: 5 },
-  venuePendingText: { color: Colors.status.warning, fontSize: 11, fontWeight: '500' as const, flex: 1 },
+  historySectionTitle: { color: Colors.text.primary, fontSize: 15, fontWeight: '700' as const, marginBottom: 12 },
+  historyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.background.card, padding: 14, borderRadius: 16, marginBottom: 10, borderWidth: 1, borderColor: Colors.border.light },
+  historyRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  historyRowEmoji: { fontSize: 24 },
+  historyRowInfo: { flex: 1 },
+  historyRowSport: { color: Colors.text.primary, fontSize: 14, fontWeight: '600' as const },
+  historyRowVenue: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
+  historyScoreBadge: { backgroundColor: Colors.primary.blue, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
+  historyScoreText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' as const },
 });
