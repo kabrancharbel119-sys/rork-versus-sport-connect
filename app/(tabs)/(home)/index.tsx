@@ -1223,7 +1223,7 @@ const styles: any = StyleSheet.create({
     backgroundColor: Colors.primary.blue + '06',
   },
   scroll: { flex: 1, width: '100%', backgroundColor: '#0d111d' },
-  scrollContent: { paddingTop: SPACING.sm, paddingBottom: 100, backgroundColor: '#0d111d' },
+  scrollContent: { paddingTop: SPACING.sm, paddingBottom: 40, backgroundColor: '#0d111d' },
 
   /* ════ PREMIUM HEADER ════ */
   header: {
