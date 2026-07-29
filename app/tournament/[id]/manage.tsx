@@ -1623,7 +1623,7 @@ export default function ManageTournamentScreen() {
   if (loading && !tournament) {
     return (
       <><Stack.Screen options={{ headerShown: false }} />
-      <View style={st.root}><LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+      <View style={st.root}><LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={st.safe}>
           <View style={st.fallbackHeader}><TouchableOpacity style={st.backBtn} onPress={goBack}><ArrowLeft size={20} color="#fff" /></TouchableOpacity><Text style={st.headerTitle}>{t('tournamentManage.title')}</Text><View style={{ width: 36 }} /></View>
           <View style={st.center}><ActivityIndicator size="large" color={Colors.primary.orange} /><Text style={st.centerText}>{t('common.loading')}</Text></View>
@@ -1633,7 +1633,7 @@ export default function ManageTournamentScreen() {
   if (!tournament) {
     return (
       <><Stack.Screen options={{ headerShown: false }} />
-      <View style={st.root}><LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+      <View style={st.root}><LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={st.safe}>
           <View style={st.fallbackHeader}><TouchableOpacity style={st.backBtn} onPress={goBack}><ArrowLeft size={20} color="#fff" /></TouchableOpacity><Text style={st.headerTitle}>{t('tournamentManage.title')}</Text><View style={{ width: 36 }} /></View>
           <View style={st.center}><Trophy size={56} color={Colors.text.muted} /><Text style={st.centerText}>{t('tournamentDetail.notFound')}</Text><Button title={t('common.back')} onPress={goBack} variant="primary" /></View>
@@ -1753,7 +1753,7 @@ export default function ManageTournamentScreen() {
   return (
     <><Stack.Screen options={{ headerShown: false }} />
     <View style={st.root}>
-      <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={st.safe}>
         <LinearGradient
           colors={tournament.status === 'completed' ? ['#4A5688', '#364270'] : tournament.status === 'in_progress' ? ['#22A85A', '#1A8C48'] : tournament.status === 'cancelled' ? ['#7F1D1D', '#5B1414'] : ['#E8740C', '#C85F0A']}

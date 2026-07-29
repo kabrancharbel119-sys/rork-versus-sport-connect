@@ -129,7 +129,7 @@ export default function UserProfileScreen() {
   if (!profileUser) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{isInvisibleProfile ? t('userProfile.invisibleProfile') : t('userProfile.userNotFound')}</Text>
@@ -231,7 +231,7 @@ export default function UserProfileScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.floatingBackRow}>
             <TouchableOpacity style={styles.floatingBackBtn} onPress={() => safeBack(router, '/(tabs)/(home)')} activeOpacity={0.7}>

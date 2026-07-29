@@ -151,7 +151,7 @@ export default function ScanTicketsScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
 
         {/* Camera */}
         {permission?.granted ? (
@@ -436,7 +436,7 @@ export default function ScanTicketsScreen() {
         {/* History modal */}
         <Modal visible={showHistory} animationType="slide" onRequestClose={() => setShowHistory(false)}>
           <View style={styles.historyContainer}>
-            <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+            <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
             <SafeAreaView style={styles.safeArea}>
               <View style={styles.historyHeader}>
                 <TouchableOpacity onPress={() => setShowHistory(false)} style={styles.cameraBackBtn}>

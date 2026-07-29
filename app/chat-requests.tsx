@@ -138,7 +138,7 @@ export default function ChatRequestsScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
       <Stack.Screen options={{ headerShown: false }} />
       
       <SafeAreaView style={styles.safeArea} edges={['top']}>

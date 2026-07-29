@@ -81,7 +81,7 @@ export default function TeamChatHubScreen() {
   if (!team) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <Text style={styles.errorText}>Équipe introuvable.</Text>
         </SafeAreaView>
@@ -93,7 +93,7 @@ export default function TeamChatHubScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           {/* Header */}
           <View style={styles.header}>

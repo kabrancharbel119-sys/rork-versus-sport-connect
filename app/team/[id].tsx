@@ -298,7 +298,7 @@ export default function TeamDetailScreen() {
   if (loadingTeam && !team) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
             <ActivityIndicator size="large" color={Colors.primary.orange} />
@@ -312,7 +312,7 @@ export default function TeamDetailScreen() {
   if (!team) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}><Text style={styles.errorText}>{t('teamDetail.notFound')}</Text><Button title={t('common.back')} onPress={() => safeBack(router, '/(tabs)/teams')} variant="outline" /></View>
         </SafeAreaView>
@@ -606,7 +606,7 @@ export default function TeamDetailScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea} edges={['top']}>
           <ScrollView testID="team-detail-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             <View style={styles.header}>

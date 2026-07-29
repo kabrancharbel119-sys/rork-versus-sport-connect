@@ -98,7 +98,7 @@ export default function EditMatchScreen() {
   if (!match) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>Match non trouvé</Text>
@@ -112,7 +112,7 @@ export default function EditMatchScreen() {
   if (match.createdBy !== user?.id) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>Vous n'êtes pas autorisé à modifier ce match</Text>
@@ -160,7 +160,7 @@ export default function EditMatchScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
         <LinearGradient
-          colors={[Colors.background.dark, '#0D1420']}
+          colors={[Colors.background.dark, '#0d111d']}
           style={StyleSheet.absoluteFill}
         />
         

@@ -284,7 +284,7 @@ export default function ScanQRScreen() {
 
   if (!permission?.granted) {
     return (
-      <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={styles.container}>
+      <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={styles.container}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.permissionContainer}>
           <Text style={styles.permissionText}>

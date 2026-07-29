@@ -154,7 +154,7 @@ export default function VenueManagerScreen() {
   if (!isVenueManager) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={[styles.safeArea, { alignItems: 'center', justifyContent: 'center' }]}>
           <MapPin size={48} color={Colors.text.muted} />
           <Text style={styles.emptyTitle}>Accès réservé</Text>
@@ -171,7 +171,7 @@ export default function VenueManagerScreen() {
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.container}>
-          <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
               <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)/(home)')}>
@@ -665,7 +665,7 @@ export default function VenueManagerScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)/(home)')}>

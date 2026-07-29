@@ -10,7 +10,7 @@ export default function NotFoundScreen() {
     <>
       <Stack.Screen options={{ title: '', headerShown: false }} />
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <View style={styles.content}>
           <View style={styles.iconWrap}>
             <Search size={48} color={Colors.text.muted} />

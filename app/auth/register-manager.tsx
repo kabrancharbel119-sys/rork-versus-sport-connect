@@ -95,7 +95,7 @@ export default function RegisterManagerScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={styles.container}>
+      <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={styles.container}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={{ flex: 1 }}

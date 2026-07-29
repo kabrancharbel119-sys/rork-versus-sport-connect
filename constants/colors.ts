@@ -8,7 +8,7 @@ export const Colors = {
     orangeDark: '#E65100',
   },
   background: {
-    dark: '#080B14',
+    dark: '#0d111d',
     card: '#111726',
     cardLight: '#1A2238',
     elevated: '#1A2340',

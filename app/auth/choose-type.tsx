@@ -33,7 +33,7 @@ export default function ChooseTypeScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={styles.container}>
+      <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={styles.container}>
         <View style={styles.headerRow}>
           <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
             <ArrowLeft size={22} color={Colors.text.primary} />

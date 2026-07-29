@@ -232,7 +232,7 @@ export default function CreateVenueScreen() {
   if (!isVenueManager) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <Text style={styles.errorText}>Accès réservé aux gestionnaires.</Text>
           <Button title="Retour" onPress={() => safeBack(router, '/(tabs)/(home)')} variant="outline" />
@@ -245,7 +245,7 @@ export default function CreateVenueScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/venue-manager')}>

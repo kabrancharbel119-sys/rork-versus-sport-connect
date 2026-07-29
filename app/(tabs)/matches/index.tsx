@@ -237,7 +237,7 @@ export default function MatchesScreen() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" translucent backgroundColor="transparent" />
-      <LinearGradient colors={['#070B12', '#0A0E16', Colors.background.dark, '#0B1018']} locations={[0, 0.25, 0.6, 1]} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={['#0d111d', '#0b0f1a', Colors.background.dark, '#0d111d']} locations={[0, 0.25, 0.6, 1]} style={StyleSheet.absoluteFill} />
       <View style={styles.safeArea}>
         <View style={styles.header}>
           <View>

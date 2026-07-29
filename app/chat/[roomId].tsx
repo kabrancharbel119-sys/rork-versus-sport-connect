@@ -271,7 +271,7 @@ export default function ChatRoomScreen() {
   if (!room) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>Discussion non trouvée</Text>
@@ -287,7 +287,7 @@ export default function ChatRoomScreen() {
   if (!canAccessChat) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.headerBar}>
             <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/chat')}>
@@ -317,7 +317,7 @@ export default function ChatRoomScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         
         <SafeAreaView style={styles.safeArea} edges={['top']}>
           {/* ════ FIXED HEADER ════ */}

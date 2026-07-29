@@ -83,7 +83,7 @@ function AuthGateInner({ children }: { children: React.ReactNode }) {
   if (isLoading) {
     return (
       <View style={authStyles.loadingContainer}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <ActivityIndicator size="large" color={Colors.primary.orange} />
       </View>
     );

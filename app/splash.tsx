@@ -54,7 +54,7 @@ export default function SplashScreen() {
 
   return (
     <LinearGradient
-      colors={[Colors.background.dark, '#0D1420', '#0A0E1A']}
+      colors={[Colors.background.dark, '#0d111d', '#0A0E1A']}
       style={styles.container}
     >
       <View style={styles.particles}>

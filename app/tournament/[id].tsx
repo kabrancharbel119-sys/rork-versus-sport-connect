@@ -310,7 +310,7 @@ export default function TournamentDetailScreen() {
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.container}>
-          <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
               <TouchableOpacity style={styles.backButton} onPress={goBack}>
@@ -351,7 +351,7 @@ export default function TournamentDetailScreen() {
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.container}>
-          <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
               <TouchableOpacity style={styles.backButton} onPress={goBack}>

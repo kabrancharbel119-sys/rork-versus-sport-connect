@@ -75,7 +75,7 @@ export default function LoginScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <LinearGradient
-        colors={[Colors.background.dark, '#0D1420']}
+        colors={[Colors.background.dark, '#0d111d']}
         style={styles.container}
       >
         <KeyboardAvoidingView

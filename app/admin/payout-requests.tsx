@@ -136,7 +136,7 @@ export default function AdminPayoutRequestsScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <TouchableOpacity onPress={handleBack} style={styles.headerBtn}>

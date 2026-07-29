@@ -291,7 +291,7 @@ export default function EditVenueScreen() {
   if (!isVenueManager) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <Text style={styles.errorText}>Accès réservé aux gestionnaires.</Text>
           <Button title="Retour" onPress={() => safeBack(router, '/(tabs)/(home)')} variant="outline" />
@@ -303,7 +303,7 @@ export default function EditVenueScreen() {
   if (venueQuery.isLoading) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={[styles.safeArea, { alignItems: 'center', justifyContent: 'center' }]}>
           <Text style={styles.loadingText}>Chargement...</Text>
         </SafeAreaView>
@@ -315,7 +315,7 @@ export default function EditVenueScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
             <TouchableOpacity 

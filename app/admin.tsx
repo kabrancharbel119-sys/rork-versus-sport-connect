@@ -524,7 +524,7 @@ export default function AdminScreen() {
   if (!user || !isAdmin) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background.dark }}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 }}>
           <View style={{ alignItems: 'center' }}>
             <Shield size={64} color={Colors.status.error} />
@@ -3476,7 +3476,7 @@ export default function AdminScreen() {
   return (
     <>
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safeArea} edges={['top']}>
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/(home)')}>

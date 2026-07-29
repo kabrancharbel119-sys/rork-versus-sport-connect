@@ -540,7 +540,7 @@ export default function VenueDetailScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
         <LinearGradient
-          colors={['#060A10', '#0A0E16', Colors.background.dark, '#0B1018', '#0D1420']}
+          colors={['#0d111d', '#0b0f1a', Colors.background.dark, '#0d111d', '#0d111d']}
           locations={[0, 0.2, 0.5, 0.7, 1]}
           style={StyleSheet.absoluteFill}
         />

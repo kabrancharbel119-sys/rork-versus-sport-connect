@@ -190,7 +190,7 @@ export default function NewsScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
         <LinearGradient
-          colors={['#070B12', '#0A0E16', Colors.background.dark, '#0B1018']}
+          colors={['#0d111d', '#0b0f1a', Colors.background.dark, '#0d111d']}
           locations={[0, 0.25, 0.6, 1]}
           style={StyleSheet.absoluteFill}
         />

@@ -260,7 +260,7 @@ export default function ChatScreen() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" translucent backgroundColor="transparent" />
-      <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
       <View style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.headerInfo}>
