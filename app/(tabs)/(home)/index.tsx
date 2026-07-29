@@ -830,11 +830,11 @@ export default function HomeScreen() {
         <View style={[styles.bgOrb2, { top: 300, left: -120 }]} />
       </View>
 
-      <View style={[styles.safeArea, { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 50 : 35) }]}>
+      <View style={styles.safeArea}>
         <Animated.ScrollView
           style={[styles.scroll, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 50 : 35) }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />}
         >
           {/* ════ PREMIUM HEADER ════ */}
