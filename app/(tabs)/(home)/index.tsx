@@ -9,11 +9,12 @@ import {
   Dimensions,
   RefreshControl,
   Animated,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import {
   Bell, Search, Trophy, Users, Swords, MapPin,
   ChevronRight, CheckCircle, Flame, ArrowRight, Plus,
@@ -37,7 +38,7 @@ const { width } = Dimensions.get('window');
 const PAD = OUTER_PAD;
 
 /* ════ Pressable card with scale animation ════ */
-function PressableCard({ children, onPress, style }: { children: React.ReactNode; onPress?: () => void; style?: any }) {
+const PressableCard = React.memo(function PressableCard({ children, onPress, style }: { children: React.ReactNode; onPress?: () => void; style?: any }) {
   const scale = useRef(new Animated.Value(1)).current;
   const handlePressIn = () => {
     Animated.timing(scale, { toValue: 0.98, duration: 250, useNativeDriver: true }).start();
@@ -56,7 +57,7 @@ function PressableCard({ children, onPress, style }: { children: React.ReactNode
       </Animated.View>
     </Pressable>
   );
-}
+});
 
 const octagonPoints = (size: number, inset: number) => {
   const c = inset;
@@ -71,7 +72,7 @@ const isValidAvatarUri = (uri?: string): boolean => {
   return trimmed.startsWith('http://') || trimmed.startsWith('https://');
 };
 
-const OctagonAvatar = ({ uri, name, size = 48, color = Colors.primary.blue }: { uri?: string; name?: string; size?: number; color?: string }) => {
+const OctagonAvatar = React.memo(function OctagonAvatar({ uri, name, size = 48, color = Colors.primary.blue }: { uri?: string; name?: string; size?: number; color?: string }) {
   const inset = size * 0.293;
   const pts = octagonPoints(size, inset);
   const validUri = isValidAvatarUri(uri);
@@ -108,10 +109,10 @@ const OctagonAvatar = ({ uri, name, size = 48, color = Colors.primary.blue }: { 
       )}
     </View>
   );
-};
+});
 
 /* Animated pulsing dot for live indicators */
-const PulseDot = ({ color = '#FF3B30', size = 6 }: { color?: string; size?: number }) => {
+const PulseDot = React.memo(function PulseDot({ color = '#FF3B30', size = 6 }: { color?: string; size?: number }) {
   const scale = useRef(new Animated.Value(1)).current;
   const opacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -133,7 +134,348 @@ const PulseDot = ({ color = '#FF3B30', size = 6 }: { color?: string; size?: numb
   return (
     <Animated.View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color, transform: [{ scale }], opacity }} />
   );
+});
+
+/* ════ Module-level helpers (pure functions, no state) ════ */
+const statusGradients: Record<string, [string, string]> = {
+  registration: ['#F97316', '#C2410C'],
+  in_progress: ['#10B981', '#065F46'],
+  completed: ['#374151', '#1F2937'],
 };
+
+const getCountdownLabel = (startDate: string | Date | null | undefined) => {
+  if (!startDate) return null;
+  const now = new Date();
+  const start = new Date(startDate);
+  const diffMs = start.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return null;
+  if (diffDays === 0) return "Aujourd'hui";
+  if (diffDays === 1) return 'Demain';
+  if (diffDays <= 7) return `Dans ${diffDays}j`;
+  if (diffDays <= 30) return `Dans ${Math.ceil(diffDays / 7)} sem.`;
+  return null;
+};
+
+const formatDate = (date: Date) =>
+  new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+
+const getGreeting = () => {
+  const h = new Date().getHours();
+  if (h < 12) return 'Bonjour';
+  if (h < 18) return 'Bon après-midi';
+  return 'Bonsoir';
+};
+
+/* ════ Types for extracted components ════ */
+type NowItem =
+  | { kind: 'live'; data: any }
+  | { kind: 'match'; data: any };
+
+type FeedItem =
+  | { kind: 'tournament'; data: any; route: string }
+  | { kind: 'team'; data: any; route: string }
+  | { kind: 'match'; data: any; route: string }
+  | { kind: 'user'; data: any; route: string };
+
+/* ════ SectionHeader — extracted, memoized ════ */
+const SectionHeader = React.memo(function SectionHeader({ title, subtitle, onSeeAll, seeAllLabel }: { title: string; subtitle?: string; onSeeAll?: () => void; seeAllLabel?: string }) {
+  return (
+    <View style={styles.sectionHeader}>
+      <View>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}
+      </View>
+      {onSeeAll && (
+        <TouchableOpacity style={styles.seeAllLink} onPress={onSeeAll} hitSlop={12}>
+          <Text style={styles.seeAllText}>{seeAllLabel ?? 'Tout voir'}</Text>
+          <ArrowRight size={14} color={Colors.primary.orange} strokeWidth={2.5} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+});
+
+/* ════ NowCard — extracted, memoized ════ */
+const NowCard = React.memo(function NowCard({ item, router }: { item: NowItem; router: any }) {
+  if (item.kind === 'live') {
+    const t = item.data;
+    return (
+      <PressableCard
+        onPress={() => router.push(`/tournament/${t.id}`)}
+        style={styles.nowCard}
+      >
+        <LinearGradient
+          colors={statusGradients.in_progress}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0.6 }}
+          style={styles.nowCardGrad}
+        >
+          <View style={styles.nowCardDecor} />
+          <View style={styles.nowCardTop}>
+            <View style={styles.livePill}>
+              <PulseDot color="#FF3B30" size={6} />
+              <Text style={styles.livePillText}>EN DIRECT</Text>
+            </View>
+            <Flame size={14} color="rgba(255,255,255,0.7)" />
+          </View>
+          <Text style={styles.nowCardTitle} numberOfLines={1}>{t.name}</Text>
+          <View style={styles.nowCardMeta}>
+            <View style={styles.nowChip}><Text style={styles.nowChipText}>{sportLabels[t.sport]}</Text></View>
+            <View style={styles.nowChip}><Text style={styles.nowChipText}>{t.registeredTeams.length} équipes</Text></View>
+          </View>
+          {t.venue?.city && (
+            <View style={styles.nowCardLocation}>
+              <MapPin size={10} color="rgba(255,255,255,0.6)" />
+              <Text style={styles.nowCardLocationText} numberOfLines={1}>{t.venue.city}</Text>
+            </View>
+          )}
+        </LinearGradient>
+      </PressableCard>
+    );
+  }
+  const m = item.data;
+  return (
+    <PressableCard
+      onPress={() => router.push(`/match/${m.id}`)}
+      style={styles.nowCard}
+    >
+      <View style={styles.nowCardPlain}>
+        <View style={styles.nowCardTop}>
+          <View style={styles.matchPill}>
+            <Swords size={10} color={Colors.primary.orange} />
+            <Text style={styles.matchPillText}>MATCH</Text>
+          </View>
+          {m.scheduledAt && (
+            <View style={styles.nowCardTime}>
+              <Clock size={11} color={Colors.text.muted} />
+              <Text style={styles.nowCardTimeText}>{formatDate(m.scheduledAt)}</Text>
+            </View>
+          )}
+        </View>
+        <Text style={styles.nowCardTitleDark} numberOfLines={1}>
+          {m.title || `${sportLabels[m.sport] || 'Match'}`}
+        </Text>
+        {m.venue?.name && (
+          <View style={styles.nowCardVenue}>
+            <MapPin size={10} color={Colors.text.muted} />
+            <Text style={styles.nowCardVenueText} numberOfLines={1}>{m.venue.name}</Text>
+          </View>
+        )}
+        <View style={styles.nowCardMatchBottom}>
+          <View style={styles.nowCardSportBadge}>
+            <Text style={styles.nowCardSportBadgeText}>{sportLabels[m.sport] || 'Sport'}</Text>
+          </View>
+          {m.maxPlayers && (
+            <View style={styles.nowCardPlayers}>
+              <Users size={10} color={Colors.text.muted} />
+              <Text style={styles.nowCardPlayersText}>{m.maxPlayers} joueurs</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </PressableCard>
+  );
+});
+
+/* ════ FeedCard — extracted, memoized ════ */
+const FeedCard = React.memo(function FeedCard({ item, router }: { item: FeedItem; router: any }) {
+  if (item.kind === 'tournament') {
+    const t = item.data;
+    const countdown = getCountdownLabel(t.startDate);
+    const regPct = t.maxTeams > 0 ? t.registeredTeams.length / t.maxTeams : 0;
+    const spotsLeft = t.maxTeams - t.registeredTeams.length;
+    const bannerSource = t.bannerImage || t.sponsorLogo || null;
+    return (
+      <PressableCard
+        onPress={() => router.push(item.route as any)}
+        style={styles.feedCard}
+      >
+        {bannerSource && (
+          <View style={styles.feedBannerWrap}>
+            <Image
+              source={{ uri: bannerSource }}
+              style={styles.feedBannerImage}
+              contentFit="cover"
+              transition={200}
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.5)']}
+              style={styles.feedBannerOverlay}
+            />
+            {t.status === 'in_progress' && (
+              <View style={styles.feedBannerLive}>
+                <Flame size={9} color="#FFF" />
+                <Text style={styles.feedLiveText}>LIVE</Text>
+              </View>
+            )}
+          </View>
+        )}
+        <View style={styles.feedCardHeader}>
+          {t.sponsorLogo ? (
+            <Avatar uri={t.sponsorLogo} name={t.name} size="small" />
+          ) : (
+            <View style={[styles.feedIconWrap, { backgroundColor: '#FF6B35' + '18' }]}>
+              <Trophy size={16} color="#FF6B35" strokeWidth={2} />
+            </View>
+          )}
+          <View style={styles.feedHeaderText}>
+            <View style={styles.feedNameRow}>
+              <Text style={styles.feedTournamentName} numberOfLines={1}>{t.name}</Text>
+              {t.sponsorName && <CheckCircle size={12} color="#10B981" strokeWidth={2} />}
+            </View>
+            <Text style={styles.feedTime}>{countdown ?? formatDate(t.startDate)}</Text>
+          </View>
+          {t.status === 'in_progress' ? (
+            <View style={styles.feedLiveBadge}>
+              <Flame size={9} color="#FFF" />
+              <Text style={styles.feedLiveText}>LIVE</Text>
+            </View>
+          ) : (
+            <View style={styles.feedStatusDot} />
+          )}
+        </View>
+        <View style={styles.feedChips}>
+          <View style={styles.feedChip}><Text style={styles.feedChipText}>{sportLabels[t.sport]}</Text></View>
+          <View style={styles.feedChip}><Text style={styles.feedChipText}>{t.format}</Text></View>
+          {t.venue?.city && <View style={styles.feedChip}><Text style={styles.feedChipText}>{t.venue.city}</Text></View>}
+        </View>
+        <View style={styles.feedInfoRow}>
+          <Clock size={11} color={Colors.text.muted} strokeWidth={2} />
+          <Text style={styles.feedInfoText}>{formatDate(t.startDate)}</Text>
+          {t.venue?.name && (
+            <>
+              <View style={styles.feedInfoDot} />
+              <MapPin size={11} color={Colors.text.muted} strokeWidth={2} />
+              <Text style={styles.feedInfoText} numberOfLines={1}>{t.venue.name}</Text>
+            </>
+          )}
+        </View>
+        <View style={styles.feedProgress}>
+          <View style={styles.feedProgressBg}>
+            <View style={[styles.feedProgressFill, { width: `${Math.min(regPct * 100, 100)}%` }]} />
+          </View>
+          <View style={styles.feedProgressRow}>
+            <Text style={styles.feedProgressLabel}>{t.registeredTeams.length}/{t.maxTeams} équipes · {spotsLeft} places</Text>
+            {t.prizePool > 0 && (
+              <View style={styles.feedPrize}>
+                <Medal size={11} color="#FFD700" strokeWidth={2} />
+                <Text style={styles.feedPrizeText}>{t.prizePool.toLocaleString('fr-FR')}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+        {t.status === 'registration' && (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => router.push(item.route as any)}
+            style={styles.feedParticipateBtn}
+          >
+            <Text style={styles.feedParticipateText}>Participer</Text>
+            <ArrowRight size={14} color="#FFF" strokeWidth={2.5} />
+          </TouchableOpacity>
+        )}
+      </PressableCard>
+    );
+  }
+
+  if (item.kind === 'team') {
+    const t = item.data;
+    const spotsLeft = t.maxMembers - t.members.length;
+    return (
+      <PressableCard
+        onPress={() => router.push(item.route as any)}
+        style={styles.feedCard}
+      >
+        <View style={styles.feedCardHeader}>
+          <View style={[styles.feedIconWrap, { backgroundColor: '#3B82F6' + '18' }]}>
+            <UserPlus size={16} color="#3B82F6" strokeWidth={2} />
+          </View>
+          <View style={styles.feedHeaderText}>
+            <Text style={styles.feedAction}>Équipe recrute</Text>
+            <Text style={styles.feedTime}>{spotsLeft} place{spotsLeft > 1 ? 's' : ''} libre{spotsLeft > 1 ? 's' : ''}</Text>
+          </View>
+        </View>
+        <View style={styles.feedTeamRow}>
+          <Avatar uri={t.logo} name={t.name} size="small" />
+          <View style={styles.feedTeamInfo}>
+            <Text style={styles.feedTitle} numberOfLines={1}>{t.name}</Text>
+            <View style={styles.feedChips}>
+              <View style={styles.feedChip}><Text style={styles.feedChipText}>{sportLabels[t.sport]}</Text></View>
+              {t.city && <View style={styles.feedChip}><Text style={styles.feedChipText}>{t.city}</Text></View>}
+            </View>
+          </View>
+          <View style={styles.feedTeamJoinBtn}>
+            <Text style={styles.feedTeamJoinText}>Rejoindre</Text>
+          </View>
+        </View>
+      </PressableCard>
+    );
+  }
+
+  if (item.kind === 'match') {
+    const m = item.data;
+    const homeTeam = m.homeTeam?.name ?? 'Équipe 1';
+    const awayTeam = m.awayTeam?.name ?? 'Équipe 2';
+    return (
+      <PressableCard
+        onPress={() => router.push(item.route as any)}
+        style={styles.feedCard}
+      >
+        <View style={styles.feedCardHeader}>
+          <View style={[styles.feedIconWrap, { backgroundColor: Colors.primary.orange + '18' }]}>
+            <Swords size={16} color={Colors.primary.orange} strokeWidth={2} />
+          </View>
+          <View style={styles.feedHeaderText}>
+            <Text style={styles.feedAction}>Match à venir</Text>
+            <Text style={styles.feedTime}>{formatDate(m.dateTime)}</Text>
+          </View>
+        </View>
+        <Text style={styles.feedTitle} numberOfLines={2}>{homeTeam} vs {awayTeam}</Text>
+        <View style={styles.feedChips}>
+          <View style={styles.feedChip}><Text style={styles.feedChipText}>{sportLabels[m.sport] || m.sport}</Text></View>
+          <View style={styles.feedChip}><Text style={styles.feedChipText}>{m.format}</Text></View>
+          {m.venue?.city && <View style={styles.feedChip}><Text style={styles.feedChipText}>{m.venue.city}</Text></View>}
+        </View>
+        {m.venue?.name && (
+          <View style={styles.feedInfoRow}>
+            <MapPin size={11} color={Colors.text.muted} strokeWidth={2} />
+            <Text style={styles.feedInfoText} numberOfLines={1}>{m.venue.name}</Text>
+          </View>
+        )}
+      </PressableCard>
+    );
+  }
+
+  if (item.kind === 'user') {
+    const u = item.data;
+    const mainSport = u.sports?.[0];
+    return (
+      <PressableCard
+        onPress={() => router.push(item.route as any)}
+        style={styles.feedCard}
+      >
+        <View style={styles.feedCardHeader}>
+          <Avatar uri={u.avatar} name={u.fullName} size="small" />
+          <View style={styles.feedHeaderText}>
+            <View style={styles.feedNameRow}>
+              <Text style={styles.feedTournamentName} numberOfLines={1}>{u.fullName}</Text>
+              {u.isVerified && <CheckCircle size={12} color="#10B981" strokeWidth={2} />}
+            </View>
+            <Text style={styles.feedTime}>@{u.username}</Text>
+          </View>
+        </View>
+        {u.bio && <Text style={styles.feedTitle} numberOfLines={2}>{u.bio}</Text>}
+        <View style={styles.feedChips}>
+          {mainSport && <View style={styles.feedChip}><Text style={styles.feedChipText}>{sportLabels[mainSport.sport] || mainSport.sport}</Text></View>}
+          {u.city && <View style={styles.feedChip}><Text style={styles.feedChipText}>{u.city}</Text></View>}
+          <View style={styles.feedChip}><Text style={styles.feedChipText}>{u.followers} abonnés</Text></View>
+        </View>
+      </PressableCard>
+    );
+  }
+  return null;
+});
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -216,20 +558,10 @@ export default function HomeScreen() {
     .slice(0, 3);
 
   /* ════ FEED CONSTRUCTION — relevance-based ════ */
-  type NowItem =
-    | { kind: 'live'; data: any }
-    | { kind: 'match'; data: any };
-
   const nowItems: NowItem[] = [
     ...liveTournaments.map(t => ({ kind: 'live' as const, data: t })),
     ...upcomingMatches.map(m => ({ kind: 'match' as const, data: m })),
   ].slice(0, 3);
-
-  type FeedItem =
-    | { kind: 'tournament'; data: any; route: string }
-    | { kind: 'team'; data: any; route: string }
-    | { kind: 'match'; data: any; route: string }
-    | { kind: 'user'; data: any; route: string };
 
   // Tournaments related to user's teams (user's teams are registered or user is manager)
   const myTeamTournamentIds = new Set<string>();
@@ -301,35 +633,6 @@ export default function HomeScreen() {
     { icon: Trophy, color: '#10B981', label: 'Tournoi', route: '/(tabs)/tournaments', filter: 'tournament' },
     ...(isVenueManager ? [] : [{ icon: MapPin, color: '#8B5CF6', label: 'Terrains', route: '/(tabs)/venues', filter: 'venue' }]),
   ];
-
-  const statusGradients: Record<string, [string, string]> = {
-    registration: ['#F97316', '#C2410C'],
-    in_progress: ['#10B981', '#065F46'],
-    completed: ['#374151', '#1F2937'],
-  };
-  const getCountdownLabel = (startDate: string | Date | null | undefined) => {
-    if (!startDate) return null;
-    const now = new Date();
-    const start = new Date(startDate);
-    const diffMs = start.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) return null;
-    if (diffDays === 0) return "Aujourd'hui";
-    if (diffDays === 1) return 'Demain';
-    if (diffDays <= 7) return `Dans ${diffDays}j`;
-    if (diffDays <= 30) return `Dans ${Math.ceil(diffDays / 7)} sem.`;
-    return null;
-  };
-
-  const formatDate = (date: Date) =>
-    new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-
-  const getGreeting = () => {
-    const h = new Date().getHours();
-    if (h < 12) return 'Bonjour';
-    if (h < 18) return 'Bon après-midi';
-    return 'Bonsoir';
-  };
 
   /* ════ ACTIVITY TIMELINE — relevance-based, clickable, with dates ════ */
   type ActivityItem = { id: string; icon: React.ReactNode; text: string; sub: string; date: string; color: string; route?: string };
@@ -512,304 +815,9 @@ export default function HomeScreen() {
   const [showAllActivities, setShowAllActivities] = React.useState(false);
   const visibleActivities = showAllActivities ? activityItems : activityItems.slice(0, 5);
 
-  /* ════ NOW CARD — live tournament or upcoming match ════ */
-  const NowCard = ({ item }: { item: NowItem }) => {
-    if (item.kind === 'live') {
-      const t = item.data;
-      return (
-        <PressableCard
-          onPress={() => router.push(`/tournament/${t.id}`)}
-          style={styles.nowCard}
-        >
-          <LinearGradient
-            colors={statusGradients.in_progress}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0.6 }}
-            style={styles.nowCardGrad}
-          >
-            <View style={styles.nowCardDecor} />
-            <View style={styles.nowCardTop}>
-              <View style={styles.livePill}>
-                <PulseDot color="#FF3B30" size={6} />
-                <Text style={styles.livePillText}>EN DIRECT</Text>
-              </View>
-              <Flame size={14} color="rgba(255,255,255,0.7)" />
-            </View>
-            <Text style={styles.nowCardTitle} numberOfLines={1}>{t.name}</Text>
-            <View style={styles.nowCardMeta}>
-              <View style={styles.nowChip}><Text style={styles.nowChipText}>{sportLabels[t.sport]}</Text></View>
-              <View style={styles.nowChip}><Text style={styles.nowChipText}>{t.registeredTeams.length} équipes</Text></View>
-            </View>
-            {t.venue?.city && (
-              <View style={styles.nowCardLocation}>
-                <MapPin size={10} color="rgba(255,255,255,0.6)" />
-                <Text style={styles.nowCardLocationText} numberOfLines={1}>{t.venue.city}</Text>
-              </View>
-            )}
-          </LinearGradient>
-        </PressableCard>
-      );
-    }
-    const m = item.data;
-    return (
-      <PressableCard
-        onPress={() => router.push(`/match/${m.id}`)}
-        style={styles.nowCard}
-      >
-        <View style={styles.nowCardPlain}>
-          <View style={styles.nowCardTop}>
-            <View style={styles.matchPill}>
-              <Swords size={10} color={Colors.primary.orange} />
-              <Text style={styles.matchPillText}>MATCH</Text>
-            </View>
-            {m.scheduledAt && (
-              <View style={styles.nowCardTime}>
-                <Clock size={11} color={Colors.text.muted} />
-                <Text style={styles.nowCardTimeText}>{formatDate(m.scheduledAt)}</Text>
-              </View>
-            )}
-          </View>
-          <Text style={styles.nowCardTitleDark} numberOfLines={1}>
-            {m.title || `${sportLabels[m.sport] || 'Match'}`}
-          </Text>
-          {m.venue?.name && (
-            <View style={styles.nowCardVenue}>
-              <MapPin size={10} color={Colors.text.muted} />
-              <Text style={styles.nowCardVenueText} numberOfLines={1}>{m.venue.name}</Text>
-            </View>
-          )}
-          <View style={styles.nowCardMatchBottom}>
-            <View style={styles.nowCardSportBadge}>
-              <Text style={styles.nowCardSportBadgeText}>{sportLabels[m.sport] || 'Sport'}</Text>
-            </View>
-            {m.maxPlayers && (
-              <View style={styles.nowCardPlayers}>
-                <Users size={10} color={Colors.text.muted} />
-                <Text style={styles.nowCardPlayersText}>{m.maxPlayers} joueurs</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </PressableCard>
-    );
-  };
-
-  /* ════ FEED CARD — premium social post style ════ */
-  const FeedCard = ({ item }: { item: FeedItem }) => {
-    if (item.kind === 'tournament') {
-      const t = item.data;
-      const countdown = getCountdownLabel(t.startDate);
-      const regPct = t.maxTeams > 0 ? t.registeredTeams.length / t.maxTeams : 0;
-      const spotsLeft = t.maxTeams - t.registeredTeams.length;
-      const bannerSource = t.bannerImage || t.sponsorLogo || null;
-      return (
-        <PressableCard
-          onPress={() => router.push(item.route as any)}
-          style={styles.feedCard}
-        >
-          {bannerSource && (
-            <View style={styles.feedBannerWrap}>
-              <Image
-                source={{ uri: bannerSource }}
-                style={styles.feedBannerImage}
-                contentFit="cover"
-                transition={200}
-              />
-              <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.5)']}
-                style={styles.feedBannerOverlay}
-              />
-              {t.status === 'in_progress' && (
-                <View style={styles.feedBannerLive}>
-                  <Flame size={9} color="#FFF" />
-                  <Text style={styles.feedLiveText}>LIVE</Text>
-                </View>
-              )}
-            </View>
-          )}
-          <View style={styles.feedCardHeader}>
-            {t.sponsorLogo ? (
-              <Avatar uri={t.sponsorLogo} name={t.name} size="small" />
-            ) : (
-              <View style={[styles.feedIconWrap, { backgroundColor: '#FF6B35' + '18' }]}>
-                <Trophy size={16} color="#FF6B35" strokeWidth={2} />
-              </View>
-            )}
-            <View style={styles.feedHeaderText}>
-              <View style={styles.feedNameRow}>
-                <Text style={styles.feedTournamentName} numberOfLines={1}>{t.name}</Text>
-                {t.sponsorName && <CheckCircle size={12} color="#10B981" strokeWidth={2} />}
-              </View>
-              <Text style={styles.feedTime}>{countdown ?? formatDate(t.startDate)}</Text>
-            </View>
-            {t.status === 'in_progress' ? (
-              <View style={styles.feedLiveBadge}>
-                <Flame size={9} color="#FFF" />
-                <Text style={styles.feedLiveText}>LIVE</Text>
-              </View>
-            ) : (
-              <View style={styles.feedStatusDot} />
-            )}
-          </View>
-          <View style={styles.feedChips}>
-            <View style={styles.feedChip}><Text style={styles.feedChipText}>{sportLabels[t.sport]}</Text></View>
-            <View style={styles.feedChip}><Text style={styles.feedChipText}>{t.format}</Text></View>
-            {t.venue?.city && <View style={styles.feedChip}><Text style={styles.feedChipText}>{t.venue.city}</Text></View>}
-          </View>
-          <View style={styles.feedInfoRow}>
-            <Clock size={11} color={Colors.text.muted} strokeWidth={2} />
-            <Text style={styles.feedInfoText}>{formatDate(t.startDate)}</Text>
-            {t.venue?.name && (
-              <>
-                <View style={styles.feedInfoDot} />
-                <MapPin size={11} color={Colors.text.muted} strokeWidth={2} />
-                <Text style={styles.feedInfoText} numberOfLines={1}>{t.venue.name}</Text>
-              </>
-            )}
-          </View>
-          <View style={styles.feedProgress}>
-            <View style={styles.feedProgressBg}>
-              <View style={[styles.feedProgressFill, { width: `${Math.min(regPct * 100, 100)}%` }]} />
-            </View>
-            <View style={styles.feedProgressRow}>
-              <Text style={styles.feedProgressLabel}>{t.registeredTeams.length}/{t.maxTeams} équipes · {spotsLeft} places</Text>
-              {t.prizePool > 0 && (
-                <View style={styles.feedPrize}>
-                  <Medal size={11} color="#FFD700" strokeWidth={2} />
-                  <Text style={styles.feedPrizeText}>{t.prizePool.toLocaleString('fr-FR')}</Text>
-                </View>
-              )}
-            </View>
-          </View>
-          {t.status === 'registration' && (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => router.push(item.route as any)}
-              style={styles.feedParticipateBtn}
-            >
-              <Text style={styles.feedParticipateText}>Participer</Text>
-              <ArrowRight size={14} color="#FFF" strokeWidth={2.5} />
-            </TouchableOpacity>
-          )}
-        </PressableCard>
-      );
-    }
-
-    if (item.kind === 'team') {
-      const t = item.data;
-      const spotsLeft = t.maxMembers - t.members.length;
-      return (
-        <PressableCard
-          onPress={() => router.push(item.route as any)}
-          style={styles.feedCard}
-        >
-          <View style={styles.feedCardHeader}>
-            <View style={[styles.feedIconWrap, { backgroundColor: '#3B82F6' + '18' }]}>
-              <UserPlus size={16} color="#3B82F6" strokeWidth={2} />
-            </View>
-            <View style={styles.feedHeaderText}>
-              <Text style={styles.feedAction}>Équipe recrute</Text>
-              <Text style={styles.feedTime}>{spotsLeft} place{spotsLeft > 1 ? 's' : ''} libre{spotsLeft > 1 ? 's' : ''}</Text>
-            </View>
-          </View>
-          <View style={styles.feedTeamRow}>
-            <Avatar uri={t.logo} name={t.name} size="small" />
-            <View style={styles.feedTeamInfo}>
-              <Text style={styles.feedTitle} numberOfLines={1}>{t.name}</Text>
-              <View style={styles.feedChips}>
-                <View style={styles.feedChip}><Text style={styles.feedChipText}>{sportLabels[t.sport]}</Text></View>
-                {t.city && <View style={styles.feedChip}><Text style={styles.feedChipText}>{t.city}</Text></View>}
-              </View>
-            </View>
-            <View style={styles.feedTeamJoinBtn}>
-              <Text style={styles.feedTeamJoinText}>Rejoindre</Text>
-            </View>
-          </View>
-        </PressableCard>
-      );
-    }
-
-    if (item.kind === 'match') {
-      const m = item.data;
-      const homeTeam = m.homeTeam?.name ?? 'Équipe 1';
-      const awayTeam = m.awayTeam?.name ?? 'Équipe 2';
-      return (
-        <PressableCard
-          onPress={() => router.push(item.route as any)}
-          style={styles.feedCard}
-        >
-          <View style={styles.feedCardHeader}>
-            <View style={[styles.feedIconWrap, { backgroundColor: Colors.primary.orange + '18' }]}>
-              <Swords size={16} color={Colors.primary.orange} strokeWidth={2} />
-            </View>
-            <View style={styles.feedHeaderText}>
-              <Text style={styles.feedAction}>Match à venir</Text>
-              <Text style={styles.feedTime}>{formatDate(m.dateTime)}</Text>
-            </View>
-          </View>
-          <Text style={styles.feedTitle} numberOfLines={2}>{homeTeam} vs {awayTeam}</Text>
-          <View style={styles.feedChips}>
-            <View style={styles.feedChip}><Text style={styles.feedChipText}>{sportLabels[m.sport] || m.sport}</Text></View>
-            <View style={styles.feedChip}><Text style={styles.feedChipText}>{m.format}</Text></View>
-            {m.venue?.city && <View style={styles.feedChip}><Text style={styles.feedChipText}>{m.venue.city}</Text></View>}
-          </View>
-          {m.venue?.name && (
-            <View style={styles.feedInfoRow}>
-              <MapPin size={11} color={Colors.text.muted} strokeWidth={2} />
-              <Text style={styles.feedInfoText} numberOfLines={1}>{m.venue.name}</Text>
-            </View>
-          )}
-        </PressableCard>
-      );
-    }
-
-    if (item.kind === 'user') {
-      const u = item.data;
-      const mainSport = u.sports?.[0];
-      return (
-        <PressableCard
-          onPress={() => router.push(item.route as any)}
-          style={styles.feedCard}
-        >
-          <View style={styles.feedCardHeader}>
-            <Avatar uri={u.avatar} name={u.fullName} size="small" />
-            <View style={styles.feedHeaderText}>
-              <View style={styles.feedNameRow}>
-                <Text style={styles.feedTournamentName} numberOfLines={1}>{u.fullName}</Text>
-                {u.isVerified && <CheckCircle size={12} color="#10B981" strokeWidth={2} />}
-              </View>
-              <Text style={styles.feedTime}>@{u.username}</Text>
-            </View>
-          </View>
-          {u.bio && <Text style={styles.feedTitle} numberOfLines={2}>{u.bio}</Text>}
-          <View style={styles.feedChips}>
-            {mainSport && <View style={styles.feedChip}><Text style={styles.feedChipText}>{sportLabels[mainSport.sport] || mainSport.sport}</Text></View>}
-            {u.city && <View style={styles.feedChip}><Text style={styles.feedChipText}>{u.city}</Text></View>}
-            <View style={styles.feedChip}><Text style={styles.feedChipText}>{u.followers} abonnés</Text></View>
-          </View>
-        </PressableCard>
-      );
-    }
-  };
-
-  /* ════ SECTION HEADER ════ */
-  const SectionHeader = ({ title, subtitle, onSeeAll, seeAllLabel }: { title: string; subtitle?: string; onSeeAll?: () => void; seeAllLabel?: string }) => (
-    <View style={styles.sectionHeader}>
-      <View>
-        <Text style={styles.sectionTitle}>{title}</Text>
-        {subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}
-      </View>
-      {onSeeAll && (
-        <TouchableOpacity style={styles.seeAllLink} onPress={onSeeAll} hitSlop={12}>
-          <Text style={styles.seeAllText}>{seeAllLabel ?? 'Tout voir'}</Text>
-          <ArrowRight size={14} color={Colors.primary.orange} strokeWidth={2.5} />
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-
   return (
     <View style={styles.container}>
+      <StatusBar style="light" translucent backgroundColor="transparent" />
       <LinearGradient
         colors={['#070B12', '#0A0E16', Colors.background.dark, '#0B1018']}
         locations={[0, 0.25, 0.6, 1]}
@@ -820,7 +828,7 @@ export default function HomeScreen() {
         <View style={[styles.bgOrb2, { top: 300, left: -120 }]} />
       </View>
 
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.safeArea}>
         <Animated.ScrollView
           style={[styles.scroll, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
           showsVerticalScrollIndicator={false}
@@ -941,7 +949,7 @@ export default function HomeScreen() {
                 decelerationRate="fast"
               >
                 {nowItems.map((item, i) => (
-                  <NowCard key={i} item={item} />
+                  <NowCard key={i} item={item} router={router} />
                 ))}
               </ScrollView>
             </View>
@@ -981,7 +989,7 @@ export default function HomeScreen() {
                 decelerationRate="fast"
               >
                 {filteredFeedItems.map((item, i) => (
-                  <FeedCard key={i} item={item} />
+                  <FeedCard key={i} item={item} router={router} />
                 ))}
               </ScrollView>
             ) : (
@@ -1164,14 +1172,14 @@ export default function HomeScreen() {
 
           <View style={{ height: 50 }} />
         </Animated.ScrollView>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const styles: any = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1 },
+  safeArea: { flex: 1, paddingTop: Platform.OS === 'ios' ? 50 : 35 },
   bgDecor: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
   bgOrb: {
     position: 'absolute',
@@ -1187,14 +1195,15 @@ const styles = StyleSheet.create({
     borderRadius: 160,
     backgroundColor: Colors.primary.blue + '06',
   },
-  scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: OUTER_PAD, paddingTop: SPACING.sm, paddingBottom: 100 },
+  scroll: { flex: 1, width: '100%' },
+  scrollContent: { paddingTop: SPACING.sm, paddingBottom: 100 },
 
   /* ════ PREMIUM HEADER ════ */
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 16,
     marginBottom: SECTION_GAP - SPACING.sm,
     paddingTop: SPACING.xs,
   },
@@ -1251,14 +1260,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background.card,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border.light,
   },
   avatarRing: {
     borderRadius: 999,
     padding: 2,
-    borderWidth: 2,
-    borderColor: Colors.primary.orange + '40',
   },
   headerBadgeCount: {
     position: 'absolute',
@@ -1271,8 +1276,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
-    borderWidth: 2,
-    borderColor: Colors.background.dark,
   },
   headerBadgeCountText: {
     color: '#FFF',
@@ -1285,6 +1288,7 @@ const styles = StyleSheet.create({
     marginBottom: SECTION_GAP - SPACING.sm,
     borderRadius: CARD_RADIUS - 4,
     overflow: 'hidden',
+    marginHorizontal: 16,
   },
   bannerGrad: {
     flexDirection: 'row',
@@ -1293,8 +1297,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: CARD_RADIUS - 4,
-    borderWidth: 1,
-    borderColor: Colors.primary.orange + '14',
   },
   bannerIcon: {
     width: 36,
@@ -1322,11 +1324,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: CARD_RADIUS - 4,
     backgroundColor: Colors.background.card,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
   },
   quickBtnActive: {
-    borderColor: Colors.primary.orange + '50',
     backgroundColor: Colors.background.cardLight,
   },
   quickBtnIcon: {
@@ -1348,8 +1347,7 @@ const styles = StyleSheet.create({
     borderRadius: CARD_RADIUS - 4,
     padding: 14,
     marginBottom: SECTION_GAP - SPACING.sm,
-    borderWidth: 1,
-    borderColor: Colors.primary.orange + '12',
+    marginHorizontal: 16,
   },
   locationPromptIcon: {
     width: 32,
@@ -1368,6 +1366,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 14,
+    paddingHorizontal: 16,
   },
   sectionTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '700' as const, letterSpacing: -0.4 },
   sectionSubtitle: { color: Colors.text.secondary, fontSize: 13, marginTop: 2, fontWeight: '500' as const },
@@ -1375,7 +1374,7 @@ const styles = StyleSheet.create({
   seeAllText: { color: Colors.primary.orange, fontSize: 13, fontWeight: '600' as const },
 
   /* ════ NOW CARDS ════ */
-  nowScroll: { gap: CARD_GAP, paddingRight: OUTER_PAD },
+  nowScroll: { gap: CARD_GAP, paddingLeft: 16, paddingRight: 16 },
   nowCard: {
     width: width * 0.75,
     borderRadius: CARD_RADIUS - 4,
@@ -1427,8 +1426,6 @@ const styles = StyleSheet.create({
     padding: CARD_INNER_PAD - 4,
     gap: 8,
     backgroundColor: Colors.background.card,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
     ...cardGlow,
   },
   matchPill: {
@@ -1464,18 +1461,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: SPACING.sm,
     marginBottom: 14,
+    paddingHorizontal: 16,
   },
   feedFilterTab: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: Colors.background.card,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
   },
   feedFilterTabActive: {
     backgroundColor: Colors.primary.orange,
-    borderColor: Colors.primary.orange,
   },
   feedFilterTabText: {
     color: Colors.text.secondary,
@@ -1486,14 +1481,12 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   feedList: { gap: CARD_GAP },
-  feedScroll: { gap: CARD_GAP, paddingRight: OUTER_PAD },
+  feedScroll: { gap: CARD_GAP, paddingLeft: 16, paddingRight: 16 },
   feedCard: {
     width: 280,
     backgroundColor: Colors.background.card,
     borderRadius: CARD_RADIUS,
     padding: CARD_INNER_PAD,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
     overflow: 'hidden',
     ...cardGlow,
   },
@@ -1612,13 +1605,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#3B82F6' + '24',
   },
   feedTeamJoinText: { color: '#3B82F6', fontSize: 12, fontWeight: '700' as const },
 
   /* ════ TEAM ROW CARDS ════ */
-  teamList: { gap: CARD_GAP },
+  teamList: { gap: CARD_GAP, paddingHorizontal: 16 },
   teamRowCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1626,8 +1617,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background.card,
     borderRadius: CARD_RADIUS - 4,
     padding: CARD_INNER_PAD - 4,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
     ...cardGlow,
   },
   teamRowInfo: { flex: 1, minWidth: 0, gap: 5 },
@@ -1675,8 +1664,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     backgroundColor: Colors.background.card,
     borderRadius: CARD_RADIUS - 4,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
     overflow: 'hidden',
   },
   activityAccent: {
@@ -1705,21 +1692,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     backgroundColor: Colors.background.card,
     borderRadius: CARD_RADIUS - 4,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
   },
   seeAllCardInner: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   seeAllCardText: { flex: 1, color: Colors.primary.orange, fontSize: 13, fontWeight: '600' as const },
 
   /* ════ DISCOVER CARDS ════ */
-  discoverScroll: { gap: CARD_GAP, paddingRight: OUTER_PAD },
+  discoverScroll: { gap: CARD_GAP, paddingLeft: 16, paddingRight: 16 },
   discoverCard: {
     width: 140,
     backgroundColor: Colors.background.card,
     borderRadius: CARD_RADIUS - 4,
     padding: 14,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
     gap: 8,
     ...cardGlow,
   },
@@ -1740,7 +1723,7 @@ const styles = StyleSheet.create({
   discoverCityText: { color: Colors.text.secondary, fontSize: 9 },
 
   /* ════ COMMUNITY CARDS ════ */
-  communityScroll: { gap: CARD_GAP, paddingRight: OUTER_PAD },
+  communityScroll: { gap: CARD_GAP, paddingLeft: 16, paddingRight: 16 },
   communityCard: {
     width: 270,
     flexDirection: 'row',
@@ -1749,8 +1732,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background.card,
     borderRadius: CARD_RADIUS - 4,
     padding: 14,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
     ...cardGlow,
   },
   communityInfo: { flex: 1, minWidth: 0, gap: 3 },
@@ -1758,16 +1739,12 @@ const styles = StyleSheet.create({
   communityName: { color: Colors.text.primary, fontSize: 14, fontWeight: '800' as const, letterSpacing: -0.2 },
   communityBadges: { flexDirection: 'row', gap: 6, marginTop: 2 },
   communityBadgeSport: {
-    borderWidth: 1,
-    borderColor: '#2DD4BF',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
   },
   communityBadgeSportText: { color: '#2DD4BF', fontSize: 9, fontWeight: '700' as const },
   communityBadgeLevel: {
-    borderWidth: 1,
-    borderColor: '#FACC15',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
@@ -1782,8 +1759,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     backgroundColor: Colors.background.card,
     borderRadius: CARD_RADIUS - 4,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
+    marginHorizontal: 16,
   },
   emptyInlineText: { color: Colors.text.muted, fontSize: 13, fontWeight: '500' as const },
   emptyInlineLink: { color: Colors.primary.orange, fontSize: 13, fontWeight: '700' as const },
@@ -1795,8 +1771,7 @@ const styles = StyleSheet.create({
     paddingVertical: 36,
     paddingHorizontal: 28,
     position: 'relative',
-    borderWidth: 1,
-    borderColor: Colors.border.light,
+    marginHorizontal: 16,
   },
   emptyTeamIconWrap: {
     width: 64,
@@ -1806,8 +1781,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
-    borderWidth: 2,
-    borderColor: Colors.primary.orange + '18',
   },
   emptyTeamTitle: { color: Colors.text.primary, fontSize: 17, fontWeight: '700' as const, marginBottom: 6, letterSpacing: -0.3 },
   emptyTeamText: { color: Colors.text.muted, fontSize: 13, textAlign: 'center', lineHeight: 19, marginBottom: 18, fontWeight: '400' as const },
@@ -1819,8 +1792,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 22,
     borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: Colors.primary.orange + '18',
   },
   emptyTeamCtaText: { color: Colors.primary.orange, fontSize: 13, fontWeight: '700' as const },
 });

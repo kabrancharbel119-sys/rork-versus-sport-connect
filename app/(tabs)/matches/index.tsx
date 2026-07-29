@@ -1,8 +1,8 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, Modal, ActivityIndicator } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, Modal, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { Plus, Swords, Calendar, MapPin, Users, Filter, Clock, Trophy, UserPlus, X, Check, History, ChevronRight, MapPinned, Crown } from 'lucide-react-native';
 import { Colors, SPACING, CARD_RADIUS, CARD_INNER_PAD, OUTER_PAD, SECTION_GAP, CARD_GAP, cardGlow } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -33,16 +33,16 @@ export default function MatchesScreen() {
   const { matches, getUpcomingMatches, getUserMatches, getCompletedUserMatches, getMatchesNeedingPlayers, refetchMatches, isLoading, isError } = useMatches();
   const { getOpenTournaments, refetchTournaments } = useTournaments();
   const { getUserByIdSync } = useUsers();
-  const openTournaments = getOpenTournaments() ?? [];
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [filters, setFilters] = useState<Filters>({ sport: 'all', level: 'all', ambiance: 'all', maxDistance: 50, matchType: 'all' });
 
-  const allMatches = getUpcomingMatches() ?? [];
-  const myMatches = user ? (getUserMatches(user.id) ?? []) : [];
-  const completedMatches = user ? (getCompletedUserMatches(user.id) ?? []) : [];
-  const matchesNeedingPlayers = getMatchesNeedingPlayers(user?.location, filters.maxDistance) ?? [];
+  const allMatches = useMemo(() => getUpcomingMatches() ?? [], [getUpcomingMatches]);
+  const myMatches = useMemo(() => user ? (getUserMatches(user.id) ?? []) : [], [getUserMatches, user]);
+  const completedMatches = useMemo(() => user ? (getCompletedUserMatches(user.id) ?? []) : [], [getCompletedUserMatches, user]);
+  const matchesNeedingPlayers = useMemo(() => getMatchesNeedingPlayers(user?.location, filters.maxDistance) ?? [], [getMatchesNeedingPlayers, user?.location, filters.maxDistance]);
+  const openTournaments = useMemo(() => getOpenTournaments() ?? [], [getOpenTournaments]);
 
   const filteredMatches = useMemo(() => {
     let result = activeTab === 'all' ? allMatches : activeTab === 'my-matches' ? myMatches : activeTab === 'need-players' ? matchesNeedingPlayers : activeTab === 'history' ? completedMatches : [];
@@ -56,13 +56,6 @@ export default function MatchesScreen() {
     return result;
   }, [activeTab, allMatches, myMatches, completedMatches, matchesNeedingPlayers, filters]);
 
-  useEffect(() => {
-    if (__DEV__) {
-      console.log('[Matches] matches (raw):', matches?.length ?? 0, matches);
-      console.log('[Matches] allMatches:', allMatches?.length ?? 0);
-      console.log('[Matches] filteredMatches to render:', filteredMatches?.length ?? 0, filteredMatches);
-    }
-  }, [matches, allMatches, filteredMatches]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -95,7 +88,6 @@ export default function MatchesScreen() {
 
   const matchesList = matches ?? [];
   const renderMatchCard = (match: typeof matchesList[0], showNeedsPlayers = false) => {
-    if (__DEV__) console.log('[Matches] Rendering match:', match.id, match.sport, match.format);
     const creator = getUserByIdSync(match.createdBy);
     const isRanked = match.type === 'ranked';
     const isTournament = match.type === 'tournament';
@@ -244,8 +236,9 @@ export default function MatchesScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar style="light" translucent backgroundColor="transparent" />
       <LinearGradient colors={['#070B12', '#0A0E16', Colors.background.dark, '#0B1018']} locations={[0, 0.25, 0.6, 1]} style={StyleSheet.absoluteFill} />
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.safeArea}>
         <View style={styles.header}>
           <View>
             <Text style={styles.headerTitle}>Matchs</Text>
@@ -269,7 +262,7 @@ export default function MatchesScreen() {
             const activeColor = key === 'tournaments' ? '#8B5CF6' : key === 'need-players' ? '#10B981' : key === 'history' ? '#64748B' : key === 'my-matches' ? Colors.primary.blue : Colors.primary.orange;
             const count = key === 'all' ? allMatches.length : key === 'my-matches' ? myMatches.length : key === 'need-players' ? matchesNeedingPlayers.length : key === 'history' ? completedMatches.length : openTournaments.length;
             return (
-              <TouchableOpacity key={key} style={[styles.tab, active && { backgroundColor: activeColor, borderColor: activeColor }]} onPress={() => setActiveTab(key)} activeOpacity={0.7}>
+              <TouchableOpacity key={key} style={[styles.tab, active && { backgroundColor: activeColor }]} onPress={() => setActiveTab(key)} activeOpacity={0.7}>
                 <Text style={[styles.tabText, active && styles.tabTextActive]} numberOfLines={1}>{label}</Text>
                 {count > 0 && (
                   <View style={[styles.tabCount, active && styles.tabCountActive]}>
@@ -334,7 +327,7 @@ export default function MatchesScreen() {
           </>
           )}
         </ScrollView>
-      </SafeAreaView>
+      </View>
 
       <Modal visible={showFilterModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
@@ -393,15 +386,15 @@ export default function MatchesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1 },
+  safeArea: { flex: 1, paddingTop: Platform.OS === 'ios' ? 50 : 35 },
 
-  // Header
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: OUTER_PAD, paddingVertical: SPACING.md, paddingTop: SPACING.xs },
+  // Header — padding direct sur le composant
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: SPACING.md, paddingTop: SPACING.xs },
   headerTitle: { color: Colors.text.primary, fontSize: 28, fontWeight: '800' as const, letterSpacing: -0.8 },
   headerSubtitle: { color: Colors.text.muted, fontSize: 13, fontWeight: '500' as const, marginTop: 2 },
   headerActions: { flexDirection: 'row', gap: 8 },
-  iconButton: { width: 46, height: 46, borderRadius: 16, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border.light },
-  iconButtonActive: { backgroundColor: Colors.primary.blue, borderColor: Colors.primary.blue },
+  iconButton: { width: 46, height: 46, borderRadius: 16, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
+  iconButtonActive: { backgroundColor: Colors.primary.blue },
   filterDot: { position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.primary.orange },
   addButton: {
     width: 46, height: 46, borderRadius: 16, backgroundColor: Colors.primary.orange,
@@ -409,10 +402,10 @@ const styles = StyleSheet.create({
     shadowColor: Colors.primary.orange, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
   },
 
-  // Tabs
-  tabsScroll: { maxHeight: 52, marginBottom: SPACING.md },
-  tabsContent: { paddingHorizontal: OUTER_PAD, gap: 8 },
-  tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 22, backgroundColor: Colors.background.card, borderWidth: 1, borderColor: Colors.border.light },
+  // Tabs — ScrollView edge-to-edge, padding dans contentContainerStyle
+  tabsScroll: { maxHeight: 52, marginBottom: SPACING.md, width: '100%' },
+  tabsContent: { paddingHorizontal: 16, gap: 8 },
+  tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 22, backgroundColor: Colors.background.card },
   tabText: { color: Colors.text.secondary, fontSize: 12, fontWeight: '600' as const },
   tabTextActive: { color: '#FFFFFF', fontWeight: '700' as const },
   tabCount: { backgroundColor: Colors.background.cardLight, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8, minWidth: 18, alignItems: 'center' },
@@ -420,8 +413,9 @@ const styles = StyleSheet.create({
   tabCountText: { color: Colors.text.muted, fontSize: 10, fontWeight: '700' as const },
   tabCountTextActive: { color: '#FFFFFF' },
 
-  scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: OUTER_PAD, paddingBottom: 100, flexGrow: 1 },
+  // Scroll vertical — edge-to-edge, padding dans contentContainerStyle
+  scrollView: { flex: 1, width: '100%' },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 100, flexGrow: 1 },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
   loadingText: { color: Colors.text.muted, fontSize: 14, marginTop: 12 },
   infoCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(21, 101, 192, 0.1)', padding: 14, borderRadius: 14, marginBottom: 16 },
@@ -439,8 +433,6 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     marginBottom: CARD_GAP,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: Colors.border.light,
   },
   matchAccentBar: { height: 3, width: '100%' },
   matchCardBody: { padding: 14 },
@@ -486,7 +478,7 @@ const styles = StyleSheet.create({
   matchProgressFill: { height: '100%', borderRadius: 3 },
 
   // Footer
-  matchFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.border.light },
+  matchFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingTop: 10 },
   organizerText: { color: Colors.text.muted, fontSize: 11, fontWeight: '500' as const },
   rankedTag: { color: Colors.primary.orange, fontSize: 11, fontWeight: '600' as const },
 
@@ -495,7 +487,7 @@ const styles = StyleSheet.create({
   tournamentCard: { padding: 16, borderRadius: 18, overflow: 'hidden' },
   tournamentHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   tournamentIconWrap: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
-  tournamentPrizeWrap: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.3)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(251,191,36,0.3)' },
+  tournamentPrizeWrap: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.3)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
   tournamentPrize: { color: '#FBBF24', fontSize: 13, fontWeight: '700' as const },
   tournamentName: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' as const, marginBottom: 4, letterSpacing: -0.3 },
   tournamentInfo: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginBottom: 12 },
@@ -523,13 +515,13 @@ const styles = StyleSheet.create({
   modalScroll: { maxHeight: 450 },
   filterLabel: { color: Colors.text.secondary, fontSize: 14, fontWeight: '600' as const, marginTop: 16, marginBottom: 12 },
   filterOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  filterChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: Colors.background.card, borderWidth: 1, borderColor: Colors.border.light },
-  filterChipActive: { backgroundColor: Colors.primary.blue, borderColor: Colors.primary.blue },
+  filterChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: Colors.background.card },
+  filterChipActive: { backgroundColor: Colors.primary.blue },
   filterChipText: { color: Colors.text.secondary, fontSize: 13 },
   filterChipTextActive: { color: '#FFFFFF', fontWeight: '500' as const },
   distanceOptions: { flexDirection: 'row', gap: 12 },
-  distanceChip: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.background.card, borderWidth: 1, borderColor: Colors.border.light },
-  distanceChipActive: { backgroundColor: Colors.primary.blue, borderColor: Colors.primary.blue },
+  distanceChip: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.background.card },
+  distanceChipActive: { backgroundColor: Colors.primary.blue },
   distanceText: { color: Colors.text.secondary, fontSize: 14, fontWeight: '500' as const },
   distanceTextActive: { color: '#FFFFFF' },
   modalActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
@@ -538,7 +530,7 @@ const styles = StyleSheet.create({
   // History
   historyList: { marginBottom: 20 },
   historySectionTitle: { color: Colors.text.primary, fontSize: 15, fontWeight: '700' as const, marginBottom: 12 },
-  historyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.background.card, padding: 14, borderRadius: 16, marginBottom: 10, borderWidth: 1, borderColor: Colors.border.light },
+  historyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.background.card, padding: 14, borderRadius: 16, marginBottom: 10 },
   historyRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   historyRowEmoji: { fontSize: 24 },
   historyRowInfo: { flex: 1 },

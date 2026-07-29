@@ -252,9 +252,17 @@ CREATE POLICY "chat_rooms_delete" ON public.chat_rooms
 -- ── follows ──────────────────────────────────────────────────
 DROP POLICY IF EXISTS "Users can follow others" ON public.follows;
 
+CREATE POLICY "follows_select" ON public.follows
+  FOR SELECT TO authenticated
+  USING (true);
+
 CREATE POLICY "follows_insert" ON public.follows
   FOR INSERT TO authenticated
   WITH CHECK (true);
+
+CREATE POLICY "follows_delete" ON public.follows
+  FOR DELETE TO authenticated
+  USING (true);
 
 -- ── match_players ────────────────────────────────────────────
 DROP POLICY IF EXISTS "Users can join matches" ON public.match_players;

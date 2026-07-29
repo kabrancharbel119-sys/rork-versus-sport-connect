@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, Modal, Alert, TextInput, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, Modal, Alert, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { Plus, Users, Trophy, MapPin, Star, Filter, X, Search, ChevronRight, Compass, UserPlus } from 'lucide-react-native';
 import { Colors, SPACING, CARD_RADIUS, CARD_INNER_PAD, OUTER_PAD, CARD_GAP, cardGlow } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -234,13 +234,14 @@ export default function TeamsScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar style="light" translucent backgroundColor="transparent" />
       <LinearGradient
         colors={['#070B12', '#0A0E16', Colors.background.dark, '#0B1018']}
         locations={[0, 0.25, 0.6, 1]}
         style={StyleSheet.absoluteFill}
       />
       
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.safeArea}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Équipes</Text>
           <View style={styles.headerActions}>
@@ -424,7 +425,7 @@ export default function TeamsScreen() {
             </View>
           </View>
         </Modal>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
@@ -435,12 +436,13 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+    paddingTop: Platform.OS === 'ios' ? 50 : 35,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: OUTER_PAD,
+    paddingHorizontal: 16,
     paddingVertical: SPACING.md,
     paddingTop: SPACING.xs,
   },
@@ -461,8 +463,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background.card,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border.light,
   },
   addButton: {
     width: 44,
@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
   },
   tabs: {
     flexDirection: 'row',
-    paddingHorizontal: OUTER_PAD,
+    paddingHorizontal: 16,
     gap: 12,
     marginBottom: SPACING.md,
   },
@@ -483,12 +483,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 20,
     backgroundColor: Colors.background.card,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
   },
   tabActive: {
     backgroundColor: Colors.primary.orange,
-    borderColor: Colors.primary.orange,
   },
   tabText: {
     color: Colors.text.secondary,
@@ -499,7 +496,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   searchRow: {
-    paddingHorizontal: OUTER_PAD,
+    paddingHorizontal: 16,
     marginBottom: SPACING.sm,
     paddingTop: 4,
   },
@@ -511,8 +508,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 16,
     paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
     minHeight: 48,
   },
   searchInput: {
@@ -523,9 +518,10 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    width: '100%',
   },
   scrollContent: {
-    paddingHorizontal: OUTER_PAD,
+    paddingHorizontal: 16,
     paddingBottom: 100,
   },
   scrollContentGrow: { flexGrow: 1 },
@@ -652,10 +648,10 @@ const styles = StyleSheet.create({
   },
   requestsBadgeBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primary.orange, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 22, marginRight: 4 },
   requestsBadgeText: { color: '#FFF', fontSize: 13, fontWeight: '600' as const },
-  iconButtonActive: { backgroundColor: Colors.primary.blue, borderColor: Colors.primary.blue },
+  iconButtonActive: { backgroundColor: Colors.primary.blue },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%', borderWidth: 1, borderTopColor: Colors.border.light },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
+  modalContent: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%' },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 },
   modalTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const },
   modalClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
   modalScroll: { padding: 20 },
@@ -732,8 +728,6 @@ const styles = StyleSheet.create({
   heroCardEmpty: {
     borderRadius: CARD_RADIUS,
     backgroundColor: Colors.background.card,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
     padding: 24,
     alignItems: 'center',
   },
@@ -780,8 +774,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    borderWidth: 1,
-    borderColor: Colors.primary.blue,
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 14,
@@ -827,8 +819,6 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 8,
     gap: 12,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
   },
   exploreRowTouch: {
     flex: 1,
@@ -874,12 +864,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: Colors.primary.blue,
   },
   followPillPrimary: {
     backgroundColor: Colors.primary.blue,
-    borderColor: Colors.primary.blue,
   },
   followPillText: {
     color: Colors.primary.blue,

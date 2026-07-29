@@ -178,8 +178,6 @@ const styles = StyleSheet.create({
   },
   blurView: {
     borderRadius: 30,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
     overflow: 'hidden',
   },
   tabBarInner: {
@@ -213,8 +211,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
-    borderWidth: 2,
-    borderColor: 'rgba(8, 11, 20, 0.9)',
   },
   badgeText: {
     color: '#FFFFFF',

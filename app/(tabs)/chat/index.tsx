@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Modal, TextInput, Alert, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { MessageCircle, Users, Hash, Zap, Plus, X, Search, UserPlus, ChevronRight, Inbox } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useChat } from '@/contexts/ChatContext';
@@ -259,8 +259,9 @@ export default function ChatScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar style="light" translucent backgroundColor="transparent" />
       <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.headerInfo}>
             <Text style={styles.headerTitle}>{t('chatList.title')}</Text>
@@ -569,7 +570,7 @@ export default function ChatScreen() {
         <Modal visible={showNewChatModal} animationType="slide" transparent statusBarTranslucent>
           <View style={styles.modalSearchOverlay}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalSearchWrapper}>
-              <SafeAreaView style={styles.modalSearchSafe} edges={['top']}>
+              <View style={styles.modalSearchSafe}>
                 <View style={styles.modalSearchHeader}>
                   <View>
                     <Text style={styles.modalTitle}>{t('chatList.newConversation')}</Text>
@@ -596,7 +597,7 @@ export default function ChatScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
-              </SafeAreaView>
+              </View>
               <View style={styles.modalUserListContainer}>
                 {filteredUsers.length > 0 ? (
                   <>
@@ -651,27 +652,27 @@ export default function ChatScreen() {
           </View>
         </Modal>
 
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1 },
+  safeArea: { flex: 1, paddingTop: Platform.OS === 'ios' ? 50 : 35 },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 14 },
   headerInfo: { flex: 1, paddingRight: 12 },
   headerTitle: { color: Colors.text.primary, fontSize: 32, fontWeight: '800' as const, letterSpacing: 0.2 },
   headerSubtitle: { color: Colors.text.muted, fontSize: 13, marginTop: 2 },
   headerActions: { flexDirection: 'row', gap: 8 },
-  headerBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.background.cardLight, alignItems: 'center', justifyContent: 'center', position: 'relative' as const, borderWidth: 1, borderColor: Colors.border.light, marginTop: 4 },
-  requestBadge: { position: 'absolute' as const, top: -2, right: -2, backgroundColor: Colors.primary.orange, borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 2, borderColor: Colors.background.dark },
+  headerBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.background.cardLight, alignItems: 'center', justifyContent: 'center', position: 'relative' as const, marginTop: 4 },
+  requestBadge: { position: 'absolute' as const, top: -2, right: -2, backgroundColor: Colors.primary.orange, borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   requestBadgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' as const },
-  scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 24 },
+  scrollView: { flex: 1, width: '100%' },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 24 },
   conversationsSection: { marginBottom: 24 },
   sectionTitle: { color: Colors.text.secondary, fontSize: 13, fontWeight: '700' as const, marginBottom: 12, textTransform: 'uppercase' as const, letterSpacing: 0.6 },
-  chatItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.cardLight, padding: 15, borderRadius: 18, marginBottom: 10, borderWidth: 1, borderColor: Colors.border.light },
+  chatItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.cardLight, padding: 15, borderRadius: 18, marginBottom: 10 },
   chatIconContainer: { marginRight: 12 },
   iconWrapper: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(21, 101, 192, 0.14)', alignItems: 'center', justifyContent: 'center' },
   chatContent: { flex: 1 },
@@ -695,7 +696,7 @@ const styles = StyleSheet.create({
   findTeamBtn: { marginTop: 24 },
   searchUsersBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, paddingVertical: 12, paddingHorizontal: 20 },
   searchUsersBtnText: { color: Colors.primary.blue, fontSize: 14, fontWeight: '500' as const },
-  searchBarWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.cardLight, marginHorizontal: 20, marginBottom: 16, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1, borderColor: Colors.border.light },
+  searchBarWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.cardLight, marginHorizontal: 16, marginBottom: 16, paddingHorizontal: 14, borderRadius: 16 },
   searchIcon: { marginRight: 10, opacity: 0.85 },
   conversationSearchInput: { flex: 1, color: Colors.text.primary, fontSize: 16, paddingVertical: 12 },
   searchClear: { padding: 4 },
@@ -706,20 +707,20 @@ const styles = StyleSheet.create({
   modalSearchOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', paddingTop: 60 },
   modalContent: { backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%' },
   modalSearchWrapper: { flex: 1, backgroundColor: Colors.background.dark, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
-  modalSearchSafe: { backgroundColor: Colors.background.dark, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
+  modalSearchSafe: { backgroundColor: Colors.background.dark, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 16 },
   modalSearchHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 },
-  modalSearchBarContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.card, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, borderWidth: 1, borderColor: Colors.border.light, gap: 12 },
+  modalSearchBarContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.card, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, gap: 12 },
   modalSearchInput: { flex: 1, color: Colors.text.primary, fontSize: 16, paddingVertical: 2 },
   modalUserListContainer: { flex: 1, minHeight: 200 },
   userListContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
   searchEmptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 48, paddingHorizontal: 24 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 },
   modalTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '600' as const },
   modalClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
   modalScroll: { padding: 20 },
   modalLabel: { color: Colors.text.secondary, fontSize: 13, fontWeight: '600' as const, marginBottom: 12, textTransform: 'uppercase' as const },
-  teamOption: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 12, backgroundColor: Colors.background.card, marginBottom: 8, borderWidth: 2, borderColor: 'transparent' },
-  teamOptionActive: { borderColor: Colors.primary.blue },
+  teamOption: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 12, backgroundColor: Colors.background.card, marginBottom: 8 },
+  teamOptionActive: { backgroundColor: Colors.primary.blue + '15' },
   teamOptionName: { flex: 1, color: Colors.text.primary, fontSize: 15 },
   checkMark: { width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.primary.blue },
   typeOptions: { flexDirection: 'row', gap: 8, marginBottom: 20 },
@@ -730,7 +731,7 @@ const styles = StyleSheet.create({
   createBtn: { marginTop: 12, marginBottom: 40 },
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background.card, margin: 20, marginTop: 0, paddingHorizontal: 16, borderRadius: 12, gap: 12 },
   searchInput: { flex: 1, color: Colors.text.primary, fontSize: 15, paddingVertical: 14 },
-  userItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border.light, gap: 14 },
+  userItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, gap: 14 },
   userInfo: { flex: 1 },
   userName: { color: Colors.text.primary, fontSize: 15, fontWeight: '500' as const },
   userHandle: { color: Colors.text.muted, fontSize: 13, marginTop: 2 },
@@ -739,7 +740,7 @@ const styles = StyleSheet.create({
   noResults: { color: Colors.text.muted, fontSize: 15, textAlign: 'center' as const, marginTop: 16 },
   searchHint: { color: Colors.text.muted, fontSize: 14, textAlign: 'center' as const, marginTop: 12, lineHeight: 20 },
   requestsSection: { marginBottom: 24 },
-  requestCard: { marginBottom: 12, borderWidth: 1, borderColor: Colors.border.light, backgroundColor: Colors.background.cardLight },
+  requestCard: { marginBottom: 12, backgroundColor: Colors.background.cardLight },
   requestHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   requestInfo: { flex: 1 },
   requestName: { color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const },
@@ -748,7 +749,7 @@ const styles = StyleSheet.create({
   requestActions: { flexDirection: 'row', gap: 8 },
   requestBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' as const },
   requestBtnAccept: { backgroundColor: Colors.status.success },
-  requestBtnReject: { backgroundColor: Colors.background.card, borderWidth: 1, borderColor: Colors.border.light },
+  requestBtnReject: { backgroundColor: Colors.background.card },
   requestBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' as const },
   modalTextInput: { backgroundColor: Colors.background.cardLight, borderRadius: 12, padding: 16, color: Colors.text.primary, fontSize: 14, minHeight: 100, textAlignVertical: 'top' as const, marginBottom: 16 },
   modalActions: { flexDirection: 'row', gap: 12, paddingTop: 12 },

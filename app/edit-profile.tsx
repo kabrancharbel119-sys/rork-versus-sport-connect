@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Modal, Image } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, Modal } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter, Stack } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -211,7 +212,7 @@ export default function EditProfileScreen() {
               <View style={styles.bannerSection}>
                 <View style={styles.bannerContainer}>
                   {user?.bannerImage ? (
-                    <Image source={{ uri: user.bannerImage }} style={styles.bannerImage} />
+                    <Image source={{ uri: user.bannerImage }} style={styles.bannerImage} contentFit="cover" transition={200} />
                   ) : (
                     <LinearGradient colors={['#1E3A8A', '#0F1F3F']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.bannerPlaceholder} />
                   )}

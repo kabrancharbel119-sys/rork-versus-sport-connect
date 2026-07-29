@@ -1,7 +1,7 @@
 import React, { useState, useMemo, Component, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, RefreshControl, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, RefreshControl, ActivityIndicator, Alert, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { MapPin, Star, Search, DollarSign, Navigation } from 'lucide-react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Colors, SPACING, CARD_RADIUS, CARD_INNER_PAD, OUTER_PAD, CARD_GAP, cardGlow } from '@/constants/colors';
@@ -136,7 +136,8 @@ function VenuesTabContent() {
 
   return (
     <View style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <StatusBar style="light" translucent backgroundColor="transparent" />
+      <View style={styles.safeArea}>
         <View style={styles.header}>
           <View>
             <Text style={styles.headerTitle}>Terrains</Text>
@@ -313,7 +314,7 @@ function VenuesTabContent() {
           )}
           <View style={{ height: 50 }} />
         </ScrollView>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
@@ -337,13 +338,13 @@ export default function VenuesTabScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background.dark },
-  safeArea: { flex: 1 },
+  safeArea: { flex: 1, paddingTop: Platform.OS === 'ios' ? 50 : 35 },
 
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: OUTER_PAD,
+    paddingHorizontal: 16,
     paddingVertical: SPACING.md,
     paddingTop: SPACING.xs,
   },
@@ -379,10 +380,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     backgroundColor: Colors.background.card,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
     borderRadius: 16,
-    marginHorizontal: OUTER_PAD,
+    marginHorizontal: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: SPACING.sm,
@@ -391,18 +390,15 @@ const styles = StyleSheet.create({
   clearBtn: { color: Colors.primary.orange, fontSize: 13, fontWeight: '600' as const },
 
   filterScroller: { maxHeight: 44, marginBottom: SPACING.sm },
-  filterContent: { paddingHorizontal: OUTER_PAD, gap: SPACING.sm },
+  filterContent: { paddingHorizontal: 16, gap: SPACING.sm },
   filterChip: {
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 20,
     backgroundColor: Colors.background.card,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
   },
   filterChipActive: {
     backgroundColor: Colors.primary.orange + '20',
-    borderColor: Colors.primary.orange,
   },
   filterText: { color: Colors.text.muted, fontSize: 13, fontWeight: '600' as const },
   filterTextActive: { color: Colors.primary.orange },
@@ -411,13 +407,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginHorizontal: OUTER_PAD,
+    marginHorizontal: 16,
     backgroundColor: Colors.primary.orange + '0A',
     borderRadius: 16,
     padding: 14,
     marginBottom: SPACING.sm,
-    borderWidth: 1,
-    borderColor: Colors.primary.orange + '12',
   },
   locationPromptIcon: {
     width: 32,
@@ -440,7 +434,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: OUTER_PAD,
+    paddingHorizontal: 16,
     marginBottom: SPACING.sm,
   },
   radiusLabel: { color: Colors.text.secondary, fontSize: 12, fontWeight: '600' as const },
@@ -450,18 +444,15 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 10,
     backgroundColor: Colors.background.card,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
   },
   radiusChipActive: {
     backgroundColor: Colors.primary.orange + '20',
-    borderColor: Colors.primary.orange,
   },
   radiusText: { color: Colors.text.secondary, fontSize: 12, fontWeight: '600' as const },
   radiusTextActive: { color: Colors.primary.orange },
 
-  scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: OUTER_PAD, paddingBottom: 100 },
+  scrollView: { flex: 1, width: '100%' },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 100 },
 
   centered: {
     alignItems: 'center',
@@ -477,8 +468,6 @@ const styles = StyleSheet.create({
     borderRadius: CARD_RADIUS - 4,
     padding: CARD_INNER_PAD - 4,
     marginBottom: CARD_GAP,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
     ...cardGlow,
   },
   venueHeader: {
@@ -525,7 +514,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 10,
     paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.light,
   },
 });

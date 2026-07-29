@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { Image } from 'expo-image';
 import { Trophy, Calendar, MapPin, Users, Plus, Clock, Flame, Shield, AlertCircle, Crown, ChevronRight } from 'lucide-react-native';
 import { Colors, SPACING, CARD_RADIUS, OUTER_PAD, CARD_GAP } from '@/constants/colors';
@@ -222,12 +222,13 @@ export default function TournamentsTabScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar style="light" translucent backgroundColor="transparent" />
       <LinearGradient
         colors={['#070B12', '#0A0E16', Colors.background.dark, '#0B1018']}
         locations={[0, 0.25, 0.6, 1]}
         style={StyleSheet.absoluteFill}
       />
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.safeArea}>
         <View style={styles.header}>
           <View>
             <Text style={styles.headerTitle}>Tournois</Text>
@@ -349,20 +350,20 @@ export default function TournamentsTabScreen() {
           )}
           <View style={{ height: 50 }} />
         </ScrollView>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1 },
+  safeArea: { flex: 1, paddingTop: Platform.OS === 'ios' ? 50 : 35 },
 
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: OUTER_PAD,
+    paddingHorizontal: 16,
     paddingVertical: SPACING.md,
     paddingTop: SPACING.xs,
   },
@@ -395,13 +396,11 @@ const styles = StyleSheet.create({
   // Segmented filter
   segmentWrap: {
     flexDirection: 'row',
-    marginHorizontal: OUTER_PAD,
+    marginHorizontal: 16,
     marginBottom: SPACING.md,
     backgroundColor: Colors.background.card,
     borderRadius: 18,
     padding: 4,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
   },
   segmentItem: {
     flex: 1,
@@ -449,8 +448,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 
-  scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: OUTER_PAD, paddingBottom: 100 },
+  scrollView: { flex: 1, width: '100%' },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 100 },
 
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
   loadingText: { color: Colors.text.muted, fontSize: 14, marginTop: 12 },
@@ -461,8 +460,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     marginBottom: CARD_GAP,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
   },
 
   // Banner
@@ -512,8 +509,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(251,191,36,0.3)',
   },
   prizeChipText: { color: '#FBBF24', fontSize: 11, fontWeight: '700' as const },
 
@@ -608,8 +603,6 @@ const styles = StyleSheet.create({
     gap: 5,
     marginTop: 12,
     paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.light,
   },
   sponsorText: { color: Colors.text.muted, fontSize: 11, fontWeight: '500' as const },
 
@@ -620,8 +613,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 12,
     paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.light,
   },
   cardFooterText: { color: Colors.primary.orange, fontSize: 13, fontWeight: '600' as const },
 

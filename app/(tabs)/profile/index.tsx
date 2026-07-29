@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl, Dimensions, Image } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl, Dimensions, Platform } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { Settings, Edit2, Trophy, Star, Users, ChevronRight, Shield, Award, TrendingUp, Zap, MapPin, History, CheckCircle, Plus, Compass, Calendar, Ticket as TicketIcon, Receipt, Share2, UserPlus } from 'lucide-react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
@@ -210,8 +211,9 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar style="light" translucent backgroundColor="transparent" />
       <LinearGradient colors={[Colors.background.dark, '#0D1420']} style={StyleSheet.absoluteFill} />
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.safeArea}>
         <ScrollView testID="profile-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />}>
           <View style={styles.header}>
@@ -223,7 +225,7 @@ export default function ProfileScreen() {
           <View style={styles.profileCard}>
             {user?.bannerImage ? (
               <>
-                <Image source={{ uri: user.bannerImage }} style={styles.profileCoverBg} />
+                <Image source={{ uri: user.bannerImage }} style={styles.profileCoverBg} contentFit="cover" transition={200} />
                 <View style={styles.profileCoverOverlay} />
               </>
             ) : (
@@ -292,11 +294,20 @@ export default function ProfileScreen() {
               </View>
               
               <View style={styles.profileMeta}>
-                <View style={styles.profileMetaItem}><Text style={styles.profileMetaValue}>{user?.followers || 0}</Text><Text style={styles.profileMetaLabel}>Abonnés</Text></View>
+                <TouchableOpacity style={styles.profileMetaItem} onPress={() => router.push('/followers')} activeOpacity={0.6}>
+                  <Text style={styles.profileMetaValue}>{user?.followers || 0}</Text>
+                  <Text style={styles.profileMetaLabel}>Abonnés</Text>
+                </TouchableOpacity>
                 <View style={styles.profileMetaDivider} />
-                <View style={styles.profileMetaItem}><Text style={styles.profileMetaValue}>{user?.following || 0}</Text><Text style={styles.profileMetaLabel}>Abonnements</Text></View>
+                <TouchableOpacity style={styles.profileMetaItem} onPress={() => router.push('/following')} activeOpacity={0.6}>
+                  <Text style={styles.profileMetaValue}>{user?.following || 0}</Text>
+                  <Text style={styles.profileMetaLabel}>Abonnements</Text>
+                </TouchableOpacity>
                 <View style={styles.profileMetaDivider} />
-                <View style={styles.profileMetaItem}><Text style={styles.profileMetaValue}>{(user?.teams ?? []).length}</Text><Text style={styles.profileMetaLabel}>Équipe</Text></View>
+                <TouchableOpacity style={styles.profileMetaItem} onPress={() => router.push('/my-teams')} activeOpacity={0.6}>
+                  <Text style={styles.profileMetaValue}>{(user?.teams ?? []).length}</Text>
+                  <Text style={styles.profileMetaLabel}>Équipe</Text>
+                </TouchableOpacity>
               </View>
               {(user?.isPremium || isAdmin) && (
                 <View style={styles.premiumBadge}>
@@ -405,7 +416,7 @@ export default function ProfileScreen() {
                   </View>
                   <View style={styles.trophiesBadges}>
                     {(userTrophyList ?? []).map((ut) => (
-                      <View key={ut.trophyId} style={[styles.trophyBadge, { borderColor: RARITY_COLORS[ut.trophy?.rarity || 'common'] }]}>
+                      <View key={ut.trophyId} style={styles.trophyBadge}>
                         <Text style={styles.trophyBadgeIcon}>{ut.trophy?.icon}</Text>
                       </View>
                     ))}
@@ -731,27 +742,27 @@ export default function ProfileScreen() {
           <Text testID="version-number" style={[styles.menuSubtext, { textAlign: 'center', marginTop: 16 }]}>v1.0.0</Text>
           <View style={styles.bottomSpacer} />
         </ScrollView>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8, paddingVertical: 16, marginBottom: 8 },
+  safeArea: { flex: 1, paddingTop: Platform.OS === 'ios' ? 50 : 35 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8, paddingVertical: 16, marginBottom: 8 },
   headerTitle: { color: Colors.text.primary, fontSize: 28, fontWeight: '700' as const },
   settingsButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
-  scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 100 },
+  scrollView: { flex: 1, width: '100%' },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 100 },
   profileCard: { borderRadius: 24, marginBottom: 16, overflow: 'hidden', backgroundColor: Colors.background.card },
   profileCoverBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%' },
   profileCoverOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.55)' },
   profileCardBody: { alignItems: 'center', paddingHorizontal: 24, paddingBottom: 24, paddingTop: 40 },
   profileTop: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', width: '100%', marginBottom: 12 },
-  avatarRing: { position: 'relative', padding: 4, borderRadius: 60, backgroundColor: Colors.background.card, borderWidth: 3, borderColor: Colors.primary.blue },
+  avatarRing: { position: 'relative', padding: 4, borderRadius: 60, backgroundColor: Colors.background.card },
   avatarInner: { borderRadius: 56, overflow: 'hidden' },
-  verifiedBadge: { position: 'absolute', bottom: 2, right: 2, width: 26, height: 26, borderRadius: 13, backgroundColor: Colors.background.dark, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.status.success },
+  verifiedBadge: { position: 'absolute', bottom: 2, right: 2, width: 26, height: 26, borderRadius: 13, backgroundColor: Colors.background.dark, alignItems: 'center', justifyContent: 'center' },
   editButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary.orange, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   profileNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   profileName: { color: '#FFFFFF', fontSize: 24, fontWeight: '700' as const },
@@ -784,15 +795,15 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   addSportBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center' },
   sportsBadgesContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  sportBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.background.card, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 20, borderWidth: 1, borderColor: Colors.border.light },
+  sportBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.background.card, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 20 },
   sportBadgeEmoji: { fontSize: 20 },
   sportBadgeInfo: { gap: 2 },
   sportBadgeName: { color: Colors.text.primary, fontSize: 13, fontWeight: '600' as const },
   sportBadgeMeta: { color: Colors.text.muted, fontSize: 11 },
   sportBadgePosition: { color: Colors.primary.blue, fontSize: 11, fontWeight: '500' as const, backgroundColor: 'rgba(21,101,192,0.15)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginLeft: 4 },
   detailCard: { paddingVertical: 8, borderRadius: 20 },
-  detailRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border.light },
-  lastRow: { borderBottomWidth: 0 },
+  detailRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
+  lastRow: {},
   detailLabel: { color: Colors.text.secondary, fontSize: 14 },
   detailValue: { color: Colors.text.primary, fontSize: 16, fontWeight: '600' as const },
   menuSubtext: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
@@ -812,7 +823,7 @@ const styles = StyleSheet.create({
   // Empty states
   emptyStateRow: { alignItems: 'center', paddingVertical: 20, gap: 6 },
   emptyStateText: { color: Colors.text.muted, fontSize: 13, textAlign: 'center' },
-  emptyStateCta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.background.cardLight, paddingVertical: 14, borderRadius: 16, borderWidth: 1, borderColor: Colors.border.light, borderStyle: 'dashed' as const },
+  emptyStateCta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.background.cardLight, paddingVertical: 14, borderRadius: 16 },
   emptyStateCtaText: { color: Colors.primary.blue, fontSize: 14, fontWeight: '600' as const },
 
   // Social stats
@@ -820,12 +831,12 @@ const styles = StyleSheet.create({
   socialStatItem: { alignItems: 'center', paddingHorizontal: 24, gap: 4 },
   socialStatValue: { color: Colors.text.primary, fontSize: 24, fontWeight: '700' as const },
   socialStatLabel: { color: Colors.text.muted, fontSize: 12 },
-  socialStatDivider: { width: 1, height: 36, backgroundColor: Colors.border.light },
+  socialStatDivider: { width: 1, height: 36, backgroundColor: 'rgba(255,255,255,0.1)' },
   socialStatTouchable: { alignItems: 'center', paddingHorizontal: 24, gap: 4 },
 
   // Trophies badges
   trophiesBadges: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  trophyBadge: { width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.background.cardLight, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
+  trophyBadge: { width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.background.cardLight, alignItems: 'center', justifyContent: 'center' },
   trophyBadgeIcon: { fontSize: 22 },
   moreTrophiesBadge: { width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.background.cardLight, alignItems: 'center', justifyContent: 'center' },
   moreTrophiesText: { color: Colors.text.muted, fontSize: 12, fontWeight: '600' as const },
@@ -835,8 +846,6 @@ const styles = StyleSheet.create({
   bookingPreviewItem: {
     backgroundColor: Colors.background.cardLight,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
     padding: 10,
     gap: 5,
   },

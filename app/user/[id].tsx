@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -249,7 +250,7 @@ export default function UserProfileScreen() {
             <View style={styles.profileCard}>
               {profileUser.bannerImage ? (
                 <>
-                  <Image source={{ uri: profileUser.bannerImage }} style={styles.profileCoverBg} />
+                  <Image source={{ uri: profileUser.bannerImage }} style={styles.profileCoverBg} contentFit="cover" transition={200} />
                   <View style={styles.profileCoverOverlay} />
                 </>
               ) : (
@@ -332,20 +333,20 @@ export default function UserProfileScreen() {
 
                 {/* Social stats */}
                 <View style={styles.profileMeta}>
-                  <TouchableOpacity style={styles.profileMetaItem} onPress={() => Alert.alert(t('userProfile.followers'), `${profileUser.followers} abonnés`)} activeOpacity={0.6}>
+                  <TouchableOpacity style={styles.profileMetaItem} onPress={() => router.push(`/followers?userId=${profileUserId}`)} activeOpacity={0.6}>
                     <Text style={styles.profileMetaValue}>{profileUser.followers}</Text>
                     <Text style={styles.profileMetaLabel}>{t('userProfile.followers')}</Text>
                   </TouchableOpacity>
                   <View style={styles.profileMetaDivider} />
-                  <TouchableOpacity style={styles.profileMetaItem} onPress={() => Alert.alert(t('userProfile.following'), `${profileUser.following} abonnements`)} activeOpacity={0.6}>
+                  <TouchableOpacity style={styles.profileMetaItem} onPress={() => router.push(`/following?userId=${profileUserId}`)} activeOpacity={0.6}>
                     <Text style={styles.profileMetaValue}>{profileUser.following}</Text>
                     <Text style={styles.profileMetaLabel}>{t('userProfile.following')}</Text>
                   </TouchableOpacity>
                   <View style={styles.profileMetaDivider} />
-                  <View style={styles.profileMetaItem}>
-                    <Text style={styles.profileMetaValue}>{profileUser.reputation.toFixed(1)}</Text>
-                    <Text style={styles.profileMetaLabel}>{t('userProfile.reputation')}</Text>
-                  </View>
+                  <TouchableOpacity style={styles.profileMetaItem} onPress={() => router.push(`/my-teams?userId=${profileUserId}`)} activeOpacity={0.6}>
+                    <Text style={styles.profileMetaValue}>{displayTeams.length}</Text>
+                    <Text style={styles.profileMetaLabel}>{t('userProfile.teams', { count: displayTeams.length })}</Text>
+                  </TouchableOpacity>
                 </View>
 
                 {!isOwnProfile && (

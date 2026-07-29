@@ -78,6 +78,8 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
     staleTime: 30 * 1000,
     refetchInterval: isAppActive ? MATCHES_REFETCH_INTERVAL_MS : false,
     refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   const venuesQuery = useQuery({
@@ -92,9 +94,11 @@ export const [MatchesProvider, useMatches] = createContextHook(() => {
       }
       return [];
     },
-    staleTime: 15 * 1000,
+    staleTime: 30 * 1000,
     refetchInterval: isAppActive ? VENUES_REFETCH_INTERVAL_MS : false,
     refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   useEffect(() => {

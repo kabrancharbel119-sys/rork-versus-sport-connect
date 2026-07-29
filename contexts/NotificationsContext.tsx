@@ -120,8 +120,6 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
       if (currentUserId) {
         try {
           const serverNotifications = await notificationsApi.getAll(currentUserId);
-          console.log('[Notifications] Server notifications:', serverNotifications.length);
-          console.log('[Notifications] Chat notifications:', serverNotifications.filter(n => n.type === 'chat').length);
           const key = getNotificationsStorageKey(currentUserId);
           await AsyncStorage.setItem(key, JSON.stringify(serverNotifications));
           return serverNotifications;
@@ -142,8 +140,10 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
       }
       return [];
     },
-    staleTime: 0,
-    refetchInterval: isPollingActive ? 3000 : false,
+    staleTime: 30 * 1000,
+    refetchInterval: isPollingActive ? 30000 : false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   useEffect(() => {

@@ -561,45 +561,75 @@ export const usersApi = {
   },
 
   async getFollowers(userId: string) {
-    logger.debug('UsersAPI', 'Getting followers');
+    logger.debug('UsersAPI', 'Getting followers for:', userId);
     const { data, error } = await (supabase
       .from('follows')
-      .select('follower_id')
-      .eq('following_id', userId) as any);
-    
-    if (error) throw error;
-    
+      .select('follower_id, created_at')
+      .eq('following_id', userId)
+      .order('created_at', { ascending: false }) as any);
+
+    if (error) {
+      logger.error('UsersAPI', 'getFollowers error:', error);
+      throw error;
+    }
+
     const followerIds = ((data || []) as { follower_id: string }[]).map(f => f.follower_id).filter(Boolean);
+    logger.debug('UsersAPI', 'getFollowers found', followerIds.length, 'follower ids');
     if (followerIds.length === 0) return [];
 
-    const { data: users, error: usersError } = await (supabase
-      .from('users')
-      .select('*')
-      .in('id', followerIds) as any);
-    
-    if (usersError) throw usersError;
-    return ((users || []) as UserRow[]).map(row => mapUserRowToUser(row));
+    // Fetch in batches of 100 to avoid URL length limits
+    const allUsers: User[] = [];
+    for (let i = 0; i < followerIds.length; i += 100) {
+      const batch = followerIds.slice(i, i + 100);
+      const { data: users, error: usersError } = await (supabase
+        .from('users')
+        .select('*')
+        .in('id', batch) as any);
+
+      if (usersError) {
+        logger.error('UsersAPI', 'getFollowers users fetch error:', usersError);
+        throw usersError;
+      }
+      allUsers.push(...((users || []) as UserRow[]).map(row => mapUserRowToUser(row)));
+    }
+    logger.debug('UsersAPI', 'getFollowers returning', allUsers.length, 'users');
+    return allUsers;
   },
 
   async getFollowing(userId: string) {
-    logger.debug('UsersAPI', 'Getting following');
+    logger.debug('UsersAPI', 'Getting following for:', userId);
     const { data, error } = await (supabase
       .from('follows')
-      .select('following_id')
-      .eq('follower_id', userId) as any);
-    
-    if (error) throw error;
-    
+      .select('following_id, created_at')
+      .eq('follower_id', userId)
+      .order('created_at', { ascending: false }) as any);
+
+    if (error) {
+      logger.error('UsersAPI', 'getFollowing error:', error);
+      throw error;
+    }
+
     const followingIds = ((data || []) as { following_id: string }[]).map(f => f.following_id).filter(Boolean);
+    logger.debug('UsersAPI', 'getFollowing found', followingIds.length, 'following ids');
     if (followingIds.length === 0) return [];
 
-    const { data: users, error: usersError } = await (supabase
-      .from('users')
-      .select('*')
-      .in('id', followingIds) as any);
-    
-    if (usersError) throw usersError;
-    return ((users || []) as UserRow[]).map(row => mapUserRowToUser(row));
+    // Fetch in batches of 100 to avoid URL length limits
+    const allUsers: User[] = [];
+    for (let i = 0; i < followingIds.length; i += 100) {
+      const batch = followingIds.slice(i, i + 100);
+      const { data: users, error: usersError } = await (supabase
+        .from('users')
+        .select('*')
+        .in('id', batch) as any);
+
+      if (usersError) {
+        logger.error('UsersAPI', 'getFollowing users fetch error:', usersError);
+        throw usersError;
+      }
+      allUsers.push(...((users || []) as UserRow[]).map(row => mapUserRowToUser(row)));
+    }
+    logger.debug('UsersAPI', 'getFollowing returning', allUsers.length, 'users');
+    return allUsers;
   },
 
   async isFollowing(followerId: string, followingId: string) {

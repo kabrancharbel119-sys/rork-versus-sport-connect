@@ -45,10 +45,10 @@ export const [ChatProvider, useChat] = createContextHook(() => {
           const serverRooms = await chatApi.getRooms(currentUserId);
           await AsyncStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify(serverRooms));
 
-          const allMessages: ChatMessage[] = [];
-          for (const room of serverRooms) {
-            const roomMessages = await chatApi.getMessages(room.id, currentUserId);
-            allMessages.push(...roomMessages);
+          let allMessages: ChatMessage[] = [];
+          const storedMsgs = await AsyncStorage.getItem(MESSAGES_STORAGE_KEY);
+          if (storedMsgs) {
+            allMessages = JSON.parse(storedMsgs);
           }
           await AsyncStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(allMessages));
           return { rooms: serverRooms, messages: allMessages };
@@ -83,8 +83,11 @@ export const [ChatProvider, useChat] = createContextHook(() => {
       
       return { rooms, messages: msgs };
     },
-    refetchInterval: isPollingActive ? 5000 : false,
+    refetchInterval: isPollingActive ? 30000 : false,
     refetchIntervalInBackground: false,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     enabled: true,
   });
 
@@ -568,7 +571,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
       }
     },
     enabled: !!currentUserId,
-    refetchInterval: isPollingActive ? 10000 : false,
+    refetchInterval: isPollingActive ? 30000 : false,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     staleTime: 30000, // 30 secondes

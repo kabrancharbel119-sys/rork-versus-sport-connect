@@ -82,6 +82,8 @@ export const [TournamentsProvider, useTournaments] = createContextHook(() => {
     staleTime: 30 * 1000,
     refetchInterval: isAppActive ? TOURNAMENTS_REFETCH_INTERVAL_MS : false,
     refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   useEffect(() => {

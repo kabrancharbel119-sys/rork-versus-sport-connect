@@ -75,10 +75,10 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
         throw new Error('Network error');
       }
     },
-    staleTime: 5 * 1000,
+    staleTime: 30 * 1000,
     refetchInterval: isAppActive ? TEAMS_REFETCH_INTERVAL_MS : false,
-    refetchOnWindowFocus: true,
-    refetchOnMount: true,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     refetchIntervalInBackground: false,
   });
 

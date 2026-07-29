@@ -77,6 +77,9 @@ export const [UsersProvider, useUsers] = createContextHook(() => {
     },
     refetchInterval: isAppActive ? USERS_REFETCH_INTERVAL_MS : false,
     refetchIntervalInBackground: false,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   useEffect(() => {
