@@ -186,7 +186,7 @@ describe('MATCHES — Inscription joueurs', () => {
     const match = await createTestMatch(user1.id, venueId);
     createdIds.matches.push(match.id);
 
-    const newPlayer = { id: user2.id, name: `${user2.first_name} ${user2.last_name}`, joinedAt: new Date().toISOString() };
+    const newPlayer = { id: user2.id, name: user2.full_name, joinedAt: new Date().toISOString() };
     const { error } = await supabaseAdmin
       .from('matches')
       .update({ registered_players: [...match.registered_players, newPlayer] })
@@ -213,7 +213,7 @@ describe('MATCHES — Inscription joueurs', () => {
     createdIds.venues.push(venueId);
 
     const registeredPlayers = [
-      { id: user2.id, name: `${user2.first_name} ${user2.last_name}`, joinedAt: new Date().toISOString() }
+      { id: user2.id, name: user2.full_name, joinedAt: new Date().toISOString() }
     ];
     const match = await createTestMatch(user1.id, venueId, { registered_players: registeredPlayers });
     createdIds.matches.push(match.id);

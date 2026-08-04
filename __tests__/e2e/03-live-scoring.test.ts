@@ -41,6 +41,8 @@ describe('LIVE SCORING — Initialisation', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.live_match_stats.push(data.id);
 
     expect(error).toBeNull();
@@ -78,6 +80,8 @@ describe('LIVE SCORING — Événements / match_events', () => {
       .select()
       .single();
 
+    expect(liveStats.error).toBeNull();
+    expect(liveStats.data).toBeDefined();
     createdIds.live_match_stats.push(liveStats.data.id);
 
     const { error } = await supabaseAdmin
@@ -120,9 +124,10 @@ describe('LIVE SCORING — Événements / match_events', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.match_events.push(data.id);
 
-    expect(error).toBeNull();
     expect(data.event_type).toBe('goal');
     expect(data.team_side).toBe('home');
     expect(data.minute).toBe(15);
@@ -152,9 +157,10 @@ describe('LIVE SCORING — Événements / match_events', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.match_events.push(data.id);
 
-    expect(error).toBeNull();
     expect(data.event_type).toBe('card');
     expect(data.data.color).toBe('yellow');
   });
@@ -176,7 +182,7 @@ describe('LIVE SCORING — Finalisation match ranked', () => {
 
     const ranking1 = await createTestPlayerRanking(user1.id, 'football', 1200);
     const ranking2 = await createTestPlayerRanking(user2.id, 'football', 1000);
-    createdIds.player_rankings.push(ranking1.id, ranking2.id);
+    createdIds.player_rankings.push(ranking1.user_id, ranking2.user_id);
 
     const match = await createTestMatch(user1.id, venue.id, {
       match_type: 'ranked',
@@ -194,18 +200,18 @@ describe('LIVE SCORING — Finalisation match ranked', () => {
     const { error: update1 } = await supabaseAdmin
       .from('player_rankings')
       .update({
-        matches_played: ranking1.matches_played + 1,
-        wins: ranking1.wins + 1
+        matches_played: (ranking1.matches_played || 0) + 1,
+        wins: (ranking1.wins || 0) + 1
       })
-      .eq('id', ranking1.id);
+      .eq('user_id', ranking1.user_id);
 
     const { error: update2 } = await supabaseAdmin
       .from('player_rankings')
       .update({
-        matches_played: ranking2.matches_played + 1,
-        losses: ranking2.losses + 1
+        matches_played: (ranking2.matches_played || 0) + 1,
+        losses: (ranking2.losses || 0) + 1
       })
-      .eq('id', ranking2.id);
+      .eq('user_id', ranking2.user_id);
 
     expect(update1).toBeNull();
     expect(update2).toBeNull();
@@ -213,7 +219,7 @@ describe('LIVE SCORING — Finalisation match ranked', () => {
     const { data: updatedRanking1 } = await supabaseAdmin
       .from('player_rankings')
       .select('*')
-      .eq('id', ranking1.id)
+      .eq('user_id', ranking1.user_id)
       .single();
 
     expect(updatedRanking1?.wins).toBe(1);

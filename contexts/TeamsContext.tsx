@@ -3,7 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { Team, JoinRequest, TeamRole, Sport, SkillLevel, PlayStyle, UserLocation } from '@/types';
+import { Team, JoinRequest, TeamRole, Sport, SkillLevel, PlayStyle, UserLocation, CMPermissions, CMAssignment } from '@/types';
+import { DEFAULT_CM_PERMISSIONS } from '@/types';
 import { teamsApi } from '@/lib/api/teams';
 
 const TEAMS_REFETCH_INTERVAL_MS = 60_000;
@@ -44,7 +45,13 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
       ...t,
       fans: t.fans ?? [],
       createdAt: t.createdAt ? new Date(t.createdAt) : new Date(),
-      members: t.members.map(m => ({ ...m, joinedAt: new Date(m.joinedAt) })),
+      members: t.members.map(m => ({
+        ...m,
+        role: m.userId === t.captainId ? 'captain' as const
+          : m.role === 'captain' ? 'member' as const
+          : m.role,
+        joinedAt: new Date(m.joinedAt)
+      })),
       joinRequests: (t.joinRequests ?? []).map(r => ({
         ...r,
         createdAt: new Date(r.createdAt),
@@ -196,6 +203,10 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
       // Clear local cache so every user (including the accepted player) reloads fresh data
       await AsyncStorage.removeItem(TEAMS_STORAGE_KEY);
       await queryClient.invalidateQueries({ queryKey: ['teams'] });
+      // Invalidate chats so the new member sees team chat rooms
+      if (action === 'accept') {
+        await queryClient.invalidateQueries({ queryKey: ['chats'] });
+      }
     },
   });
 
@@ -223,8 +234,9 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
       console.log('[Teams] Adding custom role:', roleName);
       const teamIndex = teams.findIndex(t => t.id === teamId);
       if (teamIndex === -1) throw new Error('Équipe non trouvée');
-      
-      const newRole: TeamRole = { id: `role-${Date.now()}`, name: roleName, isCustom: true, createdBy };
+
+      const newRole = await teamsApi.addCustomRole(teamId, roleName, createdBy);
+
       const updatedTeams = [...teams];
       updatedTeams[teamIndex] = {
         ...updatedTeams[teamIndex],
@@ -236,7 +248,7 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
   });
 
   const promoteMemberMutation = useMutation({
-    mutationFn: async ({ teamId, userId, role, promoterId }: { teamId: string; userId: string; role: 'co-captain' | 'member'; promoterId: string }) => {
+    mutationFn: async ({ teamId, userId, role, promoterId }: { teamId: string; userId: string; role: 'co-captain' | 'member' | 'cm'; promoterId: string }) => {
       console.log('[Teams] Promoting member:', userId, role);
       try {
         await teamsApi.promoteMember(teamId, userId, role, promoterId);
@@ -428,6 +440,42 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
     await queryClient.refetchQueries({ queryKey: ['teams'] });
   }, [queryClient]);
 
+  // ════ CM System Mutations ════
+
+  const assignCMMutation = useMutation({
+    mutationFn: async ({ teamId, userId, captainId, permissions }: { teamId: string; userId: string; captainId: string; permissions?: Partial<CMPermissions> }) => {
+      return teamsApi.assignCM(teamId, userId, captainId, permissions);
+    },
+    onSuccess: () => { refetchTeams(); },
+  });
+
+  const removeCMMutation = useMutation({
+    mutationFn: async ({ teamId, userId }: { teamId: string; userId: string }) => {
+      await teamsApi.removeCM(teamId, userId);
+    },
+    onSuccess: () => { refetchTeams(); },
+  });
+
+  const updateCMPermissionsMutation = useMutation({
+    mutationFn: async ({ teamId, userId, permissions }: { teamId: string; userId: string; permissions: CMPermissions }) => {
+      await teamsApi.updateCMPermissions(teamId, userId, permissions);
+    },
+  });
+
+  const suspendCMMutation = useMutation({
+    mutationFn: async ({ teamId, userId, reason }: { teamId: string; userId: string; reason?: string }) => {
+      await teamsApi.suspendCM(teamId, userId, reason);
+    },
+    onSuccess: () => { refetchTeams(); },
+  });
+
+  const reactivateCMMutation = useMutation({
+    mutationFn: async ({ teamId, userId }: { teamId: string; userId: string }) => {
+      await teamsApi.reactivateCM(teamId, userId);
+    },
+    onSuccess: () => { refetchTeams(); },
+  });
+
   return {
     teams,
     isLoading: teamsQuery.isLoading,
@@ -446,6 +494,11 @@ export const [TeamsProvider, useTeams] = createContextHook(() => {
     transferCaptaincy: transferCaptaincyMutation.mutateAsync,
     followTeam: followTeamMutation.mutateAsync,
     unfollowTeam: unfollowTeamMutation.mutateAsync,
+    assignCM: assignCMMutation.mutateAsync,
+    removeCM: removeCMMutation.mutateAsync,
+    updateCMPermissions: updateCMPermissionsMutation.mutateAsync,
+    suspendCM: suspendCMMutation.mutateAsync,
+    reactivateCM: reactivateCMMutation.mutateAsync,
     getTeamById,
     getUserTeams,
     getFollowedTeams,

@@ -80,10 +80,11 @@ export default function LoginScreen() {
           colors={['#0d111d', '#0f1422', '#0d111d']}
           locations={[0, 0.5, 1]}
           style={StyleSheet.absoluteFill}
+          pointerEvents="none"
         />
         {/* Decorative orbs */}
-        <View style={[styles.bgOrb, { top: -100, right: -80 }]} />
-        <View style={[styles.bgOrb2, { bottom: -120, left: -100 }]} />
+        <View style={[styles.bgOrb, { top: -100, right: -80 }]} pointerEvents="none" />
+        <View style={[styles.bgOrb2, { bottom: -120, left: -100 }]} pointerEvents="none" />
 
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -113,6 +114,7 @@ export default function LoginScreen() {
                   colors={[Colors.primary.orange + '20', Colors.primary.orange + '05', 'transparent']}
                   locations={[0, 0.6, 1]}
                   style={StyleSheet.absoluteFill}
+                  pointerEvents="none"
                 />
                 <Image
                   source={{ uri: 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/bb74j32pntaehgnts84r7' }}

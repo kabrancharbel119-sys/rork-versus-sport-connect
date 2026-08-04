@@ -138,7 +138,7 @@ describe('TYPES — Enums BDD', () => {
   });
 
   test('✅ matches.status : uniquement "open"|"confirmed"|"in_progress"|"completed"|"cancelled"', async () => {
-    const validStatuses = ['open', 'confirmed', 'in_progress', 'completed', 'cancelled'];
+    const validStatuses = ['venue_pending', 'open', 'confirmed', 'in_progress', 'completed', 'cancelled'];
     
     const user = await createTestUser();
     const venue = await createTestVenue();
@@ -177,13 +177,13 @@ describe('TYPES — Enums BDD', () => {
     expect(validTypes).toContain(tournament.type);
   });
 
-  test('✅ tournaments.status : uniquement "draft"|"registration"|"in_progress"|"completed"|"cancelled"', async () => {
-    const validStatuses = ['draft', 'registration', 'in_progress', 'completed', 'cancelled'];
+  test('✅ tournaments.status : uniquement "venue_pending"|"registration"|"in_progress"|"completed"|"cancelled"', async () => {
+    const validStatuses = ['venue_pending', 'registration', 'in_progress', 'completed', 'cancelled'];
     
     const user = await createTestUser();
     createdIds.users.push(user.id);
 
-    const tournament = await createTestTournament(user.id, { status: 'draft' });
+    const tournament = await createTestTournament(user.id, { status: 'registration' });
     createdIds.tournaments.push(tournament.id);
 
     expect(validStatuses).toContain(tournament.status);

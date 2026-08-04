@@ -397,7 +397,7 @@ export default function EditVenueScreen() {
                       longitude: undefined,
                     }));
                   }}
-                  placeholder="Ex: Abidjan"
+                  placeholder="Votre ville"
                   maxResults={6}
                 />
                 {errors.city && <Text style={styles.fieldError}>{errors.city}</Text>}
@@ -466,6 +466,7 @@ export default function EditVenueScreen() {
                 onChangeText={v => updateField('pricePerHour', v)}
                 keyboardType="numeric"
               />
+              <Text style={{ color: Colors.text.muted, fontSize: 11, marginTop: 4, marginBottom: 8 }}>Minimum recommandé: 600 FCFA</Text>
               {errors.pricePerHour && <Text style={styles.fieldError}>{errors.pricePerHour}</Text>}
 
               <Text style={styles.sectionTitle}>Sports disponibles *</Text>

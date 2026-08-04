@@ -165,7 +165,7 @@ export default function ProfileScreen() {
   useFocusEffect(
     React.useCallback(() => {
       const now = Date.now();
-      if (user && now - lastRefresh.current > 5000) {
+      if (user && now - lastRefresh.current > 2000) {
         refreshUser();
         lastRefresh.current = now;
       }
@@ -305,7 +305,7 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
                 <View style={styles.profileMetaDivider} />
                 <TouchableOpacity style={styles.profileMetaItem} onPress={() => router.push('/my-teams')} activeOpacity={0.6}>
-                  <Text style={styles.profileMetaValue}>{(user?.teams ?? []).length}</Text>
+                  <Text style={styles.profileMetaValue}>{userTeams.length}</Text>
                   <Text style={styles.profileMetaLabel}>Équipe</Text>
                 </TouchableOpacity>
               </View>
@@ -692,12 +692,12 @@ export default function ProfileScreen() {
                   <Text style={styles.rankingTitle}>Abonnés & Abonnements</Text>
                 </View>
                 <View style={styles.socialStatsRow}>
-                  <TouchableOpacity style={styles.socialStatTouchable} onPress={() => Alert.alert('Abonnés', `${user?.followers || 0} abonnés`)} activeOpacity={0.6}>
+                  <TouchableOpacity style={styles.socialStatTouchable} onPress={() => router.push('/followers')} activeOpacity={0.6}>
                     <Text style={styles.socialStatValue}>{user?.followers || 0}</Text>
                     <Text style={styles.socialStatLabel}>Abonnés</Text>
                   </TouchableOpacity>
                   <View style={styles.socialStatDivider} />
-                  <TouchableOpacity style={styles.socialStatTouchable} onPress={() => Alert.alert('Abonnements', `${user?.following || 0} abonnements`)} activeOpacity={0.6}>
+                  <TouchableOpacity style={styles.socialStatTouchable} onPress={() => router.push('/following')} activeOpacity={0.6}>
                     <Text style={styles.socialStatValue}>{user?.following || 0}</Text>
                     <Text style={styles.socialStatLabel}>Abonnements</Text>
                   </TouchableOpacity>

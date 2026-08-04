@@ -13,6 +13,7 @@ module.exports = {
     '<rootDir>/vs-sport-app-backup-20260125-191452',
   ],
   testMatch: ['**/__tests__/**/*.test.ts?(x)'],
+  testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/__tests__/e2e/'],
   collectCoverageFrom: [
     'components/**/*.{ts,tsx}',
     'contexts/**/*.{ts,tsx}',

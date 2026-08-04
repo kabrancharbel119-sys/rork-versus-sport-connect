@@ -348,6 +348,7 @@ export default function EditMatchScreen() {
                       onChangeText={(v) => updateField('entryFee', v)}
                       keyboardType="numeric"
                     />
+                    <Text style={{ color: Colors.text.muted, fontSize: 11, marginTop: 4 }}>Minimum recommandé: 600 FCFA</Text>
                   </View>
                   <View style={styles.halfField}>
                     <Input
@@ -358,6 +359,7 @@ export default function EditMatchScreen() {
                       onChangeText={(v) => updateField('prize', v)}
                       keyboardType="numeric"
                     />
+                    <Text style={{ color: Colors.text.muted, fontSize: 11, marginTop: 4 }}>Minimum recommandé: 600 FCFA</Text>
                   </View>
                 </View>
               )}

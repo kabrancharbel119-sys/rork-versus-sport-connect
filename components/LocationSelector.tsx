@@ -549,7 +549,7 @@ export function LocationSelector({
       {/* City Selection */}
       <View style={styles.citySection}>
         <Text style={styles.label}>Ville *</Text>
-        {!isMapboxConfigured && (
+        {!isMapboxConfigured && __DEV__ && (
           <Text style={styles.warningText}>
             ⚠️ Configuration requise : Ajoutez EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN dans votre fichier .env
           </Text>
@@ -559,7 +559,7 @@ export function LocationSelector({
           <TextInput
             ref={cityInputRef}
             style={[styles.input, styles.inputWithIcon]}
-            placeholder={selectedCountry ? "Ex: Abidjan" : "D'abord choisissez un pays..."}
+            placeholder={selectedCountry ? "Votre ville" : "D'abord choisissez un pays..."}
             placeholderTextColor={Colors.text.muted}
             value={cityQuery}
             onChangeText={(text) => {

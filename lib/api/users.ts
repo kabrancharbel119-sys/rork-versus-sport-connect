@@ -483,15 +483,22 @@ export const usersApi = {
     city?: string;
     minReputation?: number;
     isVerified?: boolean;
+    limit?: number;
   }) {
-    logger.debug('UsersAPI', 'Searching users');
+    logger.debug('UsersAPI', 'Searching users', params);
+    // Le filtre texte (username/full_name) et city sont poussés au niveau DB (ilike indexable)
+    // pour éviter de rapatrier toute la table en mémoire à chaque frappe.
     let query = supabase
       .from('users')
       .select('*')
       .eq('is_banned', false) as any;
 
+    if (params.query) {
+      const q = `%${params.query}%`;
+      query = query.or(`username.ilike.${q},full_name.ilike.${q}`);
+    }
     if (params.city) {
-      query = query.ilike('city', params.city);
+      query = query.ilike('city', `%${params.city}%`);
     }
     if (params.minReputation) {
       query = query.gte('reputation', params.minReputation);
@@ -500,7 +507,15 @@ export const usersApi = {
       query = query.eq('is_verified', params.isVerified);
     }
 
-    const { data, error } = await query;
+    // sport/level filtrent un champ JSONB imbriqué : on sur-fetch un peu avant le
+    // filtrage JS pour rester efficace sans rapatrier toute la table.
+    const needsJsFilter = !!params.sport || !!params.level;
+    const finalLimit = params.limit ?? 50;
+    const fetchLimit = needsJsFilter ? finalLimit * 4 : finalLimit;
+
+    const { data, error } = await query
+      .order('created_at', { ascending: false })
+      .limit(fetchLimit);
     if (error) throw error;
 
     const { viewerId, isAdmin } = await getViewerContext();
@@ -508,13 +523,6 @@ export const usersApi = {
       .map(row => mapUserRowToUser(row))
       .filter(u => canViewerSeeUser(u, viewerId, isAdmin));
 
-    if (params.query) {
-      const q = params.query.toLowerCase();
-      users = users.filter(u => 
-        u.username.toLowerCase().includes(q) || 
-        u.fullName.toLowerCase().includes(q)
-      );
-    }
     if (params.sport) {
       users = users.filter(u => u.sports.some(s => s.sport === params.sport));
     }
@@ -522,7 +530,7 @@ export const usersApi = {
       users = users.filter(u => u.sports.some(s => s.level === params.level));
     }
 
-    return users;
+    return users.slice(0, finalLimit);
   },
 
   async follow(followerId: string, followingId: string) {

@@ -13,8 +13,7 @@ describe('AUTH — Inscription', () => {
 
     expect(user.id).toBeDefined();
     expect(user.phone).toBeDefined();
-    expect(user.first_name).toBeDefined();
-    expect(user.last_name).toBeDefined();
+    expect(user.full_name).toBeDefined();
     expect(user.username).toBeDefined();
     expect(user.referral_code).toBeDefined();
     expect(user.role).toBe('user');
@@ -97,47 +96,46 @@ describe('AUTH — Profil utilisateur', () => {
     await cleanup({ users: createdUserIds });
   });
 
-  test('✅ Mise à jour first_name, last_name → persiste en BDD', async () => {
+  test('✅ Mise à jour full_name → persiste en BDD', async () => {
     const user = await createTestUser();
     createdUserIds.push(user.id);
 
     const { error } = await supabaseAdmin
       .from('users')
-      .update({ first_name: 'Updated', last_name: 'Name' })
+      .update({ full_name: 'Updated Name' })
       .eq('id', user.id);
 
     expect(error).toBeNull();
 
     const { data } = await supabaseAdmin
       .from('users')
-      .select('first_name, last_name')
+      .select('full_name')
       .eq('id', user.id)
       .single();
 
-    expect(data?.first_name).toBe('Updated');
-    expect(data?.last_name).toBe('Name');
+    expect(data?.full_name).toBe('Updated Name');
   });
 
-  test('✅ Mise à jour favorite_sports JSONB → structure correcte persistée', async () => {
+  test('✅ Mise à jour sports JSONB → structure correcte persistée', async () => {
     const user = await createTestUser();
     createdUserIds.push(user.id);
 
-    const newSports = ['football', 'basketball', 'tennis'];
+    const newSports = [{ sport: 'football', level: 'intermediate' }];
     const { error } = await supabaseAdmin
       .from('users')
-      .update({ favorite_sports: newSports })
+      .update({ sports: newSports })
       .eq('id', user.id);
 
     expect(error).toBeNull();
 
     const { data } = await supabaseAdmin
       .from('users')
-      .select('favorite_sports')
+      .select('sports')
       .eq('id', user.id)
       .single();
 
-    expect(Array.isArray(data?.favorite_sports)).toBe(true);
-    expect(data?.favorite_sports).toEqual(newSports);
+    expect(Array.isArray(data?.sports)).toBe(true);
+    expect(data?.sports).toEqual(newSports);
   });
 
   test('❌ Modifier role via API directe → bloqué', async () => {

@@ -193,6 +193,7 @@ export default function NewsScreen() {
           colors={['#0d111d', '#0b0f1a', Colors.background.dark, '#0d111d']}
           locations={[0, 0.25, 0.6, 1]}
           style={StyleSheet.absoluteFill}
+          pointerEvents="none"
         />
         <SafeAreaView style={styles.safeArea} edges={['top']}>
           <View style={styles.header}>

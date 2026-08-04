@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import * as Notifications from "expo-notifications";
 import React, { useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { View, ActivityIndicator, StyleSheet, Text } from "react-native";
@@ -21,6 +22,7 @@ import { TrophiesProvider } from "@/contexts/TrophiesContext";
 import { I18nProvider } from "@/contexts/I18nContext";
 import { OfflineProvider } from "@/contexts/OfflineContext";
 import { ReferralProvider } from "@/contexts/ReferralContext";
+import { PostsProvider } from "@/contexts/PostsContext";
 import { Colors } from "@/constants/colors";
 import { logger } from "@/lib/logger";
 import { AppAlertProvider } from "@/components/AppAlertProvider";
@@ -102,6 +104,23 @@ const authStyles = StyleSheet.create({
 });
 
 function RootLayoutNav() {
+  const router = useRouter();
+
+  useEffect(() => {
+    // Handle notification tap (deep link)
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Record<string, string> | undefined;
+      if (data?.route) {
+        logger.debug('RootLayout', 'Notification tap, navigating to:', data.route);
+        router.push(data.route as any);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [router]);
+
   return (
     <View style={{ flex: 1, backgroundColor: '#0d111d' }}>
       <OfflineBanner />
@@ -130,6 +149,7 @@ function RootLayoutNav() {
         <Stack.Screen name="forgot-password" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="notifications" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="user/[id]" />
+        <Stack.Screen name="post/[id]" />
         <Stack.Screen name="terms" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="privacy" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="contact" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
@@ -201,8 +221,10 @@ export default function RootLayout() {
                                   <MatchesProvider>
                                     <TournamentsProvider>
                                       <ChatProvider>
+                                      <PostsProvider>
                                         <RootLayoutNav />
-                                      </ChatProvider>
+                                      </PostsProvider>
+                                    </ChatProvider>
                                     </TournamentsProvider>
                                   </MatchesProvider>
                                 </TeamsProvider>

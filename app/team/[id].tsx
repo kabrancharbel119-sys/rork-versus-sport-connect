@@ -4,8 +4,9 @@ import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, Modal, Tex
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Image as ExpoImage } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Star, MapPin, Settings, UserPlus, MessageCircle, Shield, Plus, Check, X, ChevronDown, Edit3, Image, Crown, Trash2, Lock, Unlock, AlertTriangle, ChevronRight, Info } from 'lucide-react-native';
+import { Plus, Users, Trophy, MapPin, Star, Settings, ArrowLeft, ChevronRight, ChevronDown, Crown, Shield, UserPlus, MessageCircle, Info, Trash2, Camera, X, Check, Edit3, Image as ImageIcon, Lock, Unlock, AlertTriangle, Heart, Megaphone, Pause, Play, ShieldCheck } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useI18n } from '@/contexts/I18nContext';
@@ -16,17 +17,19 @@ import { teamsApi } from '@/lib/api/teams';
 import { supabase } from '@/lib/supabase';
 import { safeBack } from '@/lib/navigation';
 import { usersApi } from '@/lib/api/users';
-import { uploadTeamImage } from '@/lib/uploadImage';
+import { uploadTeamImage, uploadTeamPhoto } from '@/lib/uploadImage';
 import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { StatCard } from '@/components/StatCard';
 import { sportLabels, levelLabels, ambianceLabels, TEAM_ROLES, DEFAULT_POSITIONS } from '@/mocks/data';
 import { SkillLevel, PlayStyle } from '@/types';
-import type { Team, User } from '@/types';
+import type { Team, User, TeamPhoto, CMAssignment, CMPermissions } from '@/types';
+import { DEFAULT_CM_PERMISSIONS } from '@/types';
 import { suggestionsApi, type PlayerSuggestion } from '@/lib/api/suggestions';
 import { notificationsApi } from '@/lib/api/notifications';
 import { useQuery } from '@tanstack/react-query';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const pickImageFromLibrary = async (): Promise<string | null> => {
   const result = await ImagePicker.launchImageLibraryAsync({
@@ -66,7 +69,7 @@ export default function TeamDetailScreen() {
   const { t } = useI18n();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, refreshUser } = useAuth();
-  const { getTeamById, sendJoinRequest, leaveTeam, handleRequest, updateMemberRole, addCustomRole, promoteMember, removeMember, getPendingRequests, updateTeam, deleteTeam, transferCaptaincy, followTeam, unfollowTeam, isUpdating, refetchTeams, getUserTeams } = useTeams();
+  const { getTeamById, sendJoinRequest, leaveTeam, handleRequest, updateMemberRole, addCustomRole, promoteMember, removeMember, getPendingRequests, updateTeam, deleteTeam, transferCaptaincy, followTeam, unfollowTeam, isUpdating, refetchTeams, getUserTeams, assignCM, removeCM, updateCMPermissions, suspendCM, reactivateCM } = useTeams();
   const { users, addUser } = useUsers();
   const { addNotification, notifyTeamRequest } = useNotifications();
   const fromContext = getTeamById(id || '');
@@ -87,6 +90,20 @@ export default function TeamDetailScreen() {
   const [showDissolveModal, setShowDissolveModal] = useState(false);
   const [dissolveReason, setDissolveReason] = useState('');
   const [dissolving, setDissolving] = useState(false);
+  const [galleryPhotos, setGalleryPhotos] = useState<TeamPhoto[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(true);
+  const [viewerPhoto, setViewerPhoto] = useState<TeamPhoto | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [showAddPhotoModal, setShowAddPhotoModal] = useState(false);
+  const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
+  const [photoCaption, setPhotoCaption] = useState('');
+  const [activeTab, setActiveTab] = useState<'members' | 'gallery'>('members');
+  const [newFeedCount, setNewFeedCount] = useState(0);
+  const [cmAssignments, setCMAssignments] = useState<CMAssignment[]>([]);
+  const [showCMModal, setShowCMModal] = useState(false);
+  const [cmTargetUserId, setCmTargetUserId] = useState<string | null>(null);
+  const [cmPermissions, setCmPermissions] = useState<CMPermissions>(DEFAULT_CM_PERMISSIONS);
+  const [cmLoading, setCmLoading] = useState(false);
 
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -103,6 +120,11 @@ export default function TeamDetailScreen() {
       .catch(() => {});
   }, [id]);
 
+  const refreshUserRef = useRef(refreshUser);
+  refreshUserRef.current = refreshUser;
+  const refetchTeamsRef = useRef(refetchTeams);
+  refetchTeamsRef.current = refetchTeams;
+
   useFocusEffect(
     useCallback(() => {
       // Always load fresh from DB on focus — bypasses stale cache
@@ -112,11 +134,21 @@ export default function TeamDetailScreen() {
           .then(t => setFetchedTeam(t))
           .catch(() => {})
           .finally(() => setLoadingTeam(false));
+        // Load gallery photos
+        setLoadingPhotos(true);
+        teamsApi.getTeamPhotos(id)
+          .then(photos => setGalleryPhotos(photos))
+          .catch(() => {})
+          .finally(() => setLoadingPhotos(false));
+        // Load CM assignments
+        teamsApi.getCMs(id)
+          .then(cms => setCMAssignments(cms))
+          .catch(() => {});
       }
       // Refresh user so user.teams is up-to-date (updated when captain accepts)
-      refreshUser();
-      refetchTeams();
-    }, [id, refetchTeams, refreshUser])
+      refreshUserRef.current();
+      refetchTeamsRef.current();
+    }, [id])
   );
 
   const team = fetchedTeam ?? fromContext;
@@ -162,6 +194,26 @@ export default function TeamDetailScreen() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [id, loadFreshTeam, refreshUser]);
+
+  // Count new feed posts since last visit
+  useEffect(() => {
+    if (!id) return;
+    const checkNewPosts = async () => {
+      try {
+        const lastVisitKey = `feed_last_visit_${id}`;
+        const lastVisit = await AsyncStorage.getItem(lastVisitKey);
+        const posts = await teamsApi.getTeamPosts(id, 30, 0);
+        if (lastVisit) {
+          const lastDate = new Date(lastVisit);
+          const newCount = posts.filter(p => p.createdAt > lastDate).length;
+          setNewFeedCount(newCount);
+        } else if (posts.length > 0) {
+          setNewFeedCount(posts.length);
+        }
+      } catch {}
+    };
+    checkNewPosts();
+  }, [id]);
 
   const memberRole = team?.members.find(m => m.userId === user?.id)?.role;
   const pendingRequests = team ? getPendingRequests(team.id) : [];
@@ -298,7 +350,7 @@ export default function TeamDetailScreen() {
   if (loadingTeam && !team) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} pointerEvents="none" />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}>
             <ActivityIndicator size="large" color={Colors.primary.orange} />
@@ -312,7 +364,7 @@ export default function TeamDetailScreen() {
   if (!team) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} pointerEvents="none" />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.errorContainer}><Text style={styles.errorText}>{t('teamDetail.notFound')}</Text><Button title={t('common.back')} onPress={() => safeBack(router, '/(tabs)/teams')} variant="outline" /></View>
         </SafeAreaView>
@@ -363,6 +415,48 @@ export default function TeamDetailScreen() {
     }
   };
 
+  const handleOpenAddPhoto = async () => {
+    const uri = await pickImageFromLibrary();
+    if (!uri) return;
+    setPendingPhotoUri(uri);
+    setPhotoCaption('');
+    setShowAddPhotoModal(true);
+  };
+
+  const handleConfirmAddPhoto = async () => {
+    if (!team || !user || !pendingPhotoUri) return;
+    try {
+      setUploadingPhoto(true);
+      const imageUrl = await uploadTeamPhoto(pendingPhotoUri, team.id, user.id);
+      await teamsApi.addTeamPhoto(team.id, user.id, imageUrl, photoCaption.trim() || undefined);
+      const photos = await teamsApi.getTeamPhotos(team.id);
+      setGalleryPhotos(photos);
+      setShowAddPhotoModal(false);
+      setPendingPhotoUri(null);
+      setPhotoCaption('');
+    } catch (e: any) {
+      Alert.alert('Erreur', 'Impossible d\'ajouter la photo');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleDeletePhoto = (photo: TeamPhoto) => {
+    const isOwner = photo.userId === user?.id;
+    Alert.alert('Supprimer la photo', isOwner ? 'Supprimer cette photo de la galerie ?' : 'Supprimer cette photo de la galerie en tant que capitaine ?', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Supprimer', style: 'destructive', onPress: async () => {
+        try {
+          await teamsApi.deleteTeamPhoto(photo.id);
+          setGalleryPhotos(prev => prev.filter(p => p.id !== photo.id));
+          setViewerPhoto(null);
+        } catch (e: any) {
+          Alert.alert('Erreur', 'Impossible de supprimer la photo');
+        }
+      } },
+    ]);
+  };
+
   const handleUpdateRole = async (userId: string, customRole: string, position?: string) => {
     try { await updateMemberRole({ teamId: team.id, userId, customRole, position }); setShowRoleModal(false); }
     catch (e: any) { Alert.alert(t('common.error'), e.message); }
@@ -374,8 +468,9 @@ export default function TeamDetailScreen() {
     catch (e: any) { Alert.alert(t('common.error'), e.message); }
   };
 
-  const handlePromote = (userId: string, role: 'co-captain' | 'member') => {
-    Alert.alert(t('teamDetail.confirmTitle'), role === 'co-captain' ? t('teamDetail.promoteQuestion') : t('teamDetail.demoteQuestion'), [
+  const handlePromote = (userId: string, role: 'co-captain' | 'member' | 'cm') => {
+    const labels: Record<string, string> = { 'co-captain': 'co-capitaine', 'cm': 'Community Manager', 'member': 'membre' };
+    Alert.alert(t('teamDetail.confirmTitle'), `Promouvoir en tant que ${labels[role]} ?`, [
       { text: t('common.cancel'), style: 'cancel' },
       {
         text: t('common.confirm'),
@@ -384,8 +479,10 @@ export default function TeamDetailScreen() {
             await promoteMember({ teamId: team.id, userId, role, promoterId: user!.id });
             const msg = role === 'co-captain'
               ? { title: '⭐ Promotion', message: `Vous avez été promu co-capitaine de ${team.name}.` }
-              : { title: 'Rôle mis à jour', message: `Vous n'êtes plus co-capitaine de ${team.name}.` };
-            await addNotification({ userId, type: 'team', ...msg, data: { route: `/team/${team.id}` } });
+              : role === 'cm'
+              ? { title: '📱 Promotion CM', message: `Vous êtes maintenant Community Manager de ${team.name}. Vous pouvez publier au nom de l'équipe. Rendez-vous sur le feed d'équipe pour commencer.` }
+              : { title: 'Rôle mis à jour', message: `Votre rôle dans ${team.name} a été mis à jour.` };
+            await addNotification({ userId, type: 'team', ...msg, data: { route: role === 'cm' ? `/team-feed/${team.id}` : `/team/${team.id}` } });
           } catch (e: any) {
             Alert.alert(t('common.error'), e.message);
           }
@@ -418,6 +515,167 @@ export default function TeamDetailScreen() {
       },
     ]);
   };
+
+  // ════ CM System Handlers ════
+
+  const MAX_CMS = 3;
+
+  const activeCMs = cmAssignments.filter(cm => cm.status === 'active');
+  const getCMAssignment = (userId: string) => cmAssignments.find(cm => cm.userId === userId);
+
+  const handleAssignCM = useCallback((userId: string) => {
+    if (!team || !user) return;
+    if (activeCMs.length >= MAX_CMS && !getCMAssignment(userId)) {
+      Alert.alert('Limite atteinte', `Vous avez déjà ${MAX_CMS} Community Managers actifs. Suspendez ou retirez-en un d'abord.`);
+      return;
+    }
+    const member = team.members.find(m => m.userId === userId);
+    if (!member) {
+      Alert.alert('Erreur', 'Ce membre n\'a pas été trouvé.');
+      return;
+    }
+    setCmTargetUserId(userId);
+    const existing = getCMAssignment(userId);
+    setCmPermissions(existing?.permissions || DEFAULT_CM_PERMISSIONS);
+    setShowCMModal(true);
+  }, [team, user, activeCMs.length, cmAssignments]);
+
+  const handleSaveCM = useCallback(async () => {
+    if (!team || !user || !cmTargetUserId) return;
+    setCmLoading(true);
+    try {
+      const existing = getCMAssignment(cmTargetUserId);
+      if (existing) {
+        await updateCMPermissions({ teamId: team.id, userId: cmTargetUserId, permissions: cmPermissions });
+        const permList: string[] = [];
+        if (cmPermissions.can_post) permList.push('publier des posts');
+        if (cmPermissions.can_delete_posts) permList.push('supprimer des posts');
+        if (cmPermissions.can_manage_photos) permList.push('gérer les photos');
+        if (cmPermissions.can_pin_posts) permList.push('épingler des posts');
+        await addNotification({
+          userId: cmTargetUserId,
+          type: 'team',
+          title: '📱 Permissions CM mises à jour',
+          message: `Vos permissions ont été modifiées sur ${team.name}. Vous pouvez maintenant : ${permList.length > 0 ? permList.join(', ') : 'aucune permission active'}.`,
+          data: { route: `/team-feed/${team.id}` },
+        });
+      } else {
+        await assignCM({ teamId: team.id, userId: cmTargetUserId, captainId: user.id, permissions: cmPermissions });
+        const permList: string[] = [];
+        if (cmPermissions.can_post) permList.push('publier des posts');
+        if (cmPermissions.can_delete_posts) permList.push('supprimer des posts');
+        if (cmPermissions.can_manage_photos) permList.push('gérer les photos');
+        if (cmPermissions.can_pin_posts) permList.push('épingler des posts');
+        await addNotification({
+          userId: cmTargetUserId,
+          type: 'team',
+          title: '📱 Promotion Community Manager',
+          message: `Vous êtes maintenant Community Manager de ${team.name}. Vous pouvez : ${permList.join(', ')}.`,
+          data: { route: `/team-feed/${team.id}` },
+        });
+      }
+      const cms = await teamsApi.getCMs(team.id);
+      setCMAssignments(cms);
+      setShowCMModal(false);
+      setCmTargetUserId(null);
+    } catch (e: any) {
+      Alert.alert(t('common.error'), e.message);
+    } finally {
+      setCmLoading(false);
+    }
+  }, [team, user, cmTargetUserId, cmPermissions, cmAssignments]);
+
+  const handleRemoveCM = useCallback((userId: string) => {
+    if (!team) return;
+    const cmUser = resolveMemberUser(userId);
+    Alert.alert(
+      'Retirer le CM',
+      `Retirer ${cmUser?.fullName || cmUser?.username || 'ce membre'} du rôle de Community Manager ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Retirer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await removeCM({ teamId: team.id, userId });
+              const cms = await teamsApi.getCMs(team.id);
+              setCMAssignments(cms);
+              await addNotification({
+                userId,
+                type: 'team',
+                title: 'Rôle CM retiré',
+                message: `Vous n'êtes plus Community Manager de ${team.name}.`,
+                data: { route: `/team/${team.id}` },
+              });
+            } catch (e: any) {
+              Alert.alert(t('common.error'), e.message);
+            }
+          },
+        },
+      ]
+    );
+  }, [team]);
+
+  const handleSuspendCM = useCallback((userId: string) => {
+    if (!team) return;
+    Alert.alert(
+      'Suspendre le CM',
+      'Suspendre temporairement ce Community Manager ? Il perdra ses permissions mais restera membre.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Suspendre',
+          onPress: async () => {
+            try {
+              await suspendCM({ teamId: team.id, userId });
+              const cms = await teamsApi.getCMs(team.id);
+              setCMAssignments(cms);
+              await addNotification({
+                userId,
+                type: 'team',
+                title: '⏸️ CM Suspendu',
+                message: `Vos permissions de Community Manager ont été suspendues sur ${team.name}. Vous restez membre de l'équipe.`,
+                data: { route: `/team/${team.id}` },
+              });
+            } catch (e: any) {
+              Alert.alert(t('common.error'), e.message);
+            }
+          },
+        },
+      ]
+    );
+  }, [team]);
+
+  const handleReactivateCM = useCallback((userId: string) => {
+    if (!team) return;
+    Alert.alert(
+      'Réactiver le CM',
+      'Réactiver ce Community Manager ? Il retrouvera ses permissions.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Réactiver',
+          onPress: async () => {
+            try {
+              await reactivateCM({ teamId: team.id, userId });
+              const cms = await teamsApi.getCMs(team.id);
+              setCMAssignments(cms);
+              await addNotification({
+                userId,
+                type: 'team',
+                title: '✅ CM Réactivé',
+                message: `Vos permissions de Community Manager ont été réactivées sur ${team.name}. Vous pouvez à nouveau publier au nom de l'équipe.`,
+                data: { route: `/team-feed/${team.id}` },
+              });
+            } catch (e: any) {
+              Alert.alert(t('common.error'), e.message);
+            }
+          },
+        },
+      ]
+    );
+  }, [team]);
 
   const handleSaveSettings = async () => {
     try {
@@ -606,7 +864,7 @@ export default function TeamDetailScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} pointerEvents="none" />
         <SafeAreaView style={styles.safeArea} edges={['top']}>
           <ScrollView testID="team-detail-scroll" style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             <View style={styles.header}>
@@ -627,6 +885,12 @@ export default function TeamDetailScreen() {
                 <View style={styles.metaItem}><MapPin size={14} color={Colors.text.muted} /><Text style={styles.metaText}>{team.city}</Text></View>
                 <View style={styles.metaDot} /><Text style={styles.metaText}>{sportLabels[team.sport]}</Text>
                 <View style={styles.metaDot} /><Text style={styles.metaText}>{team.format}</Text>
+                {(team.fans ?? []).length > 0 && (
+                  <>
+                    <View style={styles.metaDot} />
+                    <View style={styles.metaItem}><Heart size={13} color={Colors.status.error} /><Text style={styles.metaText}>{(team.fans ?? []).length} abonnés</Text></View>
+                  </>
+                )}
               </View>
               <View style={styles.badges}>
                 <View style={styles.badge}><Text style={styles.badgeText}>{levelLabels[team.level]}</Text></View>
@@ -634,50 +898,257 @@ export default function TeamDetailScreen() {
                 {team.isRecruiting && <View style={[styles.badge, styles.recruitingBadge]}><Text style={[styles.badgeText, styles.recruitingText]}>{t('teamDetail.recruit')}</Text></View>}
               </View>
               {isMember && memberRole && (
-                <View style={styles.memberBadge}><Shield size={14} color={Colors.primary.orange} /><Text style={styles.memberBadgeText}>{memberRole === 'captain' ? t('teamDetail.captain') : memberRole === 'co-captain' ? t('teamDetail.coCaptain') : t('teamDetail.member')}</Text></View>
+                <View style={styles.memberBadge}><Shield size={14} color={Colors.primary.orange} /><Text style={styles.memberBadgeText}>{memberRole === 'captain' ? t('teamDetail.captain') : memberRole === 'co-captain' ? t('teamDetail.coCaptain') : memberRole === 'cm' ? 'Community Manager' : t('teamDetail.member')}</Text></View>
+              )}
+
+              {/* ════ Follow / Unfollow button — prominent, right under team header ════ */}
+              {!isMember && !isFan && (
+                <TouchableOpacity
+                  style={styles.followBtn}
+                  onPress={async () => {
+                    if (!user || !team) return;
+                    try {
+                      await followTeam({ teamId: team.id, userId: user.id });
+                      loadFreshTeam();
+                    } catch (error: any) {
+                      Alert.alert(t('common.error'), error.message || t('teamDetail.followError'));
+                    }
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Star size={18} color="#FFFFFF" />
+                  <Text style={styles.followBtnText}>{t('teamDetail.followTeam')}</Text>
+                </TouchableOpacity>
+              )}
+              {!isMember && isFan && (
+                <TouchableOpacity
+                  style={styles.followingBtn}
+                  onPress={async () => {
+                    if (!user || !team) return;
+                    try {
+                      await unfollowTeam({ teamId: team.id, userId: user.id });
+                      loadFreshTeam();
+                    } catch (error: any) {
+                      Alert.alert(t('common.error'), error.message || t('teamDetail.unfollowError'));
+                    }
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Check size={18} color={Colors.status.success} />
+                  <Text style={styles.followingBtnText}>{t('teamDetail.unfollowTeam')}</Text>
+                </TouchableOpacity>
               )}
             </View>
 
             {previewForNonMember ? (
               <>
-                {team.description && <Card style={styles.descriptionCard}><Text style={styles.description} numberOfLines={4}>{team.description}</Text></Card>}
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>{t('teamDetail.members', { count: team.members.length, max: team.maxMembers })}</Text>
-                  <Text style={styles.previewMembersHint}>{t('teamDetail.accessMembersText')}</Text>
-                  {team.members.map((member) => (
-                    <Card key={member.userId} style={styles.memberCard}>
-                      <View style={styles.memberRow}>
-                        <Avatar uri={resolveMemberUser(member.userId)?.avatar} name={resolveMemberUser(member.userId)?.fullName || resolveMemberUser(member.userId)?.username} size="medium" />
-                        <View style={styles.memberInfo}>
-                          <Text style={styles.memberName}>{resolveMemberUser(member.userId)?.fullName || resolveMemberUser(member.userId)?.username || t('teamDetail.member')}</Text>
-                          <Text style={styles.memberPosition}>{member.role === 'captain' ? t('teamDetail.captain') : member.role === 'co-captain' ? t('teamDetail.coCaptain') : t('teamDetail.member')}</Text>
-                        </View>
-                        {member.role === 'captain' && <View style={styles.organizerBadge}><Crown size={14} color={Colors.primary.orange} /></View>}
-                      </View>
-                    </Card>
-                  ))}
-                </View>
-                <Card style={styles.accessCard} variant="gradient">
-                  <Info size={22} color={Colors.primary.blue} />
-                  <Text style={styles.accessTitle}>{t('teamDetail.accessMembersTitle')}</Text>
-                  <Text style={styles.accessText}>
-                    {t('teamDetail.accessMembersText')}
+            {team.description && <Card style={styles.descriptionCard}><Text style={styles.description}>{team.description}</Text></Card>}
+
+            <View style={styles.statsRow}>
+              <StatCard label={t('teamDetail.matches')} value={team.stats.matchesPlayed} variant="blue" />
+              <StatCard label={t('teamDetail.wins')} value={team.stats.wins} variant="default" />
+              <StatCard label={t('teamDetail.trophies')} value={team.stats.tournamentWins} variant="orange" />
+            </View>
+
+            <Card style={styles.reputationCard} variant="gradient">
+              <View style={styles.reputationRow}>
+                <Star size={24} color="#F59E0B" />
+                <View style={styles.reputationInfo}><Text style={styles.reputationLabel}>{t('teamDetail.reputation')}</Text><Text style={styles.reputationValue}>{team.reputation.toFixed(1)} / 5.0</Text></View>
+                <View style={styles.cashPrize}><Text style={styles.cashPrizeLabel}>Cash prizes</Text><Text style={styles.cashPrizeValue}>{team.stats.totalCashPrize.toLocaleString()} FCFA</Text></View>
+              </View>
+            </Card>
+
+            {/* ════ TABS: Members / Gallery ════ */}
+            <View style={styles.tabContainer}>
+              <View style={styles.tabBar}>
+                <TouchableOpacity
+                  style={[styles.tabItem, activeTab === 'members' && styles.tabItemActive]}
+                  onPress={() => setActiveTab('members')}
+                >
+                  <Users size={16} color={activeTab === 'members' ? '#FFFFFF' : Colors.text.muted} />
+                  <Text style={[styles.tabItemText, activeTab === 'members' && styles.tabItemTextActive]}>
+                    {t('teamDetail.members', { count: team.members.length, max: team.maxMembers })}
                   </Text>
-                </Card>
-                <View style={styles.actions}>
-                  {myJoinRequest?.status === 'waiting' ? (
-                    <Button title={t('teamDetail.waitingList')} onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
-                  ) : myJoinRequest?.status === 'rejected' ? (
-                    <Button title={t('teamDetail.requestJoinAgain')} onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
-                  ) : hasRequested ? (
-                    <Button title={t('teamDetail.requestSentCaptain')} onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
-                  ) : team.isRecruiting && team.members.length < team.maxMembers ? (
-                    <Button title={t('teamDetail.requestJoin')} onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tabItem, activeTab === 'gallery' && styles.tabItemActive]}
+                  onPress={() => setActiveTab('gallery')}
+                >
+                  <Camera size={16} color={activeTab === 'gallery' ? '#FFFFFF' : Colors.text.muted} />
+                  <Text style={[styles.tabItemText, activeTab === 'gallery' && styles.tabItemTextActive]}>
+                    Galerie {galleryPhotos.length > 0 ? `(${galleryPhotos.length})` : ''}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {activeTab === 'members' && (
+                <View style={styles.membersGrid}>
+                  {team.members.map((member, i) => {
+                    const memberUser = member.userId === user?.id ? user : resolveMemberUser(member.userId);
+                    const isCap = member.userId === team.captainId;
+                    const isCo = member.role === 'co-captain';
+                    const isCM = member.role === 'cm';
+                    return (
+                      <View key={i} style={styles.memberGridCard}>
+                        <Avatar
+                          uri={memberUser?.avatar}
+                          name={memberUser?.fullName || memberUser?.username}
+                          size="large"
+                        />
+                        {isCap && (
+                          <View style={styles.memberGridCrown}>
+                            <Crown size={12} color="#FFF" />
+                          </View>
+                        )}
+                        <Text style={styles.memberGridName} numberOfLines={1}>
+                          {memberUser?.fullName || memberUser?.username || t('teamDetail.member')}
+                        </Text>
+                        <View style={[styles.memberGridRoleBadge,
+                          isCap ? styles.memberGridRoleCaptain :
+                          isCo ? styles.memberGridRoleCoCaptain :
+                          isCM ? styles.memberGridRoleCM : styles.memberGridRoleMember
+                        ]}>
+                          <Text style={styles.memberGridRoleText}>
+                            {isCap ? t('teamDetail.captain') : isCo ? t('teamDetail.coCaptain') : isCM ? 'CM' : t('teamDetail.member')}
+                          </Text>
+                        </View>
+                        {memberUser && (
+                          <View style={styles.memberGridStats}>
+                            <View style={styles.memberGridStat}>
+                              <Text style={styles.memberGridStatValue}>{memberUser.stats?.matchesPlayed ?? 0}</Text>
+                              <Text style={styles.memberGridStatLabel}>Matchs</Text>
+                            </View>
+                            <View style={styles.memberGridStatDivider} />
+                            <View style={styles.memberGridStat}>
+                              <Text style={styles.memberGridStatValue}>{memberUser.stats?.wins ?? 0}</Text>
+                              <Text style={styles.memberGridStatLabel}>Victoires</Text>
+                            </View>
+                            <View style={styles.memberGridStatDivider} />
+                            <View style={styles.memberGridStat}>
+                              <Text style={[styles.memberGridStatValue, { color: '#F59E0B' }]}>{memberUser.reputation?.toFixed(1) ?? '0.0'}</Text>
+                              <Text style={styles.memberGridStatLabel}>Rep</Text>
+                            </View>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {activeTab === 'gallery' && (
+                <View style={styles.tabContent}>
+                  {loadingPhotos ? (
+                    <View style={styles.galleryEmptyState}>
+                      <ActivityIndicator size="large" color={Colors.primary.orange} />
+                      <Text style={styles.galleryEmptyStateText}>Chargement de la galerie...</Text>
+                    </View>
+                  ) : galleryPhotos.length === 0 ? (
+                    <View style={styles.galleryEmptyState}>
+                      <View style={styles.galleryEmptyIconWrap}>
+                        <Camera size={40} color={Colors.primary.blue} />
+                      </View>
+                      <Text style={styles.galleryEmptyStateTitle}>Aucune photo</Text>
+                      <Text style={styles.galleryEmptyStateDesc}>Les moments de l'équipe apparaîtront ici</Text>
+                    </View>
                   ) : (
-                    <Button title={t('teamDetail.recruitmentClosed')} onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
+                    <>
+                      <View style={styles.galleryMosaic}>
+                        <View style={styles.galleryMosaicCol}>
+                          {galleryPhotos.filter((_, i) => i % 2 === 0).slice(0, 6).map((photo, idx) => {
+                            const realIdx = galleryPhotos.indexOf(photo);
+                            const isLarge = realIdx === 0;
+                            return (
+                              <TouchableOpacity
+                                key={photo.id}
+                                style={[styles.galleryMosaicItem, isLarge && styles.galleryMosaicItemLarge]}
+                                onPress={() => setViewerPhoto(photo)}
+                                activeOpacity={0.9}
+                              >
+                                <ExpoImage
+                                  source={{ uri: photo.imageUrl }}
+                                  style={styles.galleryMosaicImg}
+                                  contentFit="cover"
+                                  transition={150}
+                                />
+                                {photo.caption ? (
+                                  <View style={styles.galleryMosaicCaption}>
+                                    <Text style={styles.galleryMosaicCaptionText} numberOfLines={1}>{photo.caption}</Text>
+                                  </View>
+                                ) : null}
+                                {isLarge && (
+                                  <View style={styles.galleryMosaicBadge}>
+                                    <Camera size={10} color="#FFFFFF" />
+                                    <Text style={styles.galleryMosaicBadgeText}>{galleryPhotos.length}</Text>
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                        <View style={styles.galleryMosaicCol}>
+                          {galleryPhotos.filter((_, i) => i % 2 === 1).slice(0, 6).map((photo) => (
+                            <TouchableOpacity
+                              key={photo.id}
+                              style={styles.galleryMosaicItem}
+                              onPress={() => setViewerPhoto(photo)}
+                              activeOpacity={0.9}
+                            >
+                              <ExpoImage
+                                source={{ uri: photo.imageUrl }}
+                                style={styles.galleryMosaicImg}
+                                contentFit="cover"
+                                transition={150}
+                              />
+                              {photo.caption ? (
+                                <View style={styles.galleryMosaicCaption}>
+                                  <Text style={styles.galleryMosaicCaptionText} numberOfLines={1}>{photo.caption}</Text>
+                                </View>
+                              ) : null}
+                            </TouchableOpacity>
+                          ))}
+                          {galleryPhotos.length > 12 && (
+                            <TouchableOpacity
+                              style={styles.galleryMosaicMore}
+                              onPress={() => router.push(`/team-gallery/${team.id}` as any)}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={styles.galleryMosaicMoreText}>+{galleryPhotos.length - 12}</Text>
+                              <Text style={styles.galleryMosaicMoreSub}>Voir tout</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </View>
+                      <TouchableOpacity style={styles.gallerySeeAllBtn} onPress={() => router.push(`/team-gallery/${team.id}` as any)}>
+                        <Text style={styles.gallerySeeAllText}>Voir toute la galerie</Text>
+                        <ChevronRight size={16} color={Colors.primary.blue} />
+                      </TouchableOpacity>
+                    </>
                   )}
                 </View>
-                <View style={styles.bottomSpacer} />
+              )}
+            </View>
+
+            <View style={styles.actions}>
+              {myJoinRequest?.status === 'waiting' ? (
+                <Button title={t('teamDetail.waitingList')} onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
+              ) : myJoinRequest?.status === 'rejected' ? (
+                <Button title={t('teamDetail.requestJoinAgain')} onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
+              ) : hasRequested ? (
+                <Button title={t('teamDetail.requestSentCaptain')} onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
+              ) : team.isRecruiting && team.members.length < team.maxMembers ? (
+                <Button title={t('teamDetail.requestJoin')} onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
+              ) : (
+                <Button title={t('teamDetail.recruitmentClosed')} onPress={() => {}} variant="secondary" disabled style={styles.actionButton} />
+              )}
+              <Button title="Feed d'équipe" onPress={() => router.push(`/team-feed/${team.id}` as any)} variant="outline" icon={<Megaphone size={18} color={Colors.primary.orange} />} style={styles.actionButton} />
+              {newFeedCount > 0 && (
+                <View style={styles.feedBadge}>
+                  <Text style={styles.feedBadgeText}>{newFeedCount > 9 ? '9+' : newFeedCount}</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.bottomSpacer} />
               </>
             ) : (
               <>
@@ -697,24 +1168,341 @@ export default function TeamDetailScreen() {
               </View>
             </Card>
 
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>{t('teamDetail.members', { count: team.members.length, max: team.maxMembers })}</Text>
-                {isCaptain && <TouchableOpacity style={styles.addRoleBtn} onPress={() => setShowAddRoleModal(true)}><Plus size={16} color="#FFFFFF" /><Text style={styles.addRoleBtnText}>{t('teamDetail.customRole')}</Text></TouchableOpacity>}
+            {/* ════ TABS: Members / Gallery ════ */}
+            <View style={styles.tabContainer}>
+              <View style={styles.tabBar}>
+                <TouchableOpacity
+                  style={[styles.tabItem, activeTab === 'members' && styles.tabItemActive]}
+                  onPress={() => setActiveTab('members')}
+                >
+                  <Users size={16} color={activeTab === 'members' ? '#FFFFFF' : Colors.text.muted} />
+                  <Text style={[styles.tabItemText, activeTab === 'members' && styles.tabItemTextActive]}>
+                    {t('teamDetail.members', { count: team.members.length, max: team.maxMembers })}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tabItem, activeTab === 'gallery' && styles.tabItemActive]}
+                  onPress={() => setActiveTab('gallery')}
+                >
+                  <Camera size={16} color={activeTab === 'gallery' ? '#FFFFFF' : Colors.text.muted} />
+                  <Text style={[styles.tabItemText, activeTab === 'gallery' && styles.tabItemTextActive]}>
+                    Galerie {galleryPhotos.length > 0 ? `(${galleryPhotos.length})` : ''}
+                  </Text>
+                </TouchableOpacity>
               </View>
-              {team.members.map((member, i) => (
-                <Card key={i} style={styles.memberCard}>
-                  <TouchableOpacity style={styles.memberRow} onPress={() => canManage && member.userId !== team.captainId && (setSelectedMember(member.userId), setShowRoleModal(true))} disabled={!canManage || member.userId === team.captainId}>
-                    <Avatar uri={member.userId === user?.id ? user?.avatar : resolveMemberUser(member.userId)?.avatar} name={member.userId === user?.id ? user?.fullName : resolveMemberUser(member.userId)?.fullName || resolveMemberUser(member.userId)?.username} size="medium" />
-                    <View style={styles.memberInfo}>
-                      <Text style={styles.memberName}>{member.userId === user?.id ? user?.fullName : resolveMemberUser(member.userId)?.fullName || resolveMemberUser(member.userId)?.username || t('teamDetail.member')}</Text>
-                      <Text style={styles.memberPosition}>{member.customRole || member.position || t('teamDetail.member')}</Text>
+
+              {activeTab === 'members' && (
+                <View style={styles.tabContent}>
+                  {/* ════ CM Section ════ */}
+                  <View style={styles.cmSection}>
+                    <View style={styles.cmSectionHeader}>
+                      <View style={styles.cmSectionTitleRow}>
+                        <Megaphone size={18} color={Colors.primary.blue} />
+                        <Text style={styles.cmSectionTitle}>Community Managers</Text>
+                      </View>
+                      <View style={styles.cmCountBadge}>
+                        <Text style={styles.cmCountText}>{activeCMs.length}/{MAX_CMS}</Text>
+                      </View>
                     </View>
-                    {member.role !== 'member' && <View style={[styles.roleBadge, member.role === 'captain' && styles.captainRole]}><Text style={styles.roleText}>{member.role === 'captain' ? 'Cap' : 'Co'}</Text></View>}
-                    {canManage && member.userId !== team.captainId && <ChevronDown size={16} color={Colors.text.muted} />}
-                  </TouchableOpacity>
-                </Card>
-              ))}
+                    <Text style={styles.cmSectionDesc}>
+                      Les CM gèrent le contenu de l'équipe (posts, photos) au nom du capitaine.
+                    </Text>
+
+                    {cmAssignments.length === 0 ? (
+                      <View style={styles.cmEmpty}>
+                        <Megaphone size={28} color={Colors.text.muted} strokeWidth={1.5} />
+                        <Text style={styles.cmEmptyText}>Aucun Community Manager</Text>
+                        {isCaptain && (
+                          <Text style={styles.cmEmptyHint}>
+                            Choisissez « Gérer CM » sur un membre ci-dessous pour le promouvoir
+                          </Text>
+                        )}
+                      </View>
+                    ) : (
+                      cmAssignments.map((cm) => {
+                        const cmUser = resolveMemberUser(cm.userId);
+                        const isActive = cm.status === 'active';
+                        return (
+                          <Card key={cm.id} style={[styles.cmMemberCard, !isActive && styles.cmMemberCardSuspended]}>
+                            <View style={styles.memberRow}>
+                              <Avatar
+                                uri={cm.userId === user?.id ? user?.avatar : cmUser?.avatar}
+                                name={cm.userId === user?.id ? user?.fullName : cmUser?.fullName || cmUser?.username}
+                                size="medium"
+                              />
+                              <View style={styles.memberInfo}>
+                                <Text style={styles.memberName}>
+                                  {cm.userId === user?.id ? user?.fullName : cmUser?.fullName || cmUser?.username || 'Membre'}
+                                </Text>
+                                <View style={styles.cmPermChips}>
+                                  {cm.permissions.can_post && <View style={styles.cmPermChip}><Text style={styles.cmPermChipText}>Posts</Text></View>}
+                                  {cm.permissions.can_manage_photos && <View style={styles.cmPermChip}><Text style={styles.cmPermChipText}>Photos</Text></View>}
+                                  {cm.permissions.can_delete_posts && <View style={styles.cmPermChip}><Text style={styles.cmPermChipText}>Suppr.</Text></View>}
+                                </View>
+                              </View>
+                              {isActive ? (
+                                <View style={styles.cmBadgeLarge}>
+                                  <Megaphone size={12} color="#FFF" />
+                                  <Text style={styles.cmBadgeLargeText}>CM</Text>
+                                </View>
+                              ) : (
+                                <View style={styles.cmSuspendedBadge}>
+                                  <Pause size={12} color={Colors.status.error} />
+                                  <Text style={styles.cmSuspendedText}>Suspendu</Text>
+                                </View>
+                              )}
+                            </View>
+                            {isCaptain && (
+                              <View style={styles.cmActionsRow}>
+                                <TouchableOpacity
+                                  style={styles.cmActionBtn}
+                                  onPress={() => handleAssignCM(cm.userId)}
+                                >
+                                  <ShieldCheck size={14} color={Colors.primary.blue} />
+                                  <Text style={styles.cmActionBtnTextBlue}>Permissions</Text>
+                                </TouchableOpacity>
+                                {isActive ? (
+                                  <TouchableOpacity
+                                    style={styles.cmActionBtn}
+                                    onPress={() => handleSuspendCM(cm.userId)}
+                                  >
+                                    <Pause size={14} color={Colors.status.warning || '#F59E0B'} />
+                                    <Text style={styles.cmActionBtnTextWarn}>Suspendre</Text>
+                                  </TouchableOpacity>
+                                ) : (
+                                  <TouchableOpacity
+                                    style={styles.cmActionBtn}
+                                    onPress={() => handleReactivateCM(cm.userId)}
+                                  >
+                                    <Play size={14} color={Colors.status.success} />
+                                    <Text style={styles.cmActionBtnTextSuccess}>Réactiver</Text>
+                                  </TouchableOpacity>
+                                )}
+                                <TouchableOpacity
+                                  style={styles.cmActionBtn}
+                                  onPress={() => handleRemoveCM(cm.userId)}
+                                >
+                                  <Trash2 size={14} color={Colors.status.error} />
+                                  <Text style={styles.cmActionBtnTextError}>Retirer</Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+                          </Card>
+                        );
+                      })
+                    )}
+                  </View>
+
+                  {/* ════ All Members ════ */}
+                  {isCaptain && team.isRecruiting && team.members.length < team.maxMembers && (
+                    <TouchableOpacity style={styles.addRoleBtn} onPress={() => setShowAddRoleModal(true)}>
+                      <Plus size={16} color="#FFFFFF" />
+                      <Text style={styles.addRoleBtnText}>{t('teamDetail.customRole')}</Text>
+                    </TouchableOpacity>
+                  )}
+                  <Text style={styles.membersListLabel}>Tous les membres</Text>
+                  <View style={styles.membersGrid}>
+                  {team.members.map((member, i) => {
+                    const cmAssignment = getCMAssignment(member.userId);
+                    const memberUser = member.userId === user?.id ? user : resolveMemberUser(member.userId);
+                    const isCap = member.userId === team.captainId;
+                    const isCo = member.role === 'co-captain';
+                    const isCM = member.role === 'cm';
+                    return (
+                      <View key={i} style={styles.memberGridCard}>
+                        <TouchableOpacity
+                          onPress={() => canManage && member.userId !== team.captainId && (setSelectedMember(member.userId), setShowRoleModal(true))}
+                          disabled={!canManage || member.userId === team.captainId}
+                          style={styles.memberGridTop}
+                        >
+                          <Avatar
+                            uri={memberUser?.avatar}
+                            name={memberUser?.fullName || memberUser?.username}
+                            size="large"
+                          />
+                          {isCap && (
+                            <View style={styles.memberGridCrown}>
+                              <Crown size={12} color="#FFF" />
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                        <Text style={styles.memberGridName} numberOfLines={1}>
+                          {memberUser?.fullName || memberUser?.username || t('teamDetail.member')}
+                        </Text>
+                        <View style={[styles.memberGridRoleBadge,
+                          isCap ? styles.memberGridRoleCaptain :
+                          isCo ? styles.memberGridRoleCoCaptain :
+                          isCM ? styles.memberGridRoleCM : styles.memberGridRoleMember
+                        ]}>
+                          <Text style={[styles.memberGridRoleText,
+                            isCap ? { color: Colors.primary.orange } :
+                            isCM ? { color: Colors.primary.blue } : {}
+                          ]}>
+                            {isCap ? t('teamDetail.captain') : isCo ? t('teamDetail.coCaptain') : isCM ? 'CM' : member.customRole || member.position || t('teamDetail.member')}
+                          </Text>
+                        </View>
+                        {memberUser && (
+                          <View style={styles.memberGridStats}>
+                            <View style={styles.memberGridStat}>
+                              <Text style={styles.memberGridStatValue}>{memberUser.stats?.matchesPlayed ?? 0}</Text>
+                              <Text style={styles.memberGridStatLabel}>Matchs</Text>
+                            </View>
+                            <View style={styles.memberGridStatDivider} />
+                            <View style={styles.memberGridStat}>
+                              <Text style={styles.memberGridStatValue}>{memberUser.stats?.wins ?? 0}</Text>
+                              <Text style={styles.memberGridStatLabel}>Victoires</Text>
+                            </View>
+                            <View style={styles.memberGridStatDivider} />
+                            <View style={styles.memberGridStat}>
+                              <Text style={[styles.memberGridStatValue, { color: '#F59E0B' }]}>{memberUser.reputation?.toFixed(1) ?? '0.0'}</Text>
+                              <Text style={styles.memberGridStatLabel}>Rep</Text>
+                            </View>
+                          </View>
+                        )}
+                        {canManage && member.userId !== team.captainId && (
+                          <TouchableOpacity
+                            style={styles.memberGridManageBtn}
+                            onPress={() => (setSelectedMember(member.userId), setShowRoleModal(true))}
+                          >
+                            <Settings size={12} color={Colors.text.muted} />
+                            <Text style={styles.memberGridManageBtnText}>Gérer</Text>
+                          </TouchableOpacity>
+                        )}
+                        {isCaptain && member.userId !== team.captainId && member.role !== 'cm' && !cmAssignment && (
+                          <TouchableOpacity
+                            style={styles.quickCMBtn}
+                            onPress={() => handleAssignCM(member.userId)}
+                          >
+                            <Megaphone size={12} color={Colors.primary.blue} />
+                            <Text style={styles.quickCMBtnText}>CM</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    );
+                  })}
+                  </View>
+                </View>
+              )}
+
+              {activeTab === 'gallery' && (
+                <View style={styles.tabContent}>
+                  {isMember && (
+                    <TouchableOpacity style={styles.galleryAddBtnLarge} onPress={handleOpenAddPhoto} disabled={uploadingPhoto} activeOpacity={0.8}>
+                      {uploadingPhoto ? (
+                        <ActivityIndicator size={20} color="#FFFFFF" />
+                      ) : (
+                        <Plus size={20} color="#FFFFFF" />
+                      )}
+                      <Text style={styles.galleryAddBtnLargeText}>{uploadingPhoto ? 'Upload en cours...' : 'Ajouter une photo'}</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {loadingPhotos ? (
+                    <View style={styles.galleryEmptyState}>
+                      <ActivityIndicator size="large" color={Colors.primary.orange} />
+                      <Text style={styles.galleryEmptyStateText}>Chargement de la galerie...</Text>
+                    </View>
+                  ) : galleryPhotos.length === 0 ? (
+                    <View style={styles.galleryEmptyState}>
+                      <View style={styles.galleryEmptyIconWrap}>
+                        <Camera size={40} color={Colors.primary.blue} />
+                      </View>
+                      <Text style={styles.galleryEmptyStateTitle}>Aucune photo</Text>
+                      <Text style={styles.galleryEmptyStateDesc}>Les moments de l'équipe apparaîtront ici</Text>
+                      {isMember && (
+                        <Text style={styles.galleryEmptyStateHint}>Ajoutez des photos des activités de l'équipe !</Text>
+                      )}
+                    </View>
+                  ) : (
+                    <>
+                      <View style={styles.galleryMosaic}>
+                        <View style={styles.galleryMosaicCol}>
+                          {galleryPhotos.filter((_, i) => i % 2 === 0).slice(0, 6).map((photo) => {
+                            const realIdx = galleryPhotos.indexOf(photo);
+                            const isLarge = realIdx === 0;
+                            const canDelete = photo.userId === user?.id || isCaptain;
+                            return (
+                              <TouchableOpacity
+                                key={photo.id}
+                                style={[styles.galleryMosaicItem, isLarge && styles.galleryMosaicItemLarge]}
+                                onPress={() => setViewerPhoto(photo)}
+                                activeOpacity={0.9}
+                              >
+                                <ExpoImage
+                                  source={{ uri: photo.imageUrl }}
+                                  style={styles.galleryMosaicImg}
+                                  contentFit="cover"
+                                  transition={150}
+                                />
+                                {photo.caption ? (
+                                  <View style={styles.galleryMosaicCaption}>
+                                    <Text style={styles.galleryMosaicCaptionText} numberOfLines={1}>{photo.caption}</Text>
+                                  </View>
+                                ) : null}
+                                {isLarge && (
+                                  <View style={styles.galleryMosaicBadge}>
+                                    <Camera size={10} color="#FFFFFF" />
+                                    <Text style={styles.galleryMosaicBadgeText}>{galleryPhotos.length}</Text>
+                                  </View>
+                                )}
+                                {canDelete && (
+                                  <View style={styles.galleryDeleteBadge}>
+                                    <Trash2 size={12} color="#FFFFFF" />
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                        <View style={styles.galleryMosaicCol}>
+                          {galleryPhotos.filter((_, i) => i % 2 === 1).slice(0, 6).map((photo) => {
+                            const canDelete = photo.userId === user?.id || isCaptain;
+                            return (
+                              <TouchableOpacity
+                                key={photo.id}
+                                style={styles.galleryMosaicItem}
+                                onPress={() => setViewerPhoto(photo)}
+                                activeOpacity={0.9}
+                              >
+                                <ExpoImage
+                                  source={{ uri: photo.imageUrl }}
+                                  style={styles.galleryMosaicImg}
+                                  contentFit="cover"
+                                  transition={150}
+                                />
+                                {photo.caption ? (
+                                  <View style={styles.galleryMosaicCaption}>
+                                    <Text style={styles.galleryMosaicCaptionText} numberOfLines={1}>{photo.caption}</Text>
+                                  </View>
+                                ) : null}
+                                {canDelete && (
+                                  <View style={styles.galleryDeleteBadge}>
+                                    <Trash2 size={12} color="#FFFFFF" />
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
+                          {galleryPhotos.length > 12 && (
+                            <TouchableOpacity
+                              style={styles.galleryMosaicMore}
+                              onPress={() => router.push(`/team-gallery/${team.id}` as any)}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={styles.galleryMosaicMoreText}>+{galleryPhotos.length - 12}</Text>
+                              <Text style={styles.galleryMosaicMoreSub}>Voir tout</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </View>
+                      <TouchableOpacity style={styles.gallerySeeAllBtn} onPress={() => router.push(`/team-gallery/${team.id}` as any)}>
+                        <Text style={styles.gallerySeeAllText}>Voir toute la galerie</Text>
+                        <ChevronRight size={16} color={Colors.primary.blue} />
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
+              )}
             </View>
 
             {/* ════ SUGGESTED RECRUITS — for captains ════ */}
@@ -751,63 +1539,20 @@ export default function TeamDetailScreen() {
               </View>
             )}
 
-            {(team.fans ?? []).length > 0 && (
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>{t('teamDetail.community', { count: (team.fans ?? []).length })}</Text>
-                </View>
-                <Card style={styles.fansCard}>
-                  <Text style={styles.fansDescription}>
-                    {t('teamDetail.fansFollowTeam', { count: (team.fans ?? []).length })}
-                  </Text>
-                  <View style={styles.fansList}>
-                    {(team.fans ?? []).slice(0, 10).map((fanId) => {
-                      const fan = resolveMemberUser(fanId);
-                      return (
-                        <View key={fanId} style={styles.fanItem}>
-                          <Avatar uri={fan?.avatar} name={fan?.fullName || fan?.username || ''} size="small" />
-                          <Text style={styles.fanName}>{fan?.fullName || fan?.username || t('teamDetail.fan')}</Text>
-                        </View>
-                      );
-                    })}
-                    {(team.fans ?? []).length > 10 && (
-                      <Text style={styles.fansMore}>{t('teamDetail.othersCount', { count: (team.fans ?? []).length - 10 })}</Text>
-                    )}
-                  </View>
-                </Card>
-              </View>
-            )}
-
             <View style={styles.actions}>
               {isMember && (
                 <Button title={t('teamDetail.teamChat')} onPress={() => router.push(`/team-chat/${team.id}` as any)} variant="primary" icon={<MessageCircle size={18} color="#FFFFFF" />} style={styles.actionButton} />
               )}
-              {!isMember && !hasRequested && !isFan && myJoinRequest?.status !== 'waiting' && (
-                <>
-                  <Button title={myJoinRequest?.status === 'rejected' ? t('teamDetail.requestJoinAgain') : t('teamDetail.requestJoin')} onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
-                  <Button title={t('teamDetail.followTeam')} onPress={async () => {
-                    if (!user || !team) return;
-                    try {
-                      await followTeam({ teamId: team.id, userId: user.id });
-                      Alert.alert(t('common.success'), t('teamDetail.followSuccess'));
-                    } catch (error: any) {
-                      Alert.alert(t('common.error'), error.message || t('teamDetail.followError'));
-                    }
-                  }} variant="outline" icon={<Star size={18} color={Colors.primary.blue} />} style={styles.actionButton} />
-                </>
-              )}
-              {isFan && !isMember && (
-                <Button title={t('teamDetail.unfollowTeam')} onPress={async () => {
-                  if (!user || !team) return;
-                  try {
-                    await unfollowTeam({ teamId: team.id, userId: user.id });
-                    Alert.alert(t('common.success'), t('teamDetail.unfollowSuccess'));
-                  } catch (error: any) {
-                    Alert.alert(t('common.error'), error.message || t('teamDetail.unfollowError'));
-                  }
-                }} variant="outline" style={styles.actionButton} />
+              {!isMember && !hasRequested && myJoinRequest?.status !== 'waiting' && (
+                <Button title={myJoinRequest?.status === 'rejected' ? t('teamDetail.requestJoinAgain') : t('teamDetail.requestJoin')} onPress={handleJoinRequest} loading={isRequesting} variant="orange" icon={<UserPlus size={18} color="#FFFFFF" />} style={styles.actionButton} />
               )}
               {!isCaptain && isMember && <Button title={t('teamDetail.leaveTeamButton')} onPress={handleLeave} variant="outline" style={styles.actionButton} />}
+              <Button title="Feed d'équipe" onPress={() => router.push(`/team-feed/${team.id}` as any)} variant="outline" icon={<Megaphone size={18} color={Colors.primary.orange} />} style={styles.actionButton} />
+              {newFeedCount > 0 && (
+                <View style={styles.feedBadge}>
+                  <Text style={styles.feedBadgeText}>{newFeedCount > 9 ? '9+' : newFeedCount}</Text>
+                </View>
+              )}
             </View>
             <View style={styles.bottomSpacer} />
               </>
@@ -835,6 +1580,96 @@ export default function TeamDetailScreen() {
           </View>
         </Modal>
 
+        {/* ════ CM Management Modal ════ */}
+        <Modal visible={showCMModal} animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Gérer le Community Manager</Text>
+                <TouchableOpacity onPress={() => !cmLoading && (setShowCMModal(false), setCmTargetUserId(null))} disabled={cmLoading}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+                {cmTargetUserId && team && (
+                  <View style={{ alignItems: 'center', marginBottom: 16 }}>
+                    <Avatar
+                      uri={cmTargetUserId === user?.id ? user?.avatar : resolveMemberUser(cmTargetUserId)?.avatar}
+                      name={cmTargetUserId === user?.id ? user?.fullName : resolveMemberUser(cmTargetUserId)?.fullName || resolveMemberUser(cmTargetUserId)?.username}
+                      size="large"
+                    />
+                    <Text style={{ color: Colors.text.primary, fontSize: 18, fontWeight: '700', marginTop: 8 }}>
+                      {cmTargetUserId === user?.id ? user?.fullName : resolveMemberUser(cmTargetUserId)?.fullName || resolveMemberUser(cmTargetUserId)?.username || 'Membre'}
+                    </Text>
+                    <View style={styles.cmBadgeLarge}>
+                      <Megaphone size={14} color="#FFF" />
+                      <Text style={styles.cmBadgeLargeText}>Community Manager</Text>
+                    </View>
+                  </View>
+                )}
+
+                <Text style={styles.modalLabel}>Permissions</Text>
+                <View style={styles.cmModalPermRow}>
+                  <View style={styles.cmModalPermInfo}>
+                    <Text style={styles.cmModalPermTitle}>Publier des posts</Text>
+                    <Text style={styles.cmModalPermDesc}>Créer du contenu au nom de l'équipe</Text>
+                  </View>
+                  <Switch
+                    value={cmPermissions.can_post}
+                    onValueChange={(v) => setCmPermissions(prev => ({ ...prev, can_post: v }))}
+                    trackColor={{ false: Colors.background.cardLight, true: Colors.primary.blue }}
+                    thumbColor="#FFF"
+                  />
+                </View>
+                <View style={styles.cmModalPermRow}>
+                  <View style={styles.cmModalPermInfo}>
+                    <Text style={styles.cmModalPermTitle}>Gérer les photos</Text>
+                    <Text style={styles.cmModalPermDesc}>Ajouter/supprimer des photos de galerie</Text>
+                  </View>
+                  <Switch
+                    value={cmPermissions.can_manage_photos}
+                    onValueChange={(v) => setCmPermissions(prev => ({ ...prev, can_manage_photos: v }))}
+                    trackColor={{ false: Colors.background.cardLight, true: Colors.primary.blue }}
+                    thumbColor="#FFF"
+                  />
+                </View>
+                <View style={styles.cmModalPermRow}>
+                  <View style={styles.cmModalPermInfo}>
+                    <Text style={styles.cmModalPermTitle}>Supprimer des posts</Text>
+                    <Text style={styles.cmModalPermDesc}>Supprimer les posts de l'équipe</Text>
+                  </View>
+                  <Switch
+                    value={cmPermissions.can_delete_posts}
+                    onValueChange={(v) => setCmPermissions(prev => ({ ...prev, can_delete_posts: v }))}
+                    trackColor={{ false: Colors.background.cardLight, true: Colors.status.error }}
+                    thumbColor="#FFF"
+                  />
+                </View>
+                <View style={styles.cmModalPermRow}>
+                  <View style={styles.cmModalPermInfo}>
+                    <Text style={styles.cmModalPermTitle}>Épingler des posts</Text>
+                    <Text style={styles.cmModalPermDesc}>Mettre en avant des publications</Text>
+                  </View>
+                  <Switch
+                    value={cmPermissions.can_pin_posts}
+                    onValueChange={(v) => setCmPermissions(prev => ({ ...prev, can_pin_posts: v }))}
+                    trackColor={{ false: Colors.background.cardLight, true: Colors.primary.blue }}
+                    thumbColor="#FFF"
+                  />
+                </View>
+
+                <Button
+                  title="Enregistrer"
+                  onPress={handleSaveCM}
+                  variant="primary"
+                  loading={cmLoading}
+                  style={{ marginTop: 16 }}
+                />
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
         <Modal visible={showRoleModal} animationType="slide" transparent>
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
@@ -852,6 +1687,13 @@ export default function TeamDetailScreen() {
                     ) : (
                       <Button title={t('teamDetail.demoteMember')} onPress={() => { handlePromote(selectedMember, 'member'); setShowRoleModal(false); }} variant="outline" style={styles.modalBtn} />
                     )}
+                    <Button
+                      title={getCMAssignment(selectedMember) ? '📱 Gérer les permissions CM' : '📱 Promouvoir Community Manager'}
+                      onPress={() => { setShowRoleModal(false); handleAssignCM(selectedMember); }}
+                      variant="primary"
+                      icon={<Megaphone size={16} color="#FFFFFF" />}
+                      style={styles.modalBtn}
+                    />
                     <Button title={t('teamDetail.removeFromTeam')} onPress={() => { handleRemoveMember(selectedMember); setShowRoleModal(false); }} variant="outline" style={[styles.modalBtn, { borderColor: Colors.status.error }]} />
                   </>
                 )}
@@ -927,7 +1769,7 @@ export default function TeamDetailScreen() {
                         }
                       }}
                     >
-                      <Image size={24} color={Colors.primary.blue} />
+                      <ImageIcon size={24} color={Colors.primary.blue} />
                       <Text style={{ color: Colors.text.primary, fontSize: 14, fontWeight: '500' }}>Galerie</Text>
                     </TouchableOpacity>
                     <TouchableOpacity 
@@ -1137,6 +1979,95 @@ export default function TeamDetailScreen() {
             </View>
           </View>
         </Modal>
+
+        {/* Add photo modal */}
+        <Modal visible={showAddPhotoModal} animationType="slide" transparent onRequestClose={() => !uploadingPhoto && setShowAddPhotoModal(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Ajouter une photo</Text>
+                <TouchableOpacity onPress={() => !uploadingPhoto && setShowAddPhotoModal(false)} disabled={uploadingPhoto}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              <View style={{ padding: 20 }}>
+                {pendingPhotoUri && (
+                  <View style={styles.addPhotoPreviewContainer}>
+                    <ExpoImage
+                      source={{ uri: pendingPhotoUri }}
+                      style={styles.addPhotoPreview}
+                      contentFit="cover"
+                      transition={100}
+                    />
+                    <TouchableOpacity
+                      style={styles.addPhotoChangeBtn}
+                      onPress={async () => {
+                        const uri = await pickImageFromLibrary();
+                        if (uri) setPendingPhotoUri(uri);
+                      }}
+                      disabled={uploadingPhoto}
+                    >
+                      <Edit3 size={14} color="#FFFFFF" />
+                      <Text style={styles.addPhotoChangeBtnText}>Changer</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                <Text style={styles.modalLabel}>Légende (optionnel)</Text>
+                <TextInput
+                  style={styles.roleInput}
+                  placeholder="Décrivez cette photo..."
+                  placeholderTextColor={Colors.text.muted}
+                  value={photoCaption}
+                  onChangeText={setPhotoCaption}
+                  maxLength={200}
+                  multiline
+                  numberOfLines={2}
+                  editable={!uploadingPhoto}
+                />
+                <Button
+                  title="Publier la photo"
+                  onPress={handleConfirmAddPhoto}
+                  variant="primary"
+                  loading={uploadingPhoto}
+                  disabled={!pendingPhotoUri || uploadingPhoto}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Photo viewer modal */}
+        <Modal visible={!!viewerPhoto} animationType="fade" transparent onRequestClose={() => setViewerPhoto(null)}>
+          <View style={styles.photoViewerOverlay}>
+            <TouchableOpacity style={styles.photoViewerClose} onPress={() => setViewerPhoto(null)}>
+              <X size={28} color="#FFFFFF" />
+            </TouchableOpacity>
+            {viewerPhoto && (
+              <>
+                <ExpoImage
+                  source={{ uri: viewerPhoto.imageUrl }}
+                  style={styles.photoViewerImage}
+                  contentFit="contain"
+                />
+                {viewerPhoto.caption && (
+                  <Text style={styles.photoViewerCaption}>{viewerPhoto.caption}</Text>
+                )}
+                <Text style={styles.photoViewerUploader}>
+                  {resolveMemberUser(viewerPhoto.userId)?.fullName || resolveMemberUser(viewerPhoto.userId)?.username || 'Membre'}
+                </Text>
+                {(viewerPhoto.userId === user?.id || isCaptain) && (
+                  <TouchableOpacity
+                    style={styles.photoViewerDelete}
+                    onPress={() => handleDeletePhoto(viewerPhoto)}
+                  >
+                    <Trash2 size={18} color="#FFFFFF" />
+                    <Text style={styles.photoViewerDeleteText}>Supprimer</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+          </View>
+        </Modal>
       </View>
     </>
   );
@@ -1197,11 +2128,72 @@ const styles = StyleSheet.create({
   memberInfo: { flex: 1 },
   memberName: { color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const },
   memberPosition: { color: Colors.text.muted, fontSize: 13 },
-  roleBadge: { backgroundColor: Colors.background.cardLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  membersGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  memberGridCard: { width: '48%', backgroundColor: Colors.background.card, borderRadius: 16, padding: 14, alignItems: 'center', gap: 6, position: 'relative' },
+  memberGridCrown: { position: 'absolute', top: 10, right: 10, width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.primary.orange, alignItems: 'center', justifyContent: 'center' },
+  memberGridTop: { alignItems: 'center', position: 'relative' },
+  memberGridName: { color: Colors.text.primary, fontSize: 14, fontWeight: '600' as const, marginTop: 4 },
+  memberGridRoleBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  memberGridRoleCaptain: { backgroundColor: Colors.primary.orange + '25' },
+  memberGridRoleCoCaptain: { backgroundColor: Colors.background.cardLight },
+  memberGridRoleCM: { backgroundColor: Colors.primary.blue + '25' },
+  memberGridRoleMember: { backgroundColor: Colors.background.cardLight },
+  memberGridRoleText: { fontSize: 11, fontWeight: '600' as const, color: Colors.text.secondary },
+  memberGridStats: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 0, marginTop: 6, width: '100%' },
+  memberGridStat: { flex: 1, alignItems: 'center' },
+  memberGridStatValue: { color: Colors.text.primary, fontSize: 14, fontWeight: '700' as const },
+  memberGridStatLabel: { color: Colors.text.muted, fontSize: 10, marginTop: 1 },
+  memberGridStatDivider: { width: 1, height: 20, backgroundColor: Colors.border.light },
+  memberGridManageBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: Colors.background.cardLight, marginTop: 4 },
+  memberGridManageBtnText: { color: Colors.text.muted, fontSize: 11, fontWeight: '500' as const },
+  roleBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   captainRole: { backgroundColor: Colors.primary.orange },
+  coCaptainRole: { backgroundColor: Colors.background.cardLight },
+  cmRole: { backgroundColor: Colors.primary.blue },
   roleText: { color: Colors.text.primary, fontSize: 11, fontWeight: '600' as const },
-  actions: { gap: 12, marginBottom: 20 },
+  roleTextWhite: { color: '#FFF', fontSize: 11, fontWeight: '600' as const },
+  cmBadgePreview: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.primary.blue + '25', alignItems: 'center', justifyContent: 'center' },
+  membersListLabel: { color: Colors.text.muted, fontSize: 13, fontWeight: '600' as const, marginTop: 16, marginBottom: 8 },
+
+  // CM Section
+  cmSection: { marginBottom: 16, backgroundColor: Colors.background.card, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: Colors.primary.blue + '30' },
+  cmSectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  cmSectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cmSectionTitle: { color: Colors.text.primary, fontSize: 15, fontWeight: '700' as const },
+  cmSectionDesc: { color: Colors.text.muted, fontSize: 12, marginBottom: 12, lineHeight: 16 },
+  cmCountBadge: { backgroundColor: Colors.primary.blue + '20', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  cmCountText: { color: Colors.primary.blue, fontSize: 12, fontWeight: '700' as const },
+  cmEmpty: { alignItems: 'center', paddingVertical: 20, gap: 8 },
+  cmEmptyText: { color: Colors.text.muted, fontSize: 14 },
+  cmEmptyHint: { color: Colors.text.muted, fontSize: 12, fontStyle: 'italic' as const, textAlign: 'center' as const, lineHeight: 16 },
+  cmMemberCard: { marginBottom: 8, borderColor: Colors.primary.blue + '20' },
+  cmMemberCardSuspended: { borderColor: Colors.status.error + '30', opacity: 0.7 },
+  cmBadgeLarge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.primary.blue, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
+  cmBadgeLargeText: { color: '#FFF', fontSize: 12, fontWeight: '700' as const },
+  cmSuspendedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.status.error + '20', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
+  cmSuspendedText: { color: Colors.status.error, fontSize: 12, fontWeight: '600' as const },
+  cmPermChips: { flexDirection: 'row', gap: 4, marginTop: 4, flexWrap: 'wrap' as const },
+  cmPermChip: { backgroundColor: Colors.primary.blue + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  cmPermChipText: { color: Colors.primary.blue, fontSize: 10, fontWeight: '500' as const },
+  cmActionsRow: { flexDirection: 'row', gap: 8, marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: Colors.border.light },
+  cmActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, backgroundColor: Colors.background.cardLight },
+  cmActionBtnTextBlue: { color: Colors.primary.blue, fontSize: 11, fontWeight: '600' as const },
+  cmActionBtnTextWarn: { color: '#F59E0B', fontSize: 11, fontWeight: '600' as const },
+  cmActionBtnTextSuccess: { color: Colors.status.success, fontSize: 11, fontWeight: '600' as const },
+  cmActionBtnTextError: { color: Colors.status.error, fontSize: 11, fontWeight: '600' as const },
+  quickCMBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', marginTop: 8, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: Colors.primary.blue + '10' },
+  quickCMBtnText: { color: Colors.primary.blue, fontSize: 11, fontWeight: '600' as const },
+
+  // CM Modal
+  cmModalPermRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.background.card, borderRadius: 12, padding: 14, marginBottom: 8 },
+  cmModalPermInfo: { flex: 1 },
+  cmModalPermTitle: { color: Colors.text.primary, fontSize: 15, fontWeight: '500' as const },
+  cmModalPermDesc: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
   actionButton: { width: '100%' },
+  followBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.primary.blue, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 24, marginTop: 16, minWidth: 200 },
+  followBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' as const },
+  followingBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.background.card, borderWidth: 1.5, borderColor: Colors.status.success, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 24, marginTop: 16, minWidth: 200 },
+  followingBtnText: { color: Colors.status.success, fontSize: 15, fontWeight: '600' as const },
   bottomSpacer: { height: 40 },
   fansCard: { marginBottom: 16 },
   fansDescription: { color: Colors.text.secondary, fontSize: 14, marginBottom: 12 },
@@ -1247,7 +2239,31 @@ const styles = StyleSheet.create({
   memberCountBtnActive: { backgroundColor: Colors.primary.blue },
   memberCountText: { color: Colors.text.secondary, fontSize: 15, fontWeight: '600' as const },
   memberCountTextActive: { color: '#FFF' },
-  optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  actions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    paddingHorizontal: 16,
+    marginTop: 16,
+  } as any,
+  feedBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.primary.orange,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    zIndex: 10,
+  },
+  feedBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
   optionBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: Colors.background.card },
   optionBtnActive: { backgroundColor: Colors.primary.blue },
   optionText: { color: Colors.text.secondary, fontSize: 13, fontWeight: '500' as const },
@@ -1264,4 +2280,49 @@ const styles = StyleSheet.create({
   transferMemberInfo: { flex: 1 },
   transferMemberName: { color: Colors.text.primary, fontSize: 15, fontWeight: '600' as const },
   transferMemberRole: { color: Colors.text.muted, fontSize: 13, marginTop: 2 },
+  galleryAddBtnLarge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.primary.orange, paddingVertical: 14, borderRadius: 14, marginBottom: 12 },
+  galleryAddBtnLargeText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' as const },
+  tabContainer: { marginBottom: 24 },
+  tabBar: { flexDirection: 'row', gap: 8, marginBottom: 16, backgroundColor: Colors.background.card, borderRadius: 12, padding: 4 },
+  tabItem: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10 },
+  tabItemActive: { backgroundColor: Colors.primary.orange },
+  tabItemText: { color: Colors.text.muted, fontSize: 14, fontWeight: '600' as const },
+  tabItemTextActive: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' as const },
+  tabContent: { gap: 12 },
+  galleryMosaic: { flexDirection: 'row', gap: 6 },
+  galleryMosaicCol: { flex: 1, gap: 6 },
+  galleryMosaicItem: { borderRadius: 14, overflow: 'hidden', position: 'relative', aspectRatio: 1 },
+  galleryMosaicItemLarge: { aspectRatio: 0.75 },
+  galleryMosaicImg: { width: '100%', height: '100%' },
+  galleryMosaicCaption: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 8, paddingVertical: 4, borderBottomLeftRadius: 14, borderBottomRightRadius: 14 },
+  galleryMosaicCaptionText: { color: '#FFFFFF', fontSize: 11, fontWeight: '500' as const },
+  galleryMosaicBadge: { position: 'absolute', top: 8, right: 8, flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
+  galleryMosaicBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' as const },
+  galleryMosaicMore: { borderRadius: 14, overflow: 'hidden', backgroundColor: Colors.background.card, alignItems: 'center', justifyContent: 'center', aspectRatio: 1, gap: 2 },
+  galleryMosaicMoreText: { color: Colors.primary.blue, fontSize: 22, fontWeight: '700' as const },
+  galleryMosaicMoreSub: { color: Colors.text.muted, fontSize: 11, fontWeight: '500' as const },
+  gallerySeeAllBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 12, marginTop: 4 },
+  gallerySeeAllText: { color: Colors.primary.blue, fontSize: 14, fontWeight: '600' as const },
+  galleryEmptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 48, gap: 12, backgroundColor: Colors.background.cardLight, borderRadius: 16, borderWidth: 1, borderColor: Colors.border.light, borderStyle: 'dashed' as const },
+  galleryEmptyStateText: { color: Colors.text.muted, fontSize: 14 },
+  galleryEmptyStateTitle: { color: Colors.text.primary, fontSize: 18, fontWeight: '700' as const },
+  galleryEmptyStateDesc: { color: Colors.text.muted, fontSize: 14 },
+  galleryEmptyStateHint: { color: Colors.primary.blue, fontSize: 13, fontWeight: '500' as const, marginTop: 4 },
+  galleryEmptyIconWrap: { width: 72, height: 72, borderRadius: 36, backgroundColor: Colors.primary.blue + '15', alignItems: 'center', justifyContent: 'center' },
+  galleryDeleteBadge: { position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(239,68,68,0.85)', borderRadius: 6, width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
+  galleryCaptionOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 8, paddingVertical: 4, borderBottomLeftRadius: 12, borderBottomRightRadius: 12 },
+  galleryCaptionText: { color: '#FFFFFF', fontSize: 10, fontWeight: '500' as const },
+  galleryUploader: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 8, paddingVertical: 3, borderBottomLeftRadius: 12, borderBottomRightRadius: 12 },
+  galleryUploaderText: { color: '#FFFFFF', fontSize: 9 },
+  addPhotoPreviewContainer: { position: 'relative', marginBottom: 16, borderRadius: 16, overflow: 'hidden' },
+  addPhotoPreview: { width: '100%', height: 280, borderRadius: 16 },
+  addPhotoChangeBtn: { position: 'absolute', top: 12, right: 12, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  addPhotoChangeBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '500' as const },
+  photoViewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
+  photoViewerImage: { width: '90%', height: '70%', borderRadius: 12 },
+  photoViewerClose: { position: 'absolute', top: 50, right: 20, zIndex: 10 },
+  photoViewerDelete: { position: 'absolute', bottom: 50, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(239,68,68,0.9)', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
+  photoViewerDeleteText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' as const },
+  photoViewerCaption: { color: '#FFFFFF', fontSize: 14, marginTop: 12, textAlign: 'center', paddingHorizontal: 20 },
+  photoViewerUploader: { color: Colors.text.muted, fontSize: 12, marginTop: 4, textAlign: 'center' },
 });

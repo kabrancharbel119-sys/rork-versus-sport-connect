@@ -543,8 +543,9 @@ export default function VenueDetailScreen() {
           colors={['#0d111d', '#0b0f1a', Colors.background.dark, '#0d111d', '#0d111d']}
           locations={[0, 0.2, 0.5, 0.7, 1]}
           style={StyleSheet.absoluteFill}
+          pointerEvents="none"
         />
-        <View style={styles.backgroundPattern}>
+        <View style={styles.backgroundPattern} pointerEvents="none">
           <View style={[styles.patternCircle, { top: -90, right: -60 }]} />
           <View style={[styles.patternCircle, { bottom: 140, left: -90 }]} />
         </View>
@@ -564,6 +565,7 @@ export default function VenueDetailScreen() {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 0, y: 1 }}
                 style={StyleSheet.absoluteFill}
+                pointerEvents="none"
               />
 
               <TouchableOpacity style={styles.heroBackButton} onPress={handleBack}>

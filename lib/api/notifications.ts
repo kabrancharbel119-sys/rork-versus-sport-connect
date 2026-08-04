@@ -147,7 +147,7 @@ export const notificationsApi = {
   },
 
   async send(targetUserId: string, notification: {
-    type: 'match' | 'team' | 'tournament' | 'chat' | 'system' | 'booking';
+    type: 'match' | 'team' | 'tournament' | 'chat' | 'system' | 'booking' | 'social';
     title: string;
     message: string;
     data?: Record<string, string>;
@@ -183,35 +183,45 @@ export const notificationsApi = {
       });
       error = res.error;
       if (!error && res.data) {
-        // Re-fetch the inserted notification to get the full row
-        const { data: notifRow } = await (supabase
-          .from('notifications')
-          .select('*')
-          .eq('id', res.data)
-          .single() as any);
-        data = notifRow;
-      } else if (!error) {
-        data = { id: '', user_id: targetUserId, ...notification, is_read: false, created_at: new Date().toISOString() };
+        // Notification insérée avec succès via RPC.
+        // On ne peut pas re-fetch car la RLS bloque la lecture
+        // d'une notification appartenant à un autre utilisateur.
+        // On construit donc l'objet localement.
+        data = {
+          id: res.data,
+          user_id: targetUserId,
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          data: notification.data ?? null,
+          is_read: false,
+          created_at: new Date().toISOString(),
+        };
       }
     }
 
     if (error) throw error;
 
-    const { data: pushToken } = await (supabase
-      .from('push_tokens')
-      .select('token')
-      .eq('user_id', targetUserId)
-      .maybeSingle() as any);
+    // Send push notification if token exists
+    try {
+      const { data: pushToken } = await (supabase
+        .from('push_tokens')
+        .select('token')
+        .eq('user_id', targetUserId)
+        .maybeSingle() as any);
 
-    if (pushToken?.token) {
-      await sendExpoPushNotification(pushToken.token, notification.title, notification.message, notification.data);
+      if (pushToken?.token) {
+        await sendExpoPushNotification(pushToken.token, notification.title, notification.message, notification.data);
+      }
+    } catch (e) {
+      console.warn('[NotificationsAPI] Push token fetch failed:', e);
     }
 
     return mapNotificationRowToNotification(data as NotificationRow);
   },
 
   async sendToMany(userIds: string[], notification: {
-    type: 'match' | 'team' | 'tournament' | 'chat' | 'system' | 'booking';
+    type: 'match' | 'team' | 'tournament' | 'chat' | 'system' | 'booking' | 'social';
     title: string;
     message: string;
     data?: Record<string, string>;

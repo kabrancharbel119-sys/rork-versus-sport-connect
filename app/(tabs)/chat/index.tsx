@@ -1,9 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Modal, TextInput, Alert, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { MessageCircle, Users, Hash, Zap, Plus, X, Search, UserPlus, ChevronRight, Inbox } from 'lucide-react-native';
+import { useQuery } from '@tanstack/react-query';
+import { usersApi } from '@/lib/api/users';
 import { Colors } from '@/constants/colors';
 import { useChat } from '@/contexts/ChatContext';
 import { useTeams } from '@/contexts/TeamsContext';
@@ -29,6 +31,19 @@ export default function ChatScreen() {
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomType, setNewRoomType] = useState<'general' | 'match' | 'strategy'>('general');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  const userSearchQuery = useQuery({
+    queryKey: ['chatUserSearch', debouncedSearch],
+    queryFn: () => usersApi.search({ query: debouncedSearch, limit: 30 }),
+    enabled: !!debouncedSearch,
+    staleTime: 30 * 1000,
+  });
   const [conversationSearch, setConversationSearch] = useState('');
   const [loadedUsers, setLoadedUsers] = useState<Map<string, any>>(new Map());
 
@@ -82,26 +97,21 @@ export default function ChatScreen() {
   }, [chatRooms, user?.id, getPendingChatRequests, getSentChatRequests, getUserById]);
 
   const filteredUsers = useMemo(() => {
-    if (!searchQuery.trim()) {
-      // Show verified users when no search query
+    if (!debouncedSearch) {
       return (users ?? [])
         .filter(u => u.isProfileVisible !== false && u.isVerified)
         .slice(0, 8);
     }
-    const q = searchQuery.toLowerCase();
-    return (users ?? [])
-      .filter(u =>
-        u.isProfileVisible !== false &&
-        (u.username.toLowerCase().includes(q) || u.fullName.toLowerCase().includes(q))
-      )
+    const serverResults = userSearchQuery.data ?? [];
+    return serverResults
+      .filter(u => u.isProfileVisible !== false)
       .sort((a, b) => {
-        // Verified users first
         if (a.isVerified && !b.isVerified) return -1;
         if (!a.isVerified && b.isVerified) return 1;
         return 0;
       })
       .slice(0, 15);
-  }, [users, searchQuery]);
+  }, [users, debouncedSearch, userSearchQuery.data]);
 
   const formatTime = (date: Date) => {
     const d = new Date(date);
@@ -260,7 +270,7 @@ export default function ChatScreen() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" translucent backgroundColor="transparent" />
-      <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} pointerEvents="none" />
       <View style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.headerInfo}>

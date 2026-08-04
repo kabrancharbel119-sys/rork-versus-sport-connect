@@ -430,6 +430,68 @@ export const chatApi = {
     return ((data || []) as ChatRoomRow[]).map(row => mapChatRoomRowToRoom(row));
   },
 
+  async ensureTeamChatsAndAddMember(teamId: string, teamName: string, members: string[], newMemberId: string) {
+    console.log('[ChatAPI] Ensuring team chats and adding member:', newMemberId, 'to team:', teamId);
+
+    // Get existing team rooms
+    const { data: existingRooms, error } = await (supabase
+      .from('chat_rooms')
+      .select('*')
+      .eq('team_id', teamId) as any);
+
+    if (error) {
+      console.log('[ChatAPI] Error fetching team rooms:', error);
+      // Fallback: create team chats from scratch
+      await this.createTeamChats(newMemberId, teamId, teamName, members);
+      return;
+    }
+
+    const rooms = (existingRooms || []) as ChatRoomRow[];
+
+    if (rooms.length === 0) {
+      // No team chats exist yet — create them with all members
+      await this.createTeamChats(newMemberId, teamId, teamName, members);
+      return;
+    }
+
+    // Add new member to each existing room
+    for (const room of rooms) {
+      const participants = getRoomParticipants(room);
+      if (participants.includes(newMemberId)) continue; // already a member
+
+      const updatedParticipants = [...participants, newMemberId];
+      const updatePayload: any = {};
+      if (participants.length > 0) {
+        updatePayload.participants = updatedParticipants;
+      } else {
+        updatePayload.participant_ids = updatedParticipants;
+      }
+
+      try {
+        const { error: updateError } = await (supabase
+          .from('chat_rooms')
+          .update(updatePayload)
+          .eq('id', room.id) as any);
+
+        if (updateError) {
+          // Try the other column name
+          const altPayload: any = {};
+          if ('participants' in updatePayload) {
+            altPayload.participant_ids = updatedParticipants;
+          } else {
+            altPayload.participants = updatedParticipants;
+          }
+          await (supabase
+            .from('chat_rooms')
+            .update(altPayload)
+            .eq('id', room.id) as any);
+        }
+      } catch (e) {
+        console.log('[ChatAPI] Failed to add member to room:', room.id, e);
+      }
+    }
+  },
+
   subscribeToMessages(roomId: string, callback: (message: ChatMessage) => void) {
     console.log('[ChatAPI] Subscribing to messages in room:', roomId);
     
@@ -476,6 +538,25 @@ export const chatApi = {
         .single() as any);
       
       if (updateError) throw updateError;
+
+      // Send notification to the recipient
+      try {
+        const { data: requester } = await (supabase
+          .from('users')
+          .select('username, full_name')
+          .eq('id', requesterId)
+          .single() as any);
+        const requesterName = requester?.full_name || requester?.username || 'Quelqu\'un';
+        await notificationsApi.send(recipientId, {
+          type: 'chat',
+          title: 'Nouvelle demande de message',
+          message: `${requesterName} veut vous envoyer un message`,
+          data: { route: '/chat-requests', type: 'chat_request' },
+        });
+      } catch (e) {
+        console.log('[ChatAPI] Failed to send chat request notification:', e);
+      }
+
       return updated;
     }
     
@@ -491,6 +572,25 @@ export const chatApi = {
       .single() as any);
     
     if (error) throw error;
+
+    // Send notification to the recipient
+    try {
+      const { data: requester } = await (supabase
+        .from('users')
+        .select('username, full_name')
+        .eq('id', requesterId)
+        .single() as any);
+      const requesterName = requester?.full_name || requester?.username || 'Quelqu\'un';
+      await notificationsApi.send(recipientId, {
+        type: 'chat',
+        title: 'Nouvelle demande de message',
+        message: `${requesterName} veut vous envoyer un message`,
+        data: { route: '/chat-requests', type: 'chat_request' },
+      });
+    } catch (e) {
+      console.log('[ChatAPI] Failed to send chat request notification:', e);
+    }
+
     return data;
   },
 
@@ -554,7 +654,7 @@ export const chatApi = {
     }
 
     console.log('[ChatAPI] Request successfully updated:', requestId, 'new status:', status);
-    
+
     let directRoom: ChatRoom | null = null;
 
     // If accepted, create (or reuse) direct chat room
@@ -564,6 +664,33 @@ export const chatApi = {
         type: 'direct',
         participants: [request.requester_id, request.recipient_id],
       });
+    }
+
+    // Notify the requester about the response
+    try {
+      const { data: recipient } = await (supabase
+        .from('users')
+        .select('username, full_name')
+        .eq('id', recipientId)
+        .single() as any);
+      const recipientName = recipient?.full_name || recipient?.username || 'Quelqu\'un';
+      if (action === 'accept' && directRoom) {
+        await notificationsApi.send(request.requester_id, {
+          type: 'chat',
+          title: 'Demande acceptée',
+          message: `${recipientName} a accepté votre demande de message`,
+          data: { route: `/chat/${directRoom.id}`, type: 'chat_request_accepted' },
+        });
+      } else if (action === 'reject') {
+        await notificationsApi.send(request.requester_id, {
+          type: 'chat',
+          title: 'Demande refusée',
+          message: `${recipientName} a refusé votre demande de message`,
+          data: { route: '/(tabs)/chat', type: 'chat_request_rejected' },
+        });
+      }
+    } catch (e) {
+      console.log('[ChatAPI] Failed to send chat request response notification:', e);
     }
 
     return {

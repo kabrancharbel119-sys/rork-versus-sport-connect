@@ -11,6 +11,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { venuesApi } from '@/lib/api/venues';
+import { createAutoPost, autoPostMessages } from '@/lib/autoPosts';
 import { Button } from '@/components/Button';
 import { CityAutocomplete, CityResult } from '@/components/CityAutocomplete';
 import { uploadVenueImage } from '@/lib/uploadImage';
@@ -139,6 +140,9 @@ export default function CreateVenueScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myVenues'] });
       queryClient.invalidateQueries({ queryKey: ['venues'] });
+      if (user?.id) {
+        createAutoPost(user.id, 'venue_created', autoPostMessages.venueCreated(formData.name.trim(), formData.city.trim()));
+      }
       Alert.alert('Terrain créé !', 'Votre terrain est maintenant visible par les utilisateurs.', [
         { text: 'OK', onPress: () => safeBack(router, '/venue-manager') },
       ]);
@@ -295,7 +299,7 @@ export default function CreateVenueScreen() {
                 value={formData.city}
                 onSelect={handleCitySelect}
                 onClear={handleCityClear}
-                placeholder="Ex: Abidjan"
+                placeholder="Votre ville"
                 style={errors.city ? { borderColor: Colors.status.error } : undefined}
               />
               {errors.city && <Text style={styles.fieldError}>{errors.city}</Text>}
@@ -373,6 +377,7 @@ export default function CreateVenueScreen() {
                 onChangeText={v => updateField('pricePerHour', v)}
                 keyboardType="numeric"
               />
+              <Text style={{ color: Colors.text.muted, fontSize: 11, marginTop: 4, marginBottom: 8 }}>Minimum recommandé: 600 FCFA</Text>
               {errors.pricePerHour && <Text style={styles.fieldError}>{errors.pricePerHour}</Text>}
 
               <Text style={styles.sectionTitle}>Sports disponibles *</Text>

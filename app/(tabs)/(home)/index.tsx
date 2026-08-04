@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Bell, Search, Trophy, Users, Swords, MapPin,
   ChevronRight, CheckCircle, Flame, ArrowRight, Plus,
-  Clock, UserPlus, Zap, Crown, Medal, MessageCircle,
+  Clock, UserPlus, Zap, Crown, Medal, MessageCircle, Calendar,
 } from 'lucide-react-native';
 import { Colors, SPACING, CARD_RADIUS, CARD_INNER_PAD, OUTER_PAD, SECTION_GAP, CARD_GAP, cardGlow } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -483,7 +483,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { getUnreadCount, refetchNotifications } = useNotifications();
-  const { getTotalUnread: getChatUnread } = useChat();
+  const { getTotalUnread: getChatUnread, getPendingChatRequests } = useChat();
   const { getRecruitingTeams, getUserTeams, teams, getFollowedTeams, getPendingRequests, refetchTeams } = useTeams();
   const { getUpcomingMatches } = useMatches();
   const { tournaments, getActiveTournaments } = useTournaments();
@@ -517,7 +517,9 @@ export default function HomeScreen() {
   const pendingTeamRequestsCount = user
     ? teams.filter((t) => t.captainId === user.id || (t.coCaptainIds ?? []).includes(user.id)).reduce((sum, t) => sum + getPendingRequests(t.id).length, 0)
     : 0;
-  const unreadNotifs = getUnreadCount() + pendingTeamRequestsCount + getChatUnread();
+  const pendingChatRequestsCount = getPendingChatRequests().length;
+  const chatBadgeCount = getChatUnread() + pendingChatRequestsCount;
+  const unreadNotifs = getUnreadCount() + pendingTeamRequestsCount + chatBadgeCount;
 
   const userTeams = user ? getUserTeams(user.id) : [];
   const followedTeams = user ? getFollowedTeams(user.id) : [];
@@ -563,6 +565,16 @@ export default function HomeScreen() {
   const upcomingMatches = getUpcomingMatches()
     .filter((m) => !hasLocation || !m.venue?.city || m.venue.city.toLowerCase() === cityLower)
     .slice(0, 3);
+
+  const myMatches = user
+    ? getUpcomingMatches()
+        .filter((m) => {
+          const teamIds = new Set([m.homeTeamId, m.awayTeamId].filter(Boolean));
+          return userTeams.some(t => teamIds.has(t.id));
+        })
+        .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime())
+        .slice(0, 4)
+    : [];
 
   /* ════ FEED CONSTRUCTION — relevance-based ════ */
   const nowItems: NowItem[] = [
@@ -829,8 +841,9 @@ export default function HomeScreen() {
         colors={['#0d111d', '#0b0f1a', Colors.background.dark, '#0d111d']}
         locations={[0, 0.25, 0.6, 1]}
         style={StyleSheet.absoluteFill}
+        pointerEvents="none"
       />
-      <View style={styles.bgDecor}>
+      <View style={styles.bgDecor} pointerEvents="none">
         <View style={[styles.bgOrb, { top: -60, right: -80 }]} />
         <View style={[styles.bgOrb2, { top: 300, left: -120 }]} />
       </View>
@@ -850,11 +863,20 @@ export default function HomeScreen() {
         <Animated.ScrollView
           style={[styles.scroll, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
           showsVerticalScrollIndicator={false}
-          bounces={false}
+          bounces={Platform.OS === 'ios'}
           alwaysBounceVertical={false}
           overScrollMode="never"
           contentContainerStyle={[styles.scrollContent, { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 50 : 35) }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary.orange} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={Colors.primary.orange}
+              colors={[Colors.primary.orange]}
+              progressBackgroundColor="#0d111d"
+              progressViewOffset={Math.max(insets.top, Platform.OS === 'ios' ? 50 : 35)}
+            />
+          }
         >
           {/* ════ PREMIUM HEADER ════ */}
           <View style={styles.header}>
@@ -862,6 +884,7 @@ export default function HomeScreen() {
               <TouchableOpacity
                 onPress={() => router.push('/(tabs)/profile')}
                 activeOpacity={0.8}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <View style={styles.avatarRing}>
                   <Avatar uri={user?.avatar} name={user?.fullName} size="medium" />
@@ -886,14 +909,15 @@ export default function HomeScreen() {
             <View style={styles.headerRight}>
               <TouchableOpacity
                 style={styles.headerIcon}
-                onPress={() => router.push('/(tabs)/chat')}
+                onPress={() => router.push(pendingChatRequestsCount > 0 ? '/chat-requests' : '/(tabs)/chat')}
                 activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <MessageCircle size={17} color={Colors.text.secondary} strokeWidth={2} />
-                {getChatUnread() > 0 && (
+                {chatBadgeCount > 0 && (
                   <View style={styles.headerBadgeCount}>
                     <Text style={styles.headerBadgeCountText}>
-                      {getChatUnread() > 9 ? '9+' : getChatUnread()}
+                      {chatBadgeCount > 9 ? '9+' : chatBadgeCount}
                     </Text>
                   </View>
                 )}
@@ -902,6 +926,7 @@ export default function HomeScreen() {
                 style={styles.headerIcon}
                 onPress={() => router.push('/search')}
                 activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Search size={17} color={Colors.text.secondary} strokeWidth={2} />
               </TouchableOpacity>
@@ -909,6 +934,7 @@ export default function HomeScreen() {
                 style={styles.headerIcon}
                 onPress={() => router.push('/notifications')}
                 activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Bell size={17} color={Colors.text.secondary} strokeWidth={2} />
                 {unreadNotifs > 0 && (
@@ -1139,7 +1165,76 @@ export default function HomeScreen() {
             )}
           </View>
 
-          {/* ════ À REJOINDRE — horizontal team discovery ════ */}
+          {/* ════ MES MATCHS — upcoming matches for user's teams ════ */}
+          <View style={styles.section}>
+            <SectionHeader
+              title="Mes matchs"
+              subtitle={myMatches.length > 0 ? `${myMatches.length} à venir` : 'Aucun match programmé'}
+              onSeeAll={() => router.push('/(tabs)/matches')}
+            />
+            {myMatches.length > 0 ? (
+              <View style={styles.teamList}>
+                {myMatches.map((m) => {
+                  const homeTeam = m.homeTeam?.name ?? 'Équipe 1';
+                  const awayTeam = m.awayTeam?.name ?? 'Équipe 2';
+                  const matchDate = new Date(m.dateTime);
+                  const isToday = matchDate.toDateString() === new Date().toDateString();
+                  return (
+                    <PressableCard
+                      key={m.id}
+                      onPress={() => router.push(`/match/${m.id}` as any)}
+                      style={styles.teamRowCard}
+                    >
+                      <View style={styles.myMatchDateWrap}>
+                        <Text style={styles.myMatchDateDay}>
+                          {isToday ? 'Auj.' : matchDate.toLocaleDateString('fr-FR', { day: '2-digit' })}
+                        </Text>
+                        <Text style={styles.myMatchDateMonth}>
+                          {isToday ? '' : matchDate.toLocaleDateString('fr-FR', { month: 'short' })}
+                        </Text>
+                      </View>
+                      <View style={styles.teamRowInfo}>
+                        <Text style={styles.teamRowName} numberOfLines={1}>{homeTeam} vs {awayTeam}</Text>
+                        <View style={styles.teamRowChipRow}>
+                          <View style={styles.teamRowChip}><Text style={styles.teamRowChipText}>{sportLabels[m.sport] || 'Sport'}</Text></View>
+                          {m.venue?.name && <View style={styles.teamRowChip}><Text style={styles.teamRowChipText} numberOfLines={1}>{m.venue.name}</Text></View>}
+                        </View>
+                        <View style={styles.myMatchTimeRow}>
+                          <Clock size={11} color={Colors.text.muted} strokeWidth={2} />
+                          <Text style={styles.myMatchTimeText}>
+                            {matchDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                          </Text>
+                        </View>
+                      </View>
+                      <ChevronRight size={16} color={Colors.text.muted} strokeWidth={2} />
+                    </PressableCard>
+                  );
+                })}
+              </View>
+            ) : (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => router.push('/(tabs)/matches')}
+                style={styles.emptyTeamCard}
+              >
+                <LinearGradient
+                  colors={[Colors.background.card, Colors.background.cardLight]}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={styles.emptyTeamIconWrap}>
+                  <Calendar size={28} color={Colors.primary.orange} strokeWidth={2} />
+                </View>
+                <Text style={styles.emptyTeamTitle}>Aucun match à venir</Text>
+                <Text style={styles.emptyTeamText}>Vos prochains matchs apparaîtront ici</Text>
+                <View style={styles.emptyTeamCta}>
+                  <Text style={styles.emptyTeamCtaText}>Voir les matchs</Text>
+                  <ArrowRight size={14} color={Colors.primary.orange} strokeWidth={2.5} />
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* ════ COMMUNAUTÉ — horizontal player discovery ════ */}
           {(playerSuggestions.data ?? []).length > 0 && (
             <View style={styles.section}>
               <SectionHeader
@@ -1223,7 +1318,7 @@ const styles: any = StyleSheet.create({
     backgroundColor: Colors.primary.blue + '06',
   },
   scroll: { flex: 1, width: '100%', backgroundColor: '#0d111d' },
-  scrollContent: { paddingTop: SPACING.sm, paddingBottom: 40, backgroundColor: '#0d111d' },
+  scrollContent: { paddingTop: SPACING.sm, paddingBottom: 8, backgroundColor: '#0d111d' },
 
   /* ════ PREMIUM HEADER ════ */
   header: {
@@ -1790,6 +1885,20 @@ const styles: any = StyleSheet.create({
   },
   emptyInlineText: { color: Colors.text.muted, fontSize: 13, fontWeight: '500' as const },
   emptyInlineLink: { color: Colors.primary.orange, fontSize: 13, fontWeight: '700' as const },
+
+  /* ════ MY MATCH STYLES ════ */
+  myMatchDateWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: Colors.primary.orange + '12',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  myMatchDateDay: { color: Colors.primary.orange, fontSize: 14, fontWeight: '800' as const },
+  myMatchDateMonth: { color: Colors.primary.orange, fontSize: 9, fontWeight: '600' as const, textTransform: 'uppercase' as const },
+  myMatchTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  myMatchTimeText: { color: Colors.text.muted, fontSize: 11, fontWeight: '500' as const },
 
   emptyTeamCard: {
     borderRadius: CARD_RADIUS,

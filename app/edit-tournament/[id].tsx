@@ -264,6 +264,7 @@ export default function EditTournamentScreen() {
                 placeholder="0"
                 keyboardType="numeric"
               />
+              <Text style={{ color: Colors.text.muted, fontSize: 11, marginTop: 4, marginBottom: 8 }}>Minimum recommandé: 600 FCFA</Text>
               <Input
                 scrollViewRef={scrollViewRef}
                 label="Cagnotte (FCFA)"

@@ -7,25 +7,25 @@ describe('TOURNAMENTS — Création', () => {
     await cleanup(createdIds);
   });
 
-  test('✅ Knockout → status="draft", type="knockout"', async () => {
+  test('✅ Knockout → status="registration", type="knockout"', async () => {
     const user = await createTestUser();
     createdIds.users.push(user.id);
 
     const tournament = await createTestTournament(user.id, { type: 'knockout' });
     createdIds.tournaments.push(tournament.id);
 
-    expect(tournament.status).toBe('draft');
+    expect(tournament.status).toBe('registration');
     expect(tournament.type).toBe('knockout');
   });
 
-  test('✅ Round Robin → status="draft", type="round_robin"', async () => {
+  test('✅ Round Robin → status="registration", type="round_robin"', async () => {
     const user = await createTestUser();
     createdIds.users.push(user.id);
 
     const tournament = await createTestTournament(user.id, { type: 'round_robin' });
     createdIds.tournaments.push(tournament.id);
 
-    expect(tournament.status).toBe('draft');
+    expect(tournament.status).toBe('registration');
     expect(tournament.type).toBe('round_robin');
   });
 

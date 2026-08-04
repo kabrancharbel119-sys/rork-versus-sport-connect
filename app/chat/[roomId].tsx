@@ -17,6 +17,7 @@ import { useChat } from '@/contexts/ChatContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { useTeams } from '@/contexts/TeamsContext';
 import { Avatar } from '@/components/Avatar';
+import { useFullscreenImage } from '@/components/FullscreenImageViewer';
 
 export default function ChatRoomScreen() {
   const router = useRouter();
@@ -26,6 +27,7 @@ export default function ChatRoomScreen() {
   const { users, getUserById } = useUsers();
   const { getTeamById } = useTeams();
   const [messageText, setMessageText] = useState('');
+  const fullscreen = useFullscreenImage();
   const [roomSearchQuery, setRoomSearchQuery] = useState('');
   const [showSearchBar, setShowSearchBar] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -414,11 +416,13 @@ export default function ChatRoomScreen() {
                       <Text style={styles.senderName}>{getSenderName(message.senderId)}</Text>
                     )}
                     {message.type === 'image' && (message.content.startsWith('http') || message.content.startsWith('file') || message.content.startsWith('content')) ? (
-                      <Image
-                        source={{ uri: message.content }}
-                        style={styles.messageImage}
-                        contentFit="cover"
-                      />
+                      <TouchableOpacity activeOpacity={0.9} onPress={() => fullscreen.open(message.content)}>
+                        <Image
+                          source={{ uri: message.content }}
+                          style={styles.messageImage}
+                          contentFit="cover"
+                        />
+                      </TouchableOpacity>
                     ) : (
                       <Text style={[
                         styles.messageText,
@@ -519,6 +523,7 @@ export default function ChatRoomScreen() {
             </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
+        {fullscreen.viewer}
       </View>
     </>
   );

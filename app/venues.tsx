@@ -238,7 +238,7 @@ function VenuesContent() {
                 style={styles.enableLocationBtn}
                 onPress={async () => {
                   const hasPermission = await requestPermission();
-                  if (hasPermission) {
+                  if (hasPermission === 'granted') {
                     await updateLocation();
                   } else {
                     Alert.alert('Permission requise', 'Activez la localisation pour voir les terrains à proximité.');

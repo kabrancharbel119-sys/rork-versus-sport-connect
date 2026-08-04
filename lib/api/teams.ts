@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import type { Team, TeamMember, JoinRequest, TeamStats, TeamRole } from '@/types';
+import type { Team, TeamMember, JoinRequest, TeamStats, TeamRole, TeamPhoto, TeamPost, TeamPostComment, CMAssignment, CMPermissions } from '@/types';
+import { DEFAULT_CM_PERMISSIONS } from '@/types';
 import { logger } from '@/lib/logger';
 
 export interface TeamRow {
@@ -45,6 +46,9 @@ export const mapTeamRowToTeam = (row: TeamRow): Team => ({
   coCaptainIds: (row.co_captain_ids as string[]) || [],
   members: ((row.members as unknown as TeamMember[]) || []).map(m => ({
     ...m,
+    role: m.userId === (row.captain_id || '') ? 'captain' as const
+      : m.role === 'captain' ? 'member' as const
+      : m.role,
     joinedAt: new Date(m.joinedAt)
   })),
   fans: (row.fans as string[]) || [],
@@ -207,6 +211,7 @@ export const teamsApi = {
     coCaptainIds: string[];
     captainId: string;
     stats: TeamStats;
+    customRoles: TeamRole[];
   }>) {
     console.log('[TeamsAPI] Updating team:', id);
     const dbUpdates: Record<string, unknown> = {};
@@ -222,6 +227,7 @@ export const teamsApi = {
     if (updates.coCaptainIds !== undefined) dbUpdates.co_captain_ids = updates.coCaptainIds;
     if (updates.captainId !== undefined) dbUpdates.captain_id = updates.captainId;
     if (updates.stats !== undefined) dbUpdates.stats = updates.stats;
+    if (updates.customRoles !== undefined) dbUpdates.custom_roles = updates.customRoles;
     
     const { data, error } = await ((supabase.from('teams') as any)
       .update(dbUpdates)
@@ -231,6 +237,22 @@ export const teamsApi = {
     
     if (error) throw error;
     return mapTeamRowToTeam(data as TeamRow);
+  },
+
+  async addCustomRole(teamId: string, roleName: string, createdBy: string): Promise<TeamRole> {
+    console.log('[TeamsAPI] Adding custom role:', roleName, 'to team', teamId);
+
+    const team = await this.getById(teamId);
+
+    if (team.customRoles.some(r => r.name.toLowerCase() === roleName.toLowerCase())) {
+      throw new Error('Ce rôle existe déjà');
+    }
+
+    const newRole: TeamRole = { id: `role-${Date.now()}`, name: roleName, isCustom: true, createdBy };
+    const updatedRoles = [...team.customRoles, newRole];
+
+    await this.update(teamId, { customRoles: updatedRoles });
+    return newRole;
   },
 
   async search(params: {
@@ -395,6 +417,15 @@ export const teamsApi = {
       const teams = [...new Set([...userTeams, team.id])];
       await ((supabase.from('users') as any).update({ teams }).eq('id', request.userId));
 
+      // Ensure team chats exist and add the new member to all team chat rooms
+      try {
+        const { chatApi } = await import('@/lib/api/chat');
+        const allMemberIds = members.map(m => m.userId);
+        await chatApi.ensureTeamChatsAndAddMember(teamId, team.name, allMemberIds, request.userId);
+      } catch (e) {
+        console.log('[TeamsAPI] Failed to add member to team chats:', e);
+      }
+
       await (supabase.from('notifications').insert({
         user_id: request.userId,
         type: 'team',
@@ -471,7 +502,7 @@ export const teamsApi = {
     return { success: true };
   },
 
-  async promoteMember(teamId: string, userId: string, role: 'co-captain' | 'member', promoterId: string) {
+  async promoteMember(teamId: string, userId: string, role: 'co-captain' | 'member' | 'cm', promoterId: string) {
     console.log('[TeamsAPI] Promoting member:', userId, 'to', role);
     
     const team = await this.getById(teamId);
@@ -661,5 +692,407 @@ export const teamsApi = {
       .eq('id', requestId)
       .single();
     return { success: true, requesterId: req?.requester_id, teamName: req?.team_name };
+  },
+
+  // ── Team photos gallery ──
+
+  async getTeamPhotos(teamId: string): Promise<TeamPhoto[]> {
+    const { data, error } = await (supabase
+      .from('team_photos')
+      .select('id, team_id, user_id, image_url, caption, created_at')
+      .eq('team_id', teamId)
+      .order('created_at', { ascending: false }) as any);
+
+    if (error) {
+      logger.error('TeamsAPI', 'getTeamPhotos error:', error);
+      return [];
+    }
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      teamId: row.team_id,
+      userId: row.user_id,
+      imageUrl: row.image_url,
+      caption: row.caption || undefined,
+      createdAt: new Date(row.created_at),
+    }));
+  },
+
+  async addTeamPhoto(teamId: string, userId: string, imageUrl: string, caption?: string): Promise<TeamPhoto> {
+    const { data, error } = await (supabase
+      .from('team_photos')
+      .insert({
+        team_id: teamId,
+        user_id: userId,
+        image_url: imageUrl,
+        caption: caption || null,
+      })
+      .select('id, team_id, user_id, image_url, caption, created_at')
+      .single() as any);
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      teamId: data.team_id,
+      userId: data.user_id,
+      imageUrl: data.image_url,
+      caption: data.caption || undefined,
+      createdAt: new Date(data.created_at),
+    };
+  },
+
+  async deleteTeamPhoto(photoId: string): Promise<void> {
+    const { error } = await (supabase
+      .from('team_photos')
+      .delete()
+      .eq('id', photoId) as any);
+
+    if (error) throw error;
+  },
+
+  // ════ TEAM POSTS (Feed d'équipe) ════
+
+  async getTeamPosts(teamId: string, limit: number = 20, offset: number = 0, userId?: string): Promise<TeamPost[]> {
+    const { data, error } = await (supabase
+      .from('team_posts')
+      .select(`
+        id, team_id, author_id, content, images,
+        likes_count, comments_count, created_at,
+        teams!inner(name, logo),
+        users!inner(username, full_name, avatar)
+      `)
+      .eq('team_id', teamId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1) as any);
+
+    if (error) {
+      logger.error('TeamsAPI', 'getTeamPosts error:', error);
+      return [];
+    }
+
+    let likedPostIds = new Set<string>();
+    if (userId && data && data.length > 0) {
+      const postIds = data.map((row: any) => row.id);
+      const { data: likes, error: likesError } = await supabase
+        .from('team_post_likes')
+        .select('post_id')
+        .in('post_id', postIds)
+        .eq('user_id', userId);
+      if (!likesError && likes) {
+        likedPostIds = new Set(likes.map((l: any) => l.post_id));
+      }
+    }
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      teamId: row.team_id,
+      authorId: row.author_id,
+      content: row.content || '',
+      images: row.images || [],
+      likesCount: row.likes_count || 0,
+      commentsCount: row.comments_count || 0,
+      createdAt: new Date(row.created_at),
+      teamName: row.teams?.name,
+      teamLogo: row.teams?.logo || undefined,
+      authorUsername: row.users?.username,
+      authorFullName: row.users?.full_name,
+      authorAvatar: row.users?.avatar || undefined,
+      hasLiked: likedPostIds.has(row.id),
+    }));
+  },
+
+  async createTeamPost(teamId: string, authorId: string, content: string, images: string[] = []): Promise<TeamPost> {
+    const { data, error } = await (supabase
+      .from('team_posts')
+      .insert({
+        team_id: teamId,
+        author_id: authorId,
+        content,
+        images,
+      })
+      .select(`
+        id, team_id, author_id, content, images,
+        likes_count, comments_count, created_at,
+        teams!inner(name, logo),
+        users!inner(username, full_name, avatar)
+      `)
+      .single() as any);
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      teamId: data.team_id,
+      authorId: data.author_id,
+      content: data.content || '',
+      images: data.images || [],
+      likesCount: data.likes_count || 0,
+      commentsCount: data.comments_count || 0,
+      createdAt: new Date(data.created_at),
+      teamName: data.teams?.name,
+      teamLogo: data.teams?.logo || undefined,
+      authorUsername: data.users?.username,
+      authorFullName: data.users?.full_name,
+      authorAvatar: data.users?.avatar || undefined,
+    };
+  },
+
+  async deleteTeamPost(postId: string): Promise<void> {
+    const { error } = await supabase
+      .from('team_posts')
+      .delete()
+      .eq('id', postId);
+
+    if (error) throw error;
+  },
+
+  async toggleTeamPostLike(postId: string, userId: string, hasLiked: boolean): Promise<void> {
+    if (hasLiked) {
+      const { error } = await supabase
+        .from('team_post_likes')
+        .delete()
+        .eq('post_id', postId)
+        .eq('user_id', userId);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('team_post_likes')
+        .insert({ post_id: postId, user_id: userId });
+      if (error) throw error;
+    }
+  },
+
+  async getTeamPostComments(postId: string): Promise<TeamPostComment[]> {
+    const { data, error } = await (supabase
+      .from('team_post_comments')
+      .select(`
+        id, post_id, user_id, content, parent_comment_id, created_at,
+        users(username, full_name, avatar)
+      `)
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true }) as any);
+
+    if (error) {
+      logger.error('TeamsAPI', 'getTeamPostComments error:', error);
+      return [];
+    }
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      postId: row.post_id,
+      userId: row.user_id,
+      content: row.content,
+      parentCommentId: row.parent_comment_id || undefined,
+      createdAt: new Date(row.created_at),
+      username: row.users?.username,
+      fullName: row.users?.full_name,
+      avatar: row.users?.avatar || undefined,
+    }));
+  },
+
+  async addTeamPostComment(postId: string, userId: string, content: string): Promise<void> {
+    const { error } = await supabase
+      .from('team_post_comments')
+      .insert({ post_id: postId, user_id: userId, content });
+
+    if (error) throw error;
+  },
+
+  // ════ CM (Community Manager) System ════
+
+  async getCMs(teamId: string): Promise<CMAssignment[]> {
+    const { data, error } = await supabase
+      .from('team_cm_assignments')
+      .select('*')
+      .eq('team_id', teamId)
+      .order('assigned_at', { ascending: false });
+
+    if (error) {
+      logger.debug('TeamsAPI', 'getCMs: table not available:', error.message);
+      // Fallback: derive CMs from team.members where role === 'cm'
+      try {
+        const team = await this.getById(teamId);
+        const cmMembers = (team?.members || []).filter(m => m.role === 'cm');
+        if (cmMembers.length > 0) {
+          return cmMembers.map(m => ({
+            id: `fallback-cm-${teamId}-${m.userId}`,
+            teamId,
+            userId: m.userId,
+            assignedBy: team?.captainId || '',
+            status: 'active' as const,
+            permissions: DEFAULT_CM_PERMISSIONS,
+            assignedAt: new Date(),
+            suspendedAt: undefined,
+            suspendedReason: undefined,
+          }));
+        }
+      } catch (e) {
+        logger.debug('TeamsAPI', 'getCMs: fallback failed:', e);
+      }
+      return [];
+    }
+
+    const assignments = (data || []).map((row: any) => ({
+      id: row.id,
+      teamId: row.team_id,
+      userId: row.user_id,
+      assignedBy: row.assigned_by,
+      status: row.status,
+      permissions: row.permissions || DEFAULT_CM_PERMISSIONS,
+      assignedAt: new Date(row.assigned_at),
+      suspendedAt: row.suspended_at ? new Date(row.suspended_at) : undefined,
+      suspendedReason: row.suspended_reason || undefined,
+    }));
+
+    // If table exists but is empty, still check team.members for role 'cm'
+    if (assignments.length === 0) {
+      try {
+        const team = await this.getById(teamId);
+        const cmMembers = (team?.members || []).filter(m => m.role === 'cm');
+        if (cmMembers.length > 0) {
+          return cmMembers.map(m => ({
+            id: `fallback-cm-${teamId}-${m.userId}`,
+            teamId,
+            userId: m.userId,
+            assignedBy: team?.captainId || '',
+            status: 'active' as const,
+            permissions: DEFAULT_CM_PERMISSIONS,
+            assignedAt: new Date(),
+            suspendedAt: undefined,
+            suspendedReason: undefined,
+          }));
+        }
+      } catch (e) {
+        logger.debug('TeamsAPI', 'getCMs: fallback failed:', e);
+      }
+    }
+
+    return assignments;
+  },
+
+  async assignCM(teamId: string, userId: string, captainId: string, permissions?: Partial<CMPermissions>): Promise<CMAssignment> {
+    const perms = { ...DEFAULT_CM_PERMISSIONS, ...permissions };
+
+    const { data, error } = await supabase
+      .from('team_cm_assignments')
+      .upsert({
+        team_id: teamId,
+        user_id: userId,
+        assigned_by: captainId,
+        status: 'active',
+        permissions: perms,
+        assigned_at: new Date().toISOString(),
+        suspended_at: null,
+        suspended_reason: null,
+      }, { onConflict: 'team_id,user_id' })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Also update the member role in the teams table
+    const team = await this.getById(teamId);
+    const memberIndex = team.members.findIndex(m => m.userId === userId);
+    if (memberIndex !== -1) {
+      team.members[memberIndex].role = 'cm';
+      await this.update(teamId, { members: team.members });
+    }
+
+    return {
+      id: data.id,
+      teamId: data.team_id,
+      userId: data.user_id,
+      assignedBy: data.assigned_by,
+      status: data.status,
+      permissions: data.permissions,
+      assignedAt: new Date(data.assigned_at),
+    };
+  },
+
+  async removeCM(teamId: string, userId: string): Promise<void> {
+    const { error } = await supabase
+      .from('team_cm_assignments')
+      .delete()
+      .eq('team_id', teamId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    // Also revert member role to 'member'
+    const team = await this.getById(teamId);
+    const memberIndex = team.members.findIndex(m => m.userId === userId);
+    if (memberIndex !== -1 && team.members[memberIndex].role === 'cm') {
+      team.members[memberIndex].role = 'member';
+      await this.update(teamId, { members: team.members });
+    }
+  },
+
+  async updateCMPermissions(teamId: string, userId: string, permissions: CMPermissions): Promise<void> {
+    const { error } = await supabase
+      .from('team_cm_assignments')
+      .update({ permissions })
+      .eq('team_id', teamId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+  },
+
+  async suspendCM(teamId: string, userId: string, reason?: string): Promise<void> {
+    const { error } = await supabase
+      .from('team_cm_assignments')
+      .update({
+        status: 'suspended',
+        suspended_at: new Date().toISOString(),
+        suspended_reason: reason || null,
+      })
+      .eq('team_id', teamId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    // Revert member role to 'member' while suspended
+    const team = await this.getById(teamId);
+    const memberIndex = team.members.findIndex(m => m.userId === userId);
+    if (memberIndex !== -1) {
+      team.members[memberIndex].role = 'member';
+      await this.update(teamId, { members: team.members });
+    }
+  },
+
+  async reactivateCM(teamId: string, userId: string): Promise<void> {
+    const { error } = await supabase
+      .from('team_cm_assignments')
+      .update({
+        status: 'active',
+        suspended_at: null,
+        suspended_reason: null,
+      })
+      .eq('team_id', teamId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    // Restore member role to 'cm'
+    const team = await this.getById(teamId);
+    const memberIndex = team.members.findIndex(m => m.userId === userId);
+    if (memberIndex !== -1) {
+      team.members[memberIndex].role = 'cm';
+      await this.update(teamId, { members: team.members });
+    }
+  },
+
+  async getMyCMPermissions(teamId: string, userId: string): Promise<CMPermissions | null> {
+    const { data, error } = await supabase
+      .from('team_cm_assignments')
+      .select('permissions, status')
+      .eq('team_id', teamId)
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !data) return null;
+    if (data.status !== 'active') return null;
+
+    return data.permissions as CMPermissions;
   },
 };

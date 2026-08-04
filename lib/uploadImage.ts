@@ -112,3 +112,33 @@ export async function uploadBannerImage(localUri: string, userId: string): Promi
 
   return uploadToStorage('avatars', filePath, data, contentType);
 }
+
+export async function uploadPostImage(localUri: string, userId: string, index: number): Promise<string> {
+  const { data, contentType } = await uriToFileData(localUri);
+  const fileExtension = mimeToExt[contentType] || 'jpg';
+
+  const fileName = `post-${userId}-${Date.now()}-${index}.${fileExtension}`;
+  const filePath = `posts/${fileName}`;
+
+  return uploadToStorage('posts-images', filePath, data, contentType);
+}
+
+export async function uploadTeamPhoto(localUri: string, teamId: string, userId: string): Promise<string> {
+  const { data, contentType } = await uriToFileData(localUri);
+  const fileExtension = mimeToExt[contentType] || 'jpg';
+
+  const fileName = `team-photo-${teamId}-${userId}-${Date.now()}.${fileExtension}`;
+  const filePath = `team-photos/${fileName}`;
+
+  return uploadToStorage('team-logos', filePath, data, contentType);
+}
+
+export async function uploadTeamPostImage(localUri: string, teamId: string, index: number): Promise<string> {
+  const { data, contentType } = await uriToFileData(localUri);
+  const fileExtension = mimeToExt[contentType] || 'jpg';
+
+  const fileName = `team-post-${teamId}-${Date.now()}-${index}.${fileExtension}`;
+  const filePath = `team-posts/${fileName}`;
+
+  return uploadToStorage('posts-images', filePath, data, contentType);
+}

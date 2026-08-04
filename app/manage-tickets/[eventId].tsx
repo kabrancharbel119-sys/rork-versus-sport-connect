@@ -459,6 +459,7 @@ export default function ManageTicketsScreen() {
                       placeholderTextColor={Colors.text.muted}
                       keyboardType="numeric"
                     />
+                    <Text style={{ color: Colors.text.muted, fontSize: 11, marginTop: 4 }}>Minimum recommandé: 600 FCFA</Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.inputLabel}>Quantité *</Text>

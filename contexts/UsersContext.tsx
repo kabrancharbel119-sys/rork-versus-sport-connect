@@ -48,8 +48,18 @@ export const [UsersProvider, useUsers] = createContextHook(() => {
       console.log('[Users] Loading users...');
       
       try {
-        const result = await usersApi.getAll();
-        const serverUsers = result.users ?? result;
+        // usersApi.getAll() est paginé (50 par défaut) : on boucle sur toutes les pages
+        // pour garantir que la liste couvre vraiment TOUS les utilisateurs inscrits.
+        const PAGE_SIZE = 500;
+        let page = 1;
+        let serverUsers: User[] = [];
+        let hasMore = true;
+        while (hasMore) {
+          const result = await usersApi.getAll({ page, limit: PAGE_SIZE });
+          serverUsers = serverUsers.concat(result.users ?? []);
+          hasMore = !!result.hasMore;
+          page += 1;
+        }
         if (serverUsers.length > 0) {
           await AsyncStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(serverUsers));
           const storedFollows = await AsyncStorage.getItem(FOLLOWS_STORAGE_KEY);

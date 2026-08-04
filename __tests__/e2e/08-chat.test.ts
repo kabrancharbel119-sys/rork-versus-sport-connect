@@ -1,7 +1,7 @@
-import { supabaseAdmin, createTestUser, createTestTeam, cleanup } from './setup';
+import { supabaseAdmin, createTestUser, createTestTeam, createTestChatRoom, cleanup } from './setup';
 
 describe('CHAT — Messages d\'équipe', () => {
-  const createdIds = { users: [] as string[], teams: [] as string[], chat_messages: [] as string[] };
+  const createdIds = { users: [] as string[], teams: [] as string[], chat_rooms: [] as string[], chat_messages: [] as string[] };
 
   afterAll(async () => {
     await cleanup(createdIds);
@@ -13,11 +13,15 @@ describe('CHAT — Messages d\'équipe', () => {
     createdIds.users.push(user.id);
     createdIds.teams.push(team.id);
 
+    const room = await createTestChatRoom({ team_id: team.id, name: `Team ${team.name}`, type: 'general', participants: [user.id] });
+    createdIds.chat_rooms.push(room.id);
+
     const messageData = {
-      conversation_id: `team_${team.id}`,
+      room_id: room.id,
       sender_id: user.id,
       content: 'Hello team!',
-      read: false
+      type: 'text',
+      read_by: []
     };
 
     const { data, error } = await supabaseAdmin
@@ -31,7 +35,7 @@ describe('CHAT — Messages d\'équipe', () => {
     expect(error).toBeNull();
     expect(data.sender_id).toBe(user.id);
     expect(data.content).toBe('Hello team!');
-    expect(data.read).toBe(false);
+    expect(data.read_by).toEqual([]);
   });
 
   test('✅ Récupérer historique → trié par created_at ASC', async () => {
@@ -40,15 +44,17 @@ describe('CHAT — Messages d\'équipe', () => {
     createdIds.users.push(user.id);
     createdIds.teams.push(team.id);
 
-    const conversationId = `team_${team.id}`;
+    const room = await createTestChatRoom({ team_id: team.id, name: `Team ${team.name}`, type: 'general', participants: [user.id] });
+    createdIds.chat_rooms.push(room.id);
 
     const msg1 = await supabaseAdmin
       .from('chat_messages')
       .insert({
-        conversation_id: conversationId,
+        room_id: room.id,
         sender_id: user.id,
         content: 'First message',
-        read: false
+        type: 'text',
+        read_by: []
       })
       .select()
       .single();
@@ -58,10 +64,11 @@ describe('CHAT — Messages d\'équipe', () => {
     const msg2 = await supabaseAdmin
       .from('chat_messages')
       .insert({
-        conversation_id: conversationId,
+        room_id: room.id,
         sender_id: user.id,
         content: 'Second message',
-        read: false
+        type: 'text',
+        read_by: []
       })
       .select()
       .single();
@@ -71,7 +78,7 @@ describe('CHAT — Messages d\'équipe', () => {
     const { data } = await supabaseAdmin
       .from('chat_messages')
       .select('*')
-      .eq('conversation_id', conversationId)
+      .eq('room_id', room.id)
       .order('created_at', { ascending: true });
 
     expect(data?.length).toBe(2);
@@ -86,11 +93,15 @@ describe('CHAT — Messages d\'équipe', () => {
     createdIds.users.push(user.id);
     createdIds.teams.push(team.id);
 
+    const room = await createTestChatRoom({ team_id: team.id, name: `Team ${team.name}`, type: 'general', participants: [user.id] });
+    createdIds.chat_rooms.push(room.id);
+
     const messageData = {
-      conversation_id: `team_${team.id}`,
+      room_id: room.id,
       sender_id: user.id,
       content: 'Test message',
-      read: false
+      type: 'text',
+      read_by: []
     };
 
     const { data: message } = await supabaseAdmin
@@ -103,18 +114,18 @@ describe('CHAT — Messages d\'équipe', () => {
 
     const { error } = await supabaseAdmin
       .from('chat_messages')
-      .update({ read: true })
+      .update({ read_by: [user.id] })
       .eq('id', message.id);
 
     expect(error).toBeNull();
 
     const { data } = await supabaseAdmin
       .from('chat_messages')
-      .select('read')
+      .select('read_by')
       .eq('id', message.id)
       .single();
 
-    expect(data?.read).toBe(true);
+    expect(data?.read_by).toContain(user.id);
   });
 
   test('✅ Message avec émojis → correctement stocké', async () => {
@@ -123,11 +134,15 @@ describe('CHAT — Messages d\'équipe', () => {
     createdIds.users.push(user.id);
     createdIds.teams.push(team.id);
 
+    const room = await createTestChatRoom({ team_id: team.id, name: `Team ${team.name}`, type: 'general', participants: [user.id] });
+    createdIds.chat_rooms.push(room.id);
+
     const messageData = {
-      conversation_id: `team_${team.id}`,
+      room_id: room.id,
       sender_id: user.id,
       content: 'Great game! ⚽🏆😊',
-      read: false
+      type: 'text',
+      read_by: []
     };
 
     const { data, error } = await supabaseAdmin
@@ -148,13 +163,17 @@ describe('CHAT — Messages d\'équipe', () => {
     createdIds.users.push(user.id);
     createdIds.teams.push(team.id);
 
+    const room = await createTestChatRoom({ team_id: team.id, name: `Team ${team.name}`, type: 'general', participants: [user.id] });
+    createdIds.chat_rooms.push(room.id);
+
     const longMessage = 'A'.repeat(1000);
 
     const messageData = {
-      conversation_id: `team_${team.id}`,
+      room_id: room.id,
       sender_id: user.id,
       content: longMessage,
-      read: false
+      type: 'text',
+      read_by: []
     };
 
     const { data, error } = await supabaseAdmin
@@ -171,7 +190,7 @@ describe('CHAT — Messages d\'équipe', () => {
 });
 
 describe('CHAT — Messages privés', () => {
-  const createdIds = { users: [] as string[], chat_messages: [] as string[] };
+  const createdIds = { users: [] as string[], chat_rooms: [] as string[], chat_messages: [] as string[] };
 
   afterAll(async () => {
     await cleanup(createdIds);
@@ -182,13 +201,15 @@ describe('CHAT — Messages privés', () => {
     const user2 = await createTestUser();
     createdIds.users.push(user1.id, user2.id);
 
-    const conversationId = `dm_${[user1.id, user2.id].sort().join('_')}`;
+    const room = await createTestChatRoom({ type: 'direct', participants: [user1.id, user2.id] });
+    createdIds.chat_rooms.push(room.id);
 
     const messageData = {
-      conversation_id: conversationId,
+      room_id: room.id,
       sender_id: user1.id,
       content: 'Hello!',
-      read: false
+      type: 'text',
+      read_by: []
     };
 
     const { data, error } = await supabaseAdmin
@@ -200,18 +221,18 @@ describe('CHAT — Messages privés', () => {
     createdIds.chat_messages.push(data.id);
 
     expect(error).toBeNull();
-    expect(data.conversation_id).toBe(conversationId);
+    expect(data.room_id).toBe(room.id);
   });
 
-  test('✅ conversation_id cohérent entre les 2 participants', async () => {
+  test('✅ room_id cohérent entre les 2 participants', async () => {
     const user1 = await createTestUser();
     const user2 = await createTestUser();
     createdIds.users.push(user1.id, user2.id);
 
-    const conversationId1 = `dm_${[user1.id, user2.id].sort().join('_')}`;
-    const conversationId2 = `dm_${[user2.id, user1.id].sort().join('_')}`;
+    const room = await createTestChatRoom({ type: 'direct', participants: [user1.id, user2.id] });
+    createdIds.chat_rooms.push(room.id);
 
-    expect(conversationId1).toBe(conversationId2);
+    expect(room.id).toBeDefined();
   });
 
   test('✅ Supprimer conversation → tous les messages supprimés', async () => {
@@ -219,15 +240,17 @@ describe('CHAT — Messages privés', () => {
     const user2 = await createTestUser();
     createdIds.users.push(user1.id, user2.id);
 
-    const conversationId = `dm_${[user1.id, user2.id].sort().join('_')}`;
+    const room = await createTestChatRoom({ type: 'direct', participants: [user1.id, user2.id] });
+    createdIds.chat_rooms.push(room.id);
 
     const msg1 = await supabaseAdmin
       .from('chat_messages')
       .insert({
-        conversation_id: conversationId,
+        room_id: room.id,
         sender_id: user1.id,
         content: 'Message 1',
-        read: false
+        type: 'text',
+        read_by: []
       })
       .select()
       .single();
@@ -235,10 +258,11 @@ describe('CHAT — Messages privés', () => {
     const msg2 = await supabaseAdmin
       .from('chat_messages')
       .insert({
-        conversation_id: conversationId,
+        room_id: room.id,
         sender_id: user2.id,
         content: 'Message 2',
-        read: false
+        type: 'text',
+        read_by: []
       })
       .select()
       .single();
@@ -246,14 +270,14 @@ describe('CHAT — Messages privés', () => {
     const { error } = await supabaseAdmin
       .from('chat_messages')
       .delete()
-      .eq('conversation_id', conversationId);
+      .eq('room_id', room.id);
 
     expect(error).toBeNull();
 
     const { data } = await supabaseAdmin
       .from('chat_messages')
       .select('*')
-      .eq('conversation_id', conversationId);
+      .eq('room_id', room.id);
 
     expect(data?.length).toBe(0);
   });

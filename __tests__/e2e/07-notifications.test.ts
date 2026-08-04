@@ -77,9 +77,10 @@ describe('NOTIFICATIONS — Création automatique', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.notifications.push(data.id);
 
-    expect(error).toBeNull();
     expect(data.type).toBe('tournament');
   });
 
@@ -102,9 +103,10 @@ describe('NOTIFICATIONS — Création automatique', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.notifications.push(data.id);
 
-    expect(error).toBeNull();
     expect(data.type).toBe('ranking');
   });
 });
@@ -126,7 +128,7 @@ describe('NOTIFICATIONS — Structure', () => {
       title: 'Test',
       message: 'Test message',
       data: { test: 'data' },
-      read: false
+      is_read: false
     };
 
     const { data, error } = await supabaseAdmin
@@ -135,9 +137,10 @@ describe('NOTIFICATIONS — Structure', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.notifications.push(data.id);
 
-    expect(error).toBeNull();
     expect(data.id).toBeDefined();
     expect(data.user_id).toBe(user.id);
     expect(data.type).toBeDefined();
@@ -164,7 +167,7 @@ describe('NOTIFICATIONS — Structure', () => {
       title: 'Match confirmé',
       message: 'Votre match est confirmé',
       data: metadata,
-      read: false
+      is_read: false
     };
 
     const { data, error } = await supabaseAdmin
@@ -173,9 +176,10 @@ describe('NOTIFICATIONS — Structure', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.notifications.push(data.id);
 
-    expect(error).toBeNull();
     expect(typeof data.data).toBe('object');
     expect(data.data.matchId).toBe('match-123');
     expect(data.data.matchTitle).toBe('Football 5v5');
@@ -199,23 +203,25 @@ describe('NOTIFICATIONS — Gestion', () => {
       title: 'Test',
       message: 'Test',
       data: {},
-      read: false
+      is_read: false
     };
 
-    const { data: notification } = await supabaseAdmin
+    const { data: notification, error } = await supabaseAdmin
       .from('notifications')
       .insert(notificationData)
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(notification).toBeDefined();
     createdIds.notifications.push(notification.id);
 
-    const { error } = await supabaseAdmin
+    const { error: updateError } = await supabaseAdmin
       .from('notifications')
       .update({ is_read: true })
       .eq('id', notification.id);
 
-    expect(error).toBeNull();
+    expect(updateError).toBeNull();
 
     const { data } = await supabaseAdmin
       .from('notifications')
@@ -236,14 +242,17 @@ describe('NOTIFICATIONS — Gestion', () => {
       title: 'Test',
       message: 'Test',
       data: {},
-      read: false
+      is_read: false
     };
 
-    const { data: notification } = await supabaseAdmin
+    const { data: notification, error: insertError } = await supabaseAdmin
       .from('notifications')
       .insert(notificationData)
       .select()
       .single();
+
+    expect(insertError).toBeNull();
+    expect(notification).toBeDefined();
 
     const { error } = await supabaseAdmin
       .from('notifications')
@@ -273,10 +282,13 @@ describe('NOTIFICATIONS — Gestion', () => {
         title: 'Unread',
         message: 'Unread',
         data: {},
-        read: false
+        is_read: false
       })
       .select()
       .single();
+
+    expect(unreadNotif.error).toBeNull();
+    expect(unreadNotif.data).toBeDefined();
 
     const readNotif = await supabaseAdmin
       .from('notifications')
@@ -286,11 +298,13 @@ describe('NOTIFICATIONS — Gestion', () => {
         title: 'Read',
         message: 'Read',
         data: {},
-        read: true
+        is_read: true
       })
       .select()
       .single();
 
+    expect(readNotif.error).toBeNull();
+    expect(readNotif.data).toBeDefined();
     createdIds.notifications.push(unreadNotif.data.id, readNotif.data.id);
 
     const { data } = await supabaseAdmin
@@ -315,10 +329,13 @@ describe('NOTIFICATIONS — Gestion', () => {
         title: 'First',
         message: 'First',
         data: {},
-        read: false
+        is_read: false
       })
       .select()
       .single();
+
+    expect(notif1.error).toBeNull();
+    expect(notif1.data).toBeDefined();
 
     await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -330,11 +347,13 @@ describe('NOTIFICATIONS — Gestion', () => {
         title: 'Second',
         message: 'Second',
         data: {},
-        read: false
+        is_read: false
       })
       .select()
       .single();
 
+    expect(notif2.error).toBeNull();
+    expect(notif2.data).toBeDefined();
     createdIds.notifications.push(notif1.data.id, notif2.data.id);
 
     const { data } = await supabaseAdmin

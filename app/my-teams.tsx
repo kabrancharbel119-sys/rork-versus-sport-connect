@@ -4,7 +4,7 @@ import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Shield, MapPin } from 'lucide-react-native';
+import { ArrowLeft, Shield, MapPin, History, CheckCircle } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
@@ -32,15 +32,25 @@ export default function MyTeamsScreen() {
     retry: 1,
   });
 
-  const apiTeams = allTeams.filter(t =>
+  // Current teams: user is still an active member
+  const currentTeams = allTeams.filter(t =>
     t.captainId === targetUserId ||
-    t.members?.some(m => m.userId === targetUserId) ||
-    (t.fans ?? []).includes(targetUserId)
+    t.members?.some(m => m.userId === targetUserId)
+  );
+
+  // All team IDs the user has ever been associated with (from user.teams array)
+  const allUserTeamIds = currentUser?.teams ?? [];
+
+  // Past teams: in user.teams array but NOT in current membership
+  const pastTeams = allTeams.filter(t =>
+    allUserTeamIds.includes(t.id) &&
+    t.captainId !== targetUserId &&
+    !t.members?.some(m => m.userId === targetUserId)
   );
 
   // Fallback to context data if API returns empty or fails
   const localTeams = getUserTeamsLocal(targetUserId);
-  const teams = apiTeams.length > 0 ? apiTeams : localTeams;
+  const teams = currentTeams.length > 0 ? currentTeams : localTeams;
 
   return (
     <>
@@ -60,50 +70,98 @@ export default function MyTeamsScreen() {
               <View style={styles.loadingState}>
                 <ActivityIndicator size="large" color={Colors.primary.orange} />
               </View>
-            ) : teams.length > 0 ? (
-              teams.map((team) => (
-                <TouchableOpacity
-                  key={team.id}
-                  style={styles.teamRow}
-                  onPress={() => router.push(`/team/${team.id}`)}
-                  activeOpacity={0.7}
-                >
-                  <Avatar uri={team.logo} name={team.name} size="medium" />
-                  <View style={styles.teamInfo}>
-                    <View style={styles.teamNameRow}>
-                      <Text style={styles.teamName} numberOfLines={1}>{team.name}</Text>
-                      {team.captainId === currentUser?.id && (
-                        <View style={styles.captainBadge}>
-                          <Shield size={11} color={Colors.primary.orange} />
-                          <Text style={styles.captainText}>Cap.</Text>
+            ) : (
+              <>
+                {/* ── Équipes actuelles ── */}
+                <View style={styles.sectionHeader}>
+                  <CheckCircle size={16} color={Colors.status.success} />
+                  <Text style={styles.sectionTitle}>Équipe actuelle</Text>
+                  <View style={styles.sectionCountBadge}>
+                    <Text style={styles.sectionCountText}>{teams.length}</Text>
+                  </View>
+                </View>
+
+                {teams.length > 0 ? (
+                  teams.map((team) => (
+                    <TouchableOpacity
+                      key={team.id}
+                      style={styles.teamRow}
+                      onPress={() => router.push(`/team/${team.id}`)}
+                      activeOpacity={0.7}
+                    >
+                      <Avatar uri={team.logo} name={team.name} size="medium" />
+                      <View style={styles.teamInfo}>
+                        <View style={styles.teamNameRow}>
+                          <Text style={styles.teamName} numberOfLines={1}>{team.name}</Text>
+                          {team.captainId === currentUser?.id && (
+                            <View style={styles.captainBadge}>
+                              <Shield size={11} color={Colors.primary.orange} />
+                              <Text style={styles.captainText}>Cap.</Text>
+                            </View>
+                          )}
                         </View>
-                      )}
-                    </View>
-                    <Text style={styles.teamMeta}>{sportLabels[team.sport] || team.sport} • {team.format}</Text>
-                    {team.city && (
-                      <View style={styles.teamLocation}>
-                        <MapPin size={11} color={Colors.text.muted} />
-                        <Text style={styles.teamLocationText}>{team.city}</Text>
+                        <Text style={styles.teamMeta}>{sportLabels[team.sport] || team.sport} • {team.format}</Text>
+                        {team.city && (
+                          <View style={styles.teamLocation}>
+                            <MapPin size={11} color={Colors.text.muted} />
+                            <Text style={styles.teamLocationText}>{team.city}</Text>
+                          </View>
+                        )}
                       </View>
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <View style={styles.emptyState}>
+                    <Shield size={40} color={Colors.text.muted} />
+                    <Text style={styles.emptyTitle}>Aucune équipe</Text>
+                    <Text style={styles.emptySubtitle}>{isOwn ? 'Vos équipes apparaîtront ici' : 'Aucune équipe pour cet utilisateur'}</Text>
+                    {isOwn && (
+                      <TouchableOpacity
+                        style={styles.emptyCta}
+                        onPress={() => router.push('/create-team')}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.emptyCtaText}>Créer une équipe</Text>
+                      </TouchableOpacity>
                     )}
                   </View>
-                </TouchableOpacity>
-              ))
-            ) : (
-              <View style={styles.emptyState}>
-                <Shield size={40} color={Colors.text.muted} />
-                <Text style={styles.emptyTitle}>Aucune équipe</Text>
-                <Text style={styles.emptySubtitle}>{isOwn ? 'Vos équipes apparaîtront ici' : 'Aucune équipe pour cet utilisateur'}</Text>
-                {isOwn && (
-                  <TouchableOpacity
-                    style={styles.emptyCta}
-                    onPress={() => router.push('/create-team')}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.emptyCtaText}>Créer une équipe</Text>
-                  </TouchableOpacity>
                 )}
-              </View>
+
+                {/* ── Anciennes équipes ── */}
+                {isOwn && pastTeams.length > 0 && (
+                  <>
+                    <View style={[styles.sectionHeader, { marginTop: 24 }]}>
+                      <History size={16} color={Colors.text.muted} />
+                      <Text style={[styles.sectionTitle, { color: Colors.text.muted }]}>Équipes par lesquelles je suis passé</Text>
+                      <View style={styles.sectionCountBadge}>
+                        <Text style={styles.sectionCountText}>{pastTeams.length}</Text>
+                      </View>
+                    </View>
+                    {pastTeams.map((team) => (
+                      <TouchableOpacity
+                        key={team.id}
+                        style={[styles.teamRow, { opacity: 0.6 }]}
+                        onPress={() => router.push(`/team/${team.id}`)}
+                        activeOpacity={0.7}
+                      >
+                        <Avatar uri={team.logo} name={team.name} size="medium" />
+                        <View style={styles.teamInfo}>
+                          <View style={styles.teamNameRow}>
+                            <Text style={styles.teamName} numberOfLines={1}>{team.name}</Text>
+                          </View>
+                          <Text style={styles.teamMeta}>{sportLabels[team.sport] || team.sport} • {team.format}</Text>
+                          {team.city && (
+                            <View style={styles.teamLocation}>
+                              <MapPin size={11} color={Colors.text.muted} />
+                              <Text style={styles.teamLocationText}>{team.city}</Text>
+                            </View>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </>
+                )}
+              </>
             )}
             <View style={{ height: 40 }} />
           </ScrollView>
@@ -137,4 +195,8 @@ const styles = StyleSheet.create({
   emptyCta: { marginTop: 8, backgroundColor: Colors.primary.orange, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
   emptyCtaText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
   loadingState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 80 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, marginBottom: 12, marginTop: 4 },
+  sectionTitle: { color: Colors.text.primary, fontSize: 16, fontWeight: '700' },
+  sectionCountBadge: { backgroundColor: Colors.background.card, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
+  sectionCountText: { color: Colors.text.muted, fontSize: 12, fontWeight: '600' },
 });

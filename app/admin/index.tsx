@@ -7,7 +7,7 @@ import { safeBack } from '@/lib/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Users, Swords, Shield, ShieldAlert, Ban, Search, ChevronRight, TrendingUp, Settings, BarChart3, Calendar, MapPin, Star, CheckCircle, XCircle, Eye, RefreshCw, Globe, Database, DollarSign, Ticket, UserCheck, Activity, Clock, AlertTriangle, Zap, Server, HardDrive, Send, Lock, Trash2, FileText, Download, MessageSquare, Award, Target, PieChart, Bell, X, Plus, Filter, ArrowUpDown, CheckSquare, Square, TrendingDown, Receipt } from 'lucide-react-native';
+import { ArrowLeft, Users, Swords, Shield, ShieldAlert, Ban, Search, ChevronRight, TrendingUp, Settings, BarChart3, Calendar, MapPin, Star, CheckCircle, XCircle, Eye, RefreshCw, Globe, Database, DollarSign, Ticket, UserCheck, Activity, Clock, AlertTriangle, Zap, Server, HardDrive, Send, Lock, Trash2, FileText, Download, MessageSquare, Award, Target, PieChart, Bell, X, Plus, Filter, ArrowUpDown, CheckSquare, Square, TrendingDown, Receipt, Newspaper, Flag } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
@@ -27,16 +27,17 @@ import { tournamentPayoutRequestsApi, tournamentPaymentsApi } from '@/lib/api/to
 import { tournamentDisputesApi } from '@/lib/api/tournament-funds';
 import { tournamentCancellationApi, type CancellationRequestWithDetails } from '@/lib/api/tournament-cancellations';
 import { invoicesApi } from '@/lib/api/invoices';
+import { postsApi } from '@/lib/api/posts';
 import { venuesApi } from '@/lib/api/venues';
 import { usersApi } from '@/lib/api/users';
 import { ticketsApi } from '@/lib/api/tickets';
 import { offlineManager } from '@/lib/offline';
 import { testEngine, testLogStore, reportRunner, type QaDomain, type QaRunResult, type QaRuntimeEvent, type ProductionReadinessResult } from '@/qa';
-import type { TournamentDispute, TournamentCancellationRequest, Invoice, User } from '@/types';
+import type { TournamentDispute, TournamentCancellationRequest, Invoice, User, Post } from '@/types';
 
 const CACHE_KEYS_TO_PURGE = ['vs_tournaments', 'vs_teams', 'vs_matches', 'vs_all_users', 'vs_follows', 'vs_notifications', 'vs_offline_queue', 'vs_last_sync'];
 
-type AdminTab = 'overview' | 'users' | 'banned' | 'teams' | 'matches' | 'tournaments' | 'tickets' | 'verifications' | 'payments' | 'payouts' | 'invoices' | 'venues' | 'analytics' | 'activity' | 'qa' | 'prod_report' | 'settings';
+type AdminTab = 'overview' | 'users' | 'banned' | 'teams' | 'matches' | 'tournaments' | 'tickets' | 'verifications' | 'payments' | 'payouts' | 'invoices' | 'venues' | 'posts' | 'analytics' | 'activity' | 'qa' | 'prod_report' | 'settings';
 
 interface ActivityLog {
   id: string;
@@ -1360,6 +1361,7 @@ export default function AdminScreen() {
     { key: 'payouts', label: 'Avances', icon: <FileText size={16} color={activeTab === 'payouts' ? '#FFF' : Colors.text.secondary} />, badge: pendingPayoutRequests.length },
     { key: 'invoices', label: 'Factures', icon: <Receipt size={16} color={activeTab === 'invoices' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'venues', label: 'Terrains', icon: <MapPin size={16} color={activeTab === 'venues' ? '#FFF' : Colors.text.secondary} /> },
+    { key: 'posts', label: 'Posts', icon: <Newspaper size={16} color={activeTab === 'posts' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'activity', label: 'Activité', icon: <Activity size={16} color={activeTab === 'activity' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'qa', label: 'QA', icon: <Server size={16} color={activeTab === 'qa' ? '#FFF' : Colors.text.secondary} /> },
     { key: 'prod_report', label: 'Rapport Prod', icon: <CheckCircle size={16} color={activeTab === 'prod_report' ? '#FFF' : Colors.text.secondary} /> },
@@ -1370,6 +1372,20 @@ export default function AdminScreen() {
   // Venues query with owner details
   const [venueSearch, setVenueSearch] = useState('');
   const [venueOwnerDetails, setVenueOwnerDetails] = useState<Record<string, { email?: string; phone?: string; fullName?: string; username?: string }>>({});
+
+  // Posts moderation
+  const [postSearch, setPostSearch] = useState('');
+  const [postPage, setPostPage] = useState(1);
+  const postsAdminQuery = useQuery({
+    queryKey: ['admin-posts', postPage],
+    queryFn: () => postsApi.getAllPosts(postPage, 20),
+    enabled: activeTab === 'posts',
+  });
+  const postReportsQuery = useQuery({
+    queryKey: ['admin-post-reports'],
+    queryFn: () => postsApi.getAllReports(),
+    enabled: activeTab === 'posts',
+  });
   const venuesQuery = useQuery({
     queryKey: ['adminVenues'],
     queryFn: () => venuesApi.getAll(),
@@ -3365,6 +3381,233 @@ export default function AdminScreen() {
     );
   };
 
+  const renderPosts = () => {
+    const allPosts = postsAdminQuery.data?.posts || [];
+    const filtered = postSearch
+      ? allPosts.filter((p) =>
+          (p.content || '').toLowerCase().includes(postSearch.toLowerCase()) ||
+          (p.authorFullName || '').toLowerCase().includes(postSearch.toLowerCase()) ||
+          (p.authorUsername || '').toLowerCase().includes(postSearch.toLowerCase())
+        )
+      : allPosts;
+
+    const handleAdminDeletePost = (postId: string, authorName: string) => {
+      Alert.alert(
+        'Modération',
+        `Supprimer le post de ${authorName} ?`,
+        [
+          { text: 'Annuler', style: 'cancel' },
+          {
+            text: 'Supprimer',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await postsApi.adminDeletePost(postId);
+                queryClient.invalidateQueries({ queryKey: ['admin-posts'] });
+                Alert.alert('Supprimé', 'Le post a été supprimé.');
+              } catch {
+                Alert.alert('Erreur', 'Impossible de supprimer le post.');
+              }
+            },
+          },
+        ]
+      );
+    };
+
+    const formatPostDate = (date: Date) => {
+      return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    };
+
+    return (
+      <>
+        {/* Post Reports Section */}
+        {postReportsQuery.data && postReportsQuery.data.length > 0 && (
+          <Card style={styles.listCard}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <Flag size={18} color={Colors.status.warning || '#F59E0B'} />
+              <Text style={styles.cardTitle}>Signalements</Text>
+              <View style={styles.reportBadge}>
+                <Text style={styles.reportBadgeText}>{postReportsQuery.data.filter(r => r.status === 'pending').length}</Text>
+              </View>
+            </View>
+            <Text style={styles.cardDesc}>Posts signalés par les utilisateurs nécessitant une modération</Text>
+
+            {postReportsQuery.data.map((report) => (
+              <View key={report.id} style={styles.reportCard}>
+                <View style={styles.reportCardHeader}>
+                  <Avatar uri={report.reporterAvatar} name={report.reporterName} size="small" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.reportReporterName}>{report.reporterName || 'Utilisateur'}</Text>
+                    <Text style={styles.reportDate}>{formatPostDate(report.createdAt)}</Text>
+                  </View>
+                  <View style={[styles.reportStatusBadge, report.status === 'pending' ? styles.reportStatusPending : report.status === 'reviewed' ? styles.reportStatusReviewed : styles.reportStatusDismissed]}>
+                    <Text style={styles.reportStatusText}>{report.status === 'pending' ? 'En attente' : report.status === 'reviewed' ? 'Examiné' : 'Ignoré'}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.reportReasonRow}>
+                  <Flag size={12} color={Colors.status.warning || '#F59E0B'} />
+                  <Text style={styles.reportReasonText}>{report.reason}</Text>
+                </View>
+
+                {report.postContent && (
+                  <Text style={styles.reportPostContent} numberOfLines={2}>{report.postContent}</Text>
+                )}
+
+                <Text style={styles.reportPostAuthor}>Post de : {report.postAuthorName || 'Inconnu'}</Text>
+
+                <View style={styles.reportActions}>
+                  {report.status === 'pending' && (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.reportActionBtn, styles.reportActionDismiss]}
+                        onPress={async () => {
+                          try {
+                            await postsApi.updateReportStatus(report.id, 'dismissed');
+                            queryClient.invalidateQueries({ queryKey: ['admin-post-reports'] });
+                          } catch {
+                            Alert.alert('Erreur', 'Impossible de mettre à jour le signalement.');
+                          }
+                        }}
+                      >
+                        <XCircle size={14} color={Colors.text.muted} />
+                        <Text style={styles.reportActionDismissText}>Ignorer</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.reportActionBtn, styles.reportActionDelete]}
+                        onPress={() => {
+                          Alert.alert(
+                            'Modération',
+                            'Supprimer ce post signalé ?',
+                            [
+                              { text: 'Annuler', style: 'cancel' },
+                              {
+                                text: 'Supprimer',
+                                style: 'destructive',
+                                onPress: async () => {
+                                  try {
+                                    await postsApi.adminDeletePost(report.postId);
+                                    await postsApi.updateReportStatus(report.id, 'reviewed');
+                                    queryClient.invalidateQueries({ queryKey: ['admin-post-reports'] });
+                                    queryClient.invalidateQueries({ queryKey: ['admin-posts'] });
+                                    Alert.alert('Fait', 'Post supprimé et signalement marqué comme examiné.');
+                                  } catch {
+                                    Alert.alert('Erreur', 'Impossible de supprimer le post.');
+                                  }
+                                },
+                              },
+                            ]
+                          );
+                        }}
+                      >
+                        <Trash2 size={14} color={Colors.status.error} />
+                        <Text style={styles.reportActionDeleteText}>Supprimer le post</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                  {report.status !== 'pending' && (
+                    <Text style={styles.reportResolvedText}>Signalement {report.status === 'reviewed' ? 'traité' : 'ignoré'}</Text>
+                  )}
+                </View>
+              </View>
+            ))}
+          </Card>
+        )}
+
+        <Card style={styles.listCard}>
+          <Text style={styles.cardTitle}>Modération des publications</Text>
+          <Text style={styles.cardDesc}>Supprimez les posts inappropriés. Total : {postsAdminQuery.data?.total ?? 0}</Text>
+
+          <View style={styles.searchRow}>
+            <Search size={16} color={Colors.text.muted} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Rechercher par contenu ou auteur..."
+              placeholderTextColor={Colors.text.muted}
+              value={postSearch}
+              onChangeText={setPostSearch}
+            />
+          </View>
+
+          {postsAdminQuery.isLoading && (
+            <Text style={{ color: Colors.text.muted, textAlign: 'center', paddingVertical: 20 }}>Chargement...</Text>
+          )}
+
+          {filtered.length === 0 && !postsAdminQuery.isLoading && (
+            <Text style={styles.emptyText}>Aucun post trouvé.</Text>
+          )}
+
+          {filtered.map((post) => (
+            <View key={post.id} style={styles.postAdminCard}>
+              <View style={styles.postAdminHeader}>
+                <Avatar uri={post.authorAvatar} name={post.authorFullName} size="small" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.postAdminAuthor}>
+                    {post.authorFullName || 'Utilisateur'}
+                    {post.authorIsVerified && <CheckCircle size={12} color={Colors.primary.blue} />}
+                  </Text>
+                  <Text style={styles.postAdminDate}>{formatPostDate(post.createdAt)}</Text>
+                </View>
+                {post.isAutoGenerated && (
+                  <View style={styles.autoBadge}>
+                    <Text style={styles.autoBadgeText}>{post.autoType || 'auto'}</Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={styles.deletePostBtn}
+                  onPress={() => handleAdminDeletePost(post.id, post.authorFullName || 'Utilisateur')}
+                >
+                  <Trash2 size={16} color={Colors.status.error} />
+                </TouchableOpacity>
+              </View>
+
+              {post.content ? (
+                <Text style={styles.postAdminContent} numberOfLines={3}>{post.content}</Text>
+              ) : null}
+
+              {post.images && post.images.length > 0 && (
+                <Text style={styles.postAdminMeta}>
+                  {post.images.length} image(s) • {post.likesCount} like(s) • {post.commentsCount} commentaire(s)
+                </Text>
+              )}
+
+              {(!post.images || post.images.length === 0) && (
+                <Text style={styles.postAdminMeta}>
+                  {post.likesCount} like(s) • {post.commentsCount} commentaire(s)
+                </Text>
+              )}
+
+              {post.sportTag && (
+                <View style={styles.postAdminSportTag}>
+                  <Text style={styles.postAdminSportTagText}>{sportLabels[post.sportTag as keyof typeof sportLabels] || post.sportTag}</Text>
+                </View>
+              )}
+            </View>
+          ))}
+
+          {/* Pagination */}
+          <View style={styles.paginationRow}>
+            <TouchableOpacity
+              style={[styles.paginationBtn, postPage === 1 && styles.paginationBtnDisabled]}
+              disabled={postPage === 1}
+              onPress={() => setPostPage((p) => Math.max(1, p - 1))}
+            >
+              <Text style={styles.paginationBtnText}>Précédent</Text>
+            </TouchableOpacity>
+            <Text style={styles.paginationInfo}>Page {postPage}</Text>
+            <TouchableOpacity
+              style={[styles.paginationBtn, !postsAdminQuery.data?.hasMore && styles.paginationBtnDisabled]}
+              disabled={!postsAdminQuery.data?.hasMore}
+              onPress={() => setPostPage((p) => p + 1)}
+            >
+              <Text style={styles.paginationBtnText}>Suivant</Text>
+            </TouchableOpacity>
+          </View>
+        </Card>
+      </>
+    );
+  };
+
   const renderSettings = () => (
     <>
       <Card style={styles.settingsCard}>
@@ -3535,6 +3778,7 @@ export default function AdminScreen() {
             {activeTab === 'payouts' && renderPayoutsTab()}
             {activeTab === 'invoices' && renderInvoicesTab()}
             {activeTab === 'venues' && renderVenues()}
+            {activeTab === 'posts' && renderPosts()}
             {activeTab === 'activity' && renderActivity()}
             {activeTab === 'qa' && renderQa()}
             {activeTab === 'prod_report' && renderProdReport()}
@@ -4548,4 +4792,45 @@ const styles = StyleSheet.create({
   venueOwnerTitle: { color: Colors.primary.orange, fontSize: 12, fontWeight: '700' as const, marginBottom: 8, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
   venueOwnerMissing: { color: Colors.text.muted, fontSize: 13, fontStyle: 'italic' as const },
   venueOwnerLoading: { color: Colors.text.muted, fontSize: 13 },
+
+  // Posts moderation
+  postAdminCard: { backgroundColor: Colors.background.card, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: Colors.border.light },
+  postAdminHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  postAdminAuthor: { color: Colors.text.primary, fontSize: 14, fontWeight: '600' as const, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  postAdminDate: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
+  autoBadge: { backgroundColor: 'rgba(255,165,0,0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  autoBadgeText: { color: Colors.primary.orange, fontSize: 10, fontWeight: '600' as const },
+  deletePostBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(239,68,68,0.1)', alignItems: 'center', justifyContent: 'center' },
+  postAdminContent: { color: Colors.text.secondary, fontSize: 14, lineHeight: 20, marginBottom: 6 },
+  postAdminMeta: { color: Colors.text.muted, fontSize: 12, marginBottom: 6 },
+  postAdminSportTag: { alignSelf: 'flex-start', backgroundColor: 'rgba(59,130,246,0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  postAdminSportTagText: { color: Colors.primary.blue, fontSize: 12, fontWeight: '500' as const },
+  paginationRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginTop: 16 },
+  paginationBtn: { backgroundColor: Colors.background.cardLight, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
+  paginationBtnDisabled: { opacity: 0.4 },
+  paginationBtnText: { color: Colors.text.primary, fontSize: 14, fontWeight: '600' as const },
+  paginationInfo: { color: Colors.text.muted, fontSize: 14 },
+  // Post reports
+  reportBadge: { backgroundColor: 'rgba(245,158,11,0.2)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  reportBadgeText: { color: '#F59E0B', fontSize: 12, fontWeight: '700' as const },
+  reportCard: { backgroundColor: 'rgba(245,158,11,0.06)', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: 'rgba(245,158,11,0.2)' },
+  reportCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  reportReporterName: { color: Colors.text.primary, fontSize: 14, fontWeight: '600' as const },
+  reportDate: { color: Colors.text.muted, fontSize: 12, marginTop: 2 },
+  reportStatusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  reportStatusPending: { backgroundColor: 'rgba(245,158,11,0.15)' },
+  reportStatusReviewed: { backgroundColor: 'rgba(34,197,94,0.15)' },
+  reportStatusDismissed: { backgroundColor: 'rgba(107,114,128,0.15)' },
+  reportStatusText: { fontSize: 11, fontWeight: '600' as const, color: '#F59E0B' },
+  reportReasonRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  reportReasonText: { color: '#F59E0B', fontSize: 13, fontWeight: '500' as const },
+  reportPostContent: { color: Colors.text.secondary, fontSize: 13, lineHeight: 19, marginBottom: 4, fontStyle: 'italic' as const },
+  reportPostAuthor: { color: Colors.text.muted, fontSize: 12, marginBottom: 10 },
+  reportActions: { flexDirection: 'row', gap: 8 },
+  reportActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10 },
+  reportActionDismiss: { backgroundColor: 'rgba(107,114,128,0.1)' },
+  reportActionDismissText: { color: Colors.text.muted, fontSize: 13, fontWeight: '600' as const },
+  reportActionDelete: { backgroundColor: 'rgba(239,68,68,0.1)' },
+  reportActionDeleteText: { color: Colors.status.error, fontSize: 13, fontWeight: '600' as const },
+  reportResolvedText: { color: Colors.text.muted, fontSize: 13, fontStyle: 'italic' as const },
 });

@@ -1,11 +1,10 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useDeferredValue } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, RefreshControl, Modal, Pressable } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { safeBack } from '@/lib/navigation';
-import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Bell, Users, Trophy, Swords, MessageCircle, CheckCheck, Trash2, X, ChevronRight, Flame, Crown, MapPin, Clock, UserPlus } from 'lucide-react-native';
+import { ArrowLeft, Bell, Users, Trophy, Swords, MessageCircle, CheckCheck, Trash2, X, ChevronRight, Flame, Crown, MapPin, Clock, UserPlus, Heart, AtSign, Flag } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useNotifications } from '@/contexts/NotificationsContext';
 import { useTeams } from '@/contexts/TeamsContext';
@@ -13,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useUsers } from '@/contexts/UsersContext';
 import { useMatches } from '@/contexts/MatchesContext';
 import { useTournaments } from '@/contexts/TournamentsContext';
+import { useChat } from '@/contexts/ChatContext';
 import { sportLabels } from '@/mocks/data';
 import type { Notification } from '@/types';
 
@@ -25,6 +25,7 @@ export default function NotificationsScreen() {
   const { getUpcomingMatches } = useMatches();
   const { tournaments, getActiveTournaments } = useTournaments();
   const { getFollowing } = useUsers();
+  const { getPendingChatRequests } = useChat();
   const [refreshing, setRefreshing] = React.useState(false);
   const [processingRequestId, setProcessingRequestId] = React.useState<string | null>(null);
   const [activeFilter, setActiveFilter] = React.useState<'all' | 'alerts' | 'activities'>('all');
@@ -65,6 +66,24 @@ export default function NotificationsScreen() {
           _requestUserId: req.userId,
         });
       }
+    }
+
+    // 1b. Pending chat requests
+    const pendingChatRequests = getPendingChatRequests();
+    for (const req of pendingChatRequests) {
+      const requester = usersById.get(req.requesterId);
+      const requesterName = requester?.fullName || requester?.username || 'Un utilisateur';
+      list.push({
+        id: `chat-req-${req.id}`,
+        userId: user.id,
+        type: 'chat',
+        title: 'Demande de message',
+        message: `${requesterName} veut vous envoyer un message`,
+        data: { route: '/chat-requests' },
+        isRead: false,
+        createdAt: req.createdAt instanceof Date ? req.createdAt : new Date(req.createdAt),
+        _synthetic: true,
+      });
     }
 
     // 2. Activity items — tournaments, matches, followed teams/users
@@ -201,20 +220,18 @@ export default function NotificationsScreen() {
       });
 
     return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [notifications, user, teams, getPendingRequests, usersById, getUserTeams, getFollowedTeams, getFollowing, getUpcomingMatches, tournaments, getActiveTournaments]);
+  }, [notifications, user, teams, getPendingRequests, usersById, getUserTeams, getFollowedTeams, getFollowing, getUpcomingMatches, tournaments, getActiveTournaments, getPendingChatRequests]);
 
-  const unreadCount = notificationsWithTeamRequests.filter((n) => !n.isRead).length;
+  // Defer heavy computation so screen opens instantly
+  const deferredNotifications = useDeferredValue(notificationsWithTeamRequests);
+  const isComputing = deferredNotifications !== notificationsWithTeamRequests;
+
+  const unreadCount = deferredNotifications.filter((n) => !n.isRead).length;
 
   // Split into alerts (real notifications + team requests) and activities
-  const alertItems = notificationsWithTeamRequests.filter(n => !('_isActivity' in n) || !n._isActivity);
-  const activityItemsList = notificationsWithTeamRequests.filter(n => '_isActivity' in n && n._isActivity);
-  const filteredItems = activeFilter === 'alerts' ? alertItems : activeFilter === 'activities' ? activityItemsList : notificationsWithTeamRequests;
-
-  useFocusEffect(
-    useCallback(() => {
-      refetchNotifications();
-    }, [refetchNotifications])
-  );
+  const alertItems = deferredNotifications.filter(n => !('_isActivity' in n) || !n._isActivity);
+  const activityItemsList = deferredNotifications.filter(n => '_isActivity' in n && n._isActivity);
+  const filteredItems = activeFilter === 'alerts' ? alertItems : activeFilter === 'activities' ? activityItemsList : deferredNotifications;
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -225,7 +242,15 @@ export default function NotificationsScreen() {
     }
   };
 
-  const getIcon = (type: string) => {
+  const getIcon = (type: string, data?: Record<string, string>) => {
+    if (type === 'social') {
+      const subType = data?.type;
+      if (subType === 'like') return <Heart size={20} color={Colors.status.error} fill={Colors.status.error} />;
+      if (subType === 'comment') return <MessageCircle size={20} color="#8B5CF6" />;
+      if (subType === 'mention') return <AtSign size={20} color={Colors.primary.orange} />;
+      if (subType === 'report') return <Flag size={20} color={Colors.status.warning || '#F59E0B'} />;
+      return <Bell size={20} color={Colors.text.secondary} />;
+    }
     switch (type) {
       case 'team': return <Users size={20} color={Colors.primary.blue} />;
       case 'match': return <Swords size={20} color={Colors.primary.orange} />;
@@ -235,7 +260,15 @@ export default function NotificationsScreen() {
     }
   };
 
-  const getIconBg = (type: string) => {
+  const getIconBg = (type: string, data?: Record<string, string>) => {
+    if (type === 'social') {
+      const subType = data?.type;
+      if (subType === 'like') return 'rgba(239,68,68,0.12)';
+      if (subType === 'comment') return 'rgba(139,92,246,0.12)';
+      if (subType === 'mention') return 'rgba(255,107,0,0.12)';
+      if (subType === 'report') return 'rgba(245,158,11,0.12)';
+      return Colors.background.cardLight;
+    }
     switch (type) {
       case 'team': return 'rgba(21,101,192,0.1)';
       case 'match': return 'rgba(255,107,0,0.1)';
@@ -287,6 +320,16 @@ export default function NotificationsScreen() {
       }
       return;
     }
+    // Social notifications navigate directly to the feed
+    if (notification.type === 'social') {
+      if (!notification.isRead) await markAsRead(notification.id);
+      if (notification.data?.route) {
+        router.push(notification.data.route as any);
+      } else {
+        router.push('/(tabs)/feed' as any);
+      }
+      return;
+    }
     if (!('_synthetic' in notification) || !notification._synthetic) {
       if (!notification.isRead) await markAsRead(notification.id);
     }
@@ -300,6 +343,11 @@ export default function NotificationsScreen() {
           requestId: notification._requestId!,
         },
       } as any);
+      return;
+    }
+    // For notifications with a route, navigate directly
+    if (notification.data?.route) {
+      router.push(notification.data.route as any);
       return;
     }
     setSelectedNotification(notification);
@@ -398,7 +446,7 @@ export default function NotificationsScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} pointerEvents="none" />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={() => safeBack(router, '/(tabs)/(home)')}>
@@ -428,7 +476,7 @@ export default function NotificationsScreen() {
           {/* Filter tabs */}
           <View style={styles.filterTabs}>
             {[
-              { key: 'all', label: 'Tout', count: notificationsWithTeamRequests.length },
+              { key: 'all', label: 'Tout', count: deferredNotifications.length },
               { key: 'alerts', label: 'Alertes', count: alertItems.length },
               { key: 'activities', label: 'Activités', count: activityItemsList.length },
             ].map((tab) => (
@@ -470,8 +518,8 @@ export default function NotificationsScreen() {
                   onPress={() => handleNotificationPress(notification)}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.iconContainer, { backgroundColor: isActivity ? (activityColor + '20') : getIconBg(notification.type) }]}>
-                    {isActivity ? getActivityIcon(notification) : getIcon(notification.type)}
+                  <View style={[styles.iconContainer, { backgroundColor: isActivity ? (activityColor + '20') : getIconBg(notification.type, notification.data) }]}>
+                    {isActivity ? getActivityIcon(notification) : getIcon(notification.type, notification.data)}
                   </View>
                   <View style={styles.notificationContent}>
                     <View style={styles.notificationHeader}>
@@ -539,8 +587,8 @@ export default function NotificationsScreen() {
                 <>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                      <View style={[styles.iconContainer, { backgroundColor: getIconBg(n.type) }]}>
-                        {getIcon(n.type)}
+                      <View style={[styles.iconContainer, { backgroundColor: getIconBg(n.type, n.data) }]}>
+                        {getIcon(n.type, n.data)}
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={{ color: Colors.text.primary, fontSize: 16, fontWeight: '700' }}>{n.title}</Text>

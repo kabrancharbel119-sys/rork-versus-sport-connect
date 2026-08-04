@@ -25,9 +25,10 @@ describe('TROPHIES — Déblocage automatique', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.trophies.push(data.id);
 
-    expect(error).toBeNull();
     expect(data.trophy_type).toBe('first_match');
     expect(data.rarity).toBe('common');
   });
@@ -50,9 +51,10 @@ describe('TROPHIES — Déblocage automatique', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.trophies.push(data.id);
 
-    expect(error).toBeNull();
     expect(data.trophy_type).toBe('first_win');
   });
 
@@ -74,9 +76,10 @@ describe('TROPHIES — Déblocage automatique', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.trophies.push(data.id);
 
-    expect(error).toBeNull();
     expect(data.trophy_type).toBe('hat_trick');
     expect(data.rarity).toBe('rare');
   });
@@ -99,9 +102,10 @@ describe('TROPHIES — Déblocage automatique', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.trophies.push(data.id);
 
-    expect(error).toBeNull();
     expect(data.trophy_type).toBe('champion');
     expect(data.rarity).toBe('legendary');
   });
@@ -124,9 +128,10 @@ describe('TROPHIES — Déblocage automatique', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.trophies.push(data.id);
 
-    expect(error).toBeNull();
     expect(data.trophy_type).toBe('team_creator');
   });
 
@@ -148,9 +153,10 @@ describe('TROPHIES — Déblocage automatique', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.trophies.push(data.id);
 
-    expect(error).toBeNull();
     expect(data.trophy_type).toBe('silver_rank');
   });
 
@@ -172,9 +178,10 @@ describe('TROPHIES — Déblocage automatique', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.trophies.push(data.id);
 
-    expect(error).toBeNull();
     expect(data.trophy_type).toBe('grandmaster_rank');
     expect(data.rarity).toBe('legendary');
   });
@@ -205,9 +212,10 @@ describe('TROPHIES — Règles', () => {
       .select()
       .single();
 
+    expect(error).toBeNull();
+    expect(data).toBeDefined();
     createdIds.trophies.push(data.id);
 
-    expect(error).toBeNull();
     expect(data.unlocked_at).toBeDefined();
     
     // Tolérance de 5 secondes pour décalage client/serveur
@@ -230,12 +238,14 @@ describe('TROPHIES — Règles', () => {
       rarity: 'common'
     };
 
-    const { data: trophy } = await supabaseAdmin
+    const { data: trophy, error: insertError } = await supabaseAdmin
       .from('trophies')
       .insert(trophyData)
       .select()
       .single();
 
+    expect(insertError).toBeNull();
+    expect(trophy).toBeDefined();
     createdIds.trophies.push(trophy.id);
 
     const { data } = await supabaseAdmin

@@ -9,6 +9,7 @@ import { X, Users, MapPin, Check, ChevronDown, Search, Shield, Image as ImageIco
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/contexts/TeamsContext';
+import { createAutoPost, autoPostMessages } from '@/lib/autoPosts';
 import { uploadTeamImage } from '@/lib/uploadImage';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
@@ -244,6 +245,9 @@ export default function CreateTeamScreen() {
     
     try {
       await createTeam(teamData);
+      if (user?.id) {
+        createAutoPost(user.id, 'team_created', autoPostMessages.teamCreated(teamData.name, teamData.sport), { sportTag: teamData.sport });
+      }
       Alert.alert(
         '🎉 Équipe créée !', 
         `${teamData.name} a été créée avec succès. Vous êtes maintenant le capitaine !`,
@@ -450,7 +454,7 @@ export default function CreateTeamScreen() {
                 longitude: undefined,
               }));
             }}
-            placeholder="Ex: Abidjan"
+            placeholder="Votre ville"
             maxResults={6}
           />
           {errors.city && <Text style={styles.cityError}>{errors.city}</Text>}
@@ -578,35 +582,35 @@ export default function CreateTeamScreen() {
 
   if (alreadyInTeam) {
     return (
-      <>
-        <Stack.Screen options={{ headerShown: false }} />
-        <View style={styles.container}>
-          <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
-          <SafeAreaView style={styles.safeArea}>
-            <View style={styles.header}>
-              <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router, '/(tabs)/teams')}>
-                <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
-              <Text style={styles.headerTitle}>Créer une équipe</Text>
-              <View style={styles.placeholder} />
-            </View>
-            <View style={styles.blockedContainer}>
-              <Shield size={56} color={Colors.primary.orange} />
-              <Text style={styles.blockedTitle}>Une seule équipe à la fois</Text>
-              <Text style={styles.blockedText}>Vous ne pouvez être membre que d&#39;une seule équipe. Quittez votre équipe actuelle pour en créer une nouvelle.</Text>
-              <Button title="Retour" onPress={() => safeBack(router, '/(tabs)/teams')} variant="outline" style={{ marginTop: 24 }} />
-            </View>
-          </SafeAreaView>
-        </View>
-      </>
-    );
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={styles.container}>
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} pointerEvents="none" />
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router, '/(tabs)/teams')}>
+              <X size={24} color={Colors.text.primary} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Créer une équipe</Text>
+            <View style={styles.placeholder} />
+          </View>
+          <View style={styles.blockedContainer}>
+            <Shield size={56} color={Colors.primary.orange} />
+            <Text style={styles.blockedTitle}>Une seule équipe à la fois</Text>
+            <Text style={styles.blockedText}>Vous ne pouvez être membre que d&#39;une seule équipe. Quittez votre équipe actuelle pour en créer une nouvelle.</Text>
+            <Button title="Retour" onPress={() => safeBack(router, '/(tabs)/teams')} variant="outline" style={{ marginTop: 24 }} />
+          </View>
+        </SafeAreaView>
+      </View>
+    </>
+  );
   }
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} pointerEvents="none" />
         
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>

@@ -16,6 +16,7 @@ import { useTeams } from '@/contexts/TeamsContext';
 import { venuesApi } from '@/lib/api/venues';
 import { ticketsApi } from '@/lib/api/tickets';
 import { uploadTournamentImage } from '@/lib/uploadImage';
+import { createAutoPost, autoPostMessages } from '@/lib/autoPosts';
 import { useQuery } from '@tanstack/react-query';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
@@ -437,6 +438,9 @@ export default function CreateTournamentScreen() {
       }
       setSuccessInfo({ title, message });
       setShowSuccessModal(true);
+      if (user?.id) {
+        createAutoPost(user.id, 'tournament_created', autoPostMessages.tournamentCreated(formData.name, formData.sport), { sportTag: formData.sport, tournamentTag: tournamentId });
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Impossible de créer le tournoi';
       setCreateError(message);
@@ -671,6 +675,7 @@ export default function CreateTournamentScreen() {
             </TouchableOpacity>
           </View>
           {isPaidTournament && (
+            <>
             <Input
               scrollViewRef={scrollViewRef}
               label="Montant (FCFA)"
@@ -681,6 +686,8 @@ export default function CreateTournamentScreen() {
               keyboardType="numeric"
               icon={<DollarSign size={18} color={Colors.text.muted} />}
             />
+            <Text style={{ color: Colors.text.muted, fontSize: 11, marginTop: 4, marginBottom: 8 }}>Minimum recommandé: 600 FCFA</Text>
+            </>
           )}
         </View>
       </View>
@@ -1188,6 +1195,7 @@ export default function CreateTournamentScreen() {
                         value={tt.price}
                         onChangeText={(v) => setTicketTypes(prev => prev.map((t, i) => i === idx ? { ...t, price: v } : t))}
                       />
+                      <Text style={{ color: Colors.text.muted, fontSize: 10, marginTop: 2 }}>Minimum recommandé: 600 FCFA</Text>
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.ticketTypeLabel}>Quantité</Text>

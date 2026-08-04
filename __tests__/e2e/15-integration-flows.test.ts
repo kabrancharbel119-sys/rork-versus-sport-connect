@@ -19,7 +19,7 @@ describe('FLOW COMPLET — Nouveau joueur', () => {
       .update({
         bio: 'Nouveau joueur passionné',
         city: 'Abidjan',
-        favorite_sports: ['football']
+        sports: [{ sport: 'football', level: 'intermediate' }]
       })
       .eq('id', user.id);
 
@@ -31,12 +31,12 @@ describe('FLOW COMPLET — Nouveau joueur', () => {
     const match = await createTestMatch(user.id, venue.id, {
       match_type: 'ranked',
       sport: 'football',
-      registered_players: [{ id: user.id, name: `${user.first_name} ${user.last_name}` }]
+      registered_players: [{ id: user.id, name: user.full_name }]
     });
     createdIds.matches.push(match.id);
 
     const ranking = await createTestPlayerRanking(user.id, 'football', 1000);
-    createdIds.player_rankings.push(ranking.id);
+    createdIds.player_rankings.push(ranking.user_id);
 
     const { error: matchCompleteError } = await supabaseAdmin
       .from('matches')
@@ -52,14 +52,14 @@ describe('FLOW COMPLET — Nouveau joueur', () => {
         wins: 1,
         elo_rating: 1016
       })
-      .eq('id', ranking.id);
+      .eq('user_id', ranking.user_id);
 
     expect(rankingUpdateError).toBeNull();
 
     const { data: updatedRanking } = await supabaseAdmin
       .from('player_rankings')
       .select('*')
-      .eq('id', ranking.id)
+      .eq('user_id', ranking.user_id)
       .single();
 
     expect(updatedRanking?.matches_played).toBe(1);
@@ -82,11 +82,11 @@ describe('FLOW COMPLET — Organisateur de tournoi', () => {
     const tournament = await createTestTournament(organizer.id, {
       type: 'knockout',
       max_teams: 4,
-      status: 'draft'
+      status: 'registration'
     });
     createdIds.tournaments.push(tournament.id);
 
-    expect(tournament.status).toBe('draft');
+    expect(tournament.status).toBe('registration');
 
     const teams = await Promise.all([
       createTestTeam(organizer.id, { name: 'Team A' }),

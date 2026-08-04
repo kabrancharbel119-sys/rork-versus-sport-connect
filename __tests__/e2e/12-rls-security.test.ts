@@ -16,8 +16,8 @@ describe('RLS — Accès non authentifié', () => {
       .insert({
         phone: '+2250000000000',
         password_hash: 'test',
-        first_name: 'Test',
-        last_name: 'User'
+        username: 'test_rls_user',
+        full_name: 'Test User'
       });
 
     expect(error).toBeDefined();
@@ -70,7 +70,7 @@ describe('RLS — Isolation des données', () => {
 
     const { error } = await supabaseAnon
       .from('users')
-      .update({ first_name: 'Hacked' })
+      .update({ full_name: 'Hacked' })
       .eq('id', userB.id);
 
     expect(error).toBeDefined();

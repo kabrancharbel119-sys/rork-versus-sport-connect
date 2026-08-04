@@ -310,7 +310,7 @@ export default function TournamentDetailScreen() {
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.container}>
-          <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} pointerEvents="none" />
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
               <TouchableOpacity style={styles.backButton} onPress={goBack}>
@@ -351,7 +351,7 @@ export default function TournamentDetailScreen() {
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.container}>
-          <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={[Colors.background.dark, '#0d111d']} style={StyleSheet.absoluteFill} pointerEvents="none" />
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
               <TouchableOpacity style={styles.backButton} onPress={goBack}>
@@ -728,15 +728,17 @@ export default function TournamentDetailScreen() {
               style={StyleSheet.absoluteFill}
               contentFit="cover"
               transition={300}
+              pointerEvents="none"
             />
             <LinearGradient
               colors={['rgba(7,11,18,0.55)', 'rgba(10,14,22,0.7)', 'rgba(10,14,22,0.88)', 'rgba(10,14,22,1)']}
               locations={[0, 0.3, 0.6, 1]}
               style={StyleSheet.absoluteFill}
+              pointerEvents="none"
             />
           </>
         ) : (
-          <LinearGradient colors={['#0F1523', '#121A2B']} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={['#0F1523', '#121A2B']} style={StyleSheet.absoluteFill} pointerEvents="none" />
         )}
 
         <SafeAreaView style={styles.safeArea}>

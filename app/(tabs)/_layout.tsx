@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { Home, Users, Swords, Trophy, MapPin } from 'lucide-react-native';
+import { Home, Users, Swords, Trophy, MapPin, Newspaper } from 'lucide-react-native';
 import { View, Text, StyleSheet, Platform, Pressable } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -108,6 +108,13 @@ export default function TabLayout() {
           options={{
             title: t('tabs.home'),
             tabBarIcon: ({ color, size }) => <Home size={size} color={color} strokeWidth={2} />,
+          }}
+        />
+        <Tabs.Screen
+          name="feed"
+          options={{
+            title: 'Feed',
+            tabBarIcon: ({ color, size }) => <Newspaper size={size} color={color} strokeWidth={2} />,
           }}
         />
         <Tabs.Screen
